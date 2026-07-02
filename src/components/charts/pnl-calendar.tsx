@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, type CSSProperties } from "react";
 import {
   Tooltip,
   TooltipContent,
@@ -77,7 +77,7 @@ export function PnlCalendar({ data }: Props) {
     );
   }
 
-  function cellStyle(pnl: number): React.CSSProperties {
+  function cellStyle(pnl: number): CSSProperties {
     const intensity = maxAbs > 0 ? Math.abs(pnl) / maxAbs : 0;
     const alpha = 0.18 + 0.62 * intensity;
     const token = pnl >= 0 ? "var(--profit)" : "var(--loss)";
