@@ -12,9 +12,24 @@ import { prisma } from "@/lib/db";
 import { TRIAL_DAYS } from "@/lib/billing/plans";
 
 const COOKIE_NAME = "tradeos_session";
-const secret = new TextEncoder().encode(
-  process.env.AUTH_SECRET ?? "dev-secret-change-me-in-production-please-0000000000"
-);
+const DEV_SECRET = "dev-secret-change-me-in-production-please-0000000000";
+const rawSecret = process.env.AUTH_SECRET ?? DEV_SECRET;
+
+// Fail loudly if a production deployment is still using the dev secret — a weak
+// signing key would let anyone forge sessions. This runs only when a session is
+// actually issued/verified, so it never blocks the build.
+function assertSecureSecret() {
+  if (
+    process.env.NODE_ENV === "production" &&
+    (rawSecret === DEV_SECRET || rawSecret.length < 32)
+  ) {
+    throw new Error(
+      "AUTH_SECRET is missing or insecure in production. Set a strong value (openssl rand -base64 32)."
+    );
+  }
+}
+
+const secret = new TextEncoder().encode(rawSecret);
 
 export interface SessionUser {
   id: string;
@@ -43,6 +58,7 @@ async function issueToken(userId: string): Promise<string> {
 }
 
 export async function setSessionCookie(userId: string) {
+  assertSecureSecret();
   const token = await issueToken(userId);
   const jar = await cookies();
   jar.set(COOKIE_NAME, token, {

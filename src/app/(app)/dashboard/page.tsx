@@ -19,6 +19,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
+import { LoadSampleData } from "@/components/load-sample-data";
 import {
   formatCurrency,
   formatPercent,
@@ -55,11 +56,14 @@ export default async function DashboardPage({
           <EmptyState
             icon={<Activity className="h-8 w-8" />}
             title="No trades yet"
-            description="Import a CSV from your broker or add a trade manually to see your analytics come to life."
+            description="Import a CSV from your broker, add a trade manually, or load a realistic sample dataset to explore every feature in seconds."
             action={
-              <Button asChild>
-                <Link href="/import">Import your first trades</Link>
-              </Button>
+              <div className="flex flex-col items-center gap-3 sm:flex-row">
+                <LoadSampleData />
+                <Button asChild variant="secondary">
+                  <Link href="/import">Import your trades</Link>
+                </Button>
+              </div>
             }
           />
         </div>
