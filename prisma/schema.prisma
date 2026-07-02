@@ -1,0 +1,327 @@
+// TradeOS — Prisma schema
+// ---------------------------------------------------------------------------
+// Provider is SQLite for zero-setup local dev. To migrate to Supabase/Postgres:
+//   1. change provider to "postgresql"
+//   2. point DATABASE_URL at your Postgres/Supabase connection string
+//   3. run `npm run db:push`
+// The schema deliberately avoids native enums and scalar lists so it is
+// portable across SQLite and Postgres without edits. "Enum-like" fields are
+// typed String and validated at the application boundary (see src/lib/types.ts).
+// ---------------------------------------------------------------------------
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// --------------------------------------------------------------------------
+// Identity & billing
+// --------------------------------------------------------------------------
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  displayName  String?
+  timezone     String   @default("America/New_York")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Billing / feature gating. plan: free | pro | elite
+  plan            String    @default("free")
+  // status: trialing | active | past_due | canceled
+  billingStatus   String    @default("trialing")
+  trialEndsAt     DateTime?
+  stripeCustomerId String?  @unique
+
+  accounts        TradingAccount[]
+  trades          Trade[]
+  ruleBooks       RuleBook[]
+  ruleEvaluations RuleEvaluation[]
+  disciplineSnapshots DisciplineSnapshot[]
+  importBatches   ImportBatch[]
+  propAccounts    PropAccount[]
+  alerts          Alert[]
+  sessions        Session[]
+
+  @@index([email])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+// --------------------------------------------------------------------------
+// Trading accounts (a user may link many)
+// --------------------------------------------------------------------------
+
+model TradingAccount {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name        String
+  broker      String   @default("manual") // topstepx | tradovate | ninjatrader | rithmic | ibkr | manual | csv
+  // kind: live | funded | evaluation | demo
+  kind        String   @default("live")
+  currency    String   @default("USD")
+  startingBalance Float @default(0)
+  isActive    Boolean  @default(true)
+  color       String   @default("#5b8def")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  trades      Trade[]
+  propAccount PropAccount?
+  alerts      Alert[]
+
+  @@index([userId])
+}
+
+// --------------------------------------------------------------------------
+// Trades — the normalized internal schema all connectors map into
+// --------------------------------------------------------------------------
+
+model Trade {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountId   String
+  account     TradingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  symbol      String
+  // side: long | short
+  side        String
+  entryPrice  Float
+  exitPrice   Float?
+  quantity    Float
+  entryTime   DateTime
+  exitTime    DateTime?
+  fees        Float    @default(0)
+  pnl         Float    @default(0)   // realized, net of fees; computed if absent
+  pnlGross    Float?                 // gross before fees (optional)
+
+  strategyTag String?
+  notes       String?
+  emotions    String?  // comma-separated tags e.g. "fomo,confident"
+  tags        String?  // free-form comma-separated
+
+  // source: csv | api | manual | broker
+  source      String   @default("manual")
+  externalId  String?  // broker/order id for dedupe
+  importBatchId String?
+  importBatch ImportBatch? @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+
+  // Denormalized compliance cache (recomputed by the rule engine)
+  complianceScore Int?     // 0-100
+  violationCount  Int      @default(0)
+  isWin           Boolean? // null while open
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  evaluations RuleEvaluation[]
+  attachments Attachment[]
+
+  @@unique([accountId, externalId])
+  @@index([userId, entryTime])
+  @@index([accountId, entryTime])
+  @@index([symbol])
+  @@index([strategyTag])
+}
+
+model Attachment {
+  id        String   @id @default(cuid())
+  tradeId   String
+  trade     Trade    @relation(fields: [tradeId], references: [id], onDelete: Cascade)
+  url       String   // supabase storage url or local path
+  kind      String   @default("screenshot") // screenshot | file
+  caption   String?
+  createdAt DateTime @default(now())
+
+  @@index([tradeId])
+}
+
+// --------------------------------------------------------------------------
+// Rule engine — no-code rulebooks evaluated against every trade
+// --------------------------------------------------------------------------
+
+model RuleBook {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  // scope: all | strategy | account   (+ scopeValue holds the id/tag)
+  scope       String   @default("all")
+  scopeValue  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  rules       Rule[]
+
+  @@index([userId])
+}
+
+model Rule {
+  id          String   @id @default(cuid())
+  ruleBookId  String
+  ruleBook    RuleBook @relation(fields: [ruleBookId], references: [id], onDelete: Cascade)
+
+  name        String
+  // type: time_window | risk_limit | max_trades | max_contracts |
+  //       max_daily_loss | indicator | behavioral | setup_validation
+  type        String
+  // severity: low | medium | high
+  severity    String   @default("medium")
+  // config is a JSON string whose shape depends on `type` (see rules/schema.ts).
+  // Stored as String for SQLite portability; parse/serialize at the app layer.
+  config      String
+  weight      Int      @default(1)
+  isActive    Boolean  @default(true)
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  evaluations RuleEvaluation[]
+
+  @@index([ruleBookId])
+}
+
+model RuleEvaluation {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tradeId     String
+  trade       Trade    @relation(fields: [tradeId], references: [id], onDelete: Cascade)
+  ruleId      String
+  rule        Rule     @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  // status: pass | fail | not_applicable
+  status      String
+  severity    String   // copied from rule at eval time for auditability
+  explanation String   // human-readable, deterministic reason
+  createdAt   DateTime @default(now())
+
+  @@unique([tradeId, ruleId])
+  @@index([userId])
+  @@index([tradeId])
+}
+
+// --------------------------------------------------------------------------
+// Discipline score snapshots (daily/period rollups — explainable, deterministic)
+// --------------------------------------------------------------------------
+
+model DisciplineSnapshot {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // period: day | week | month | all
+  period      String
+  periodStart DateTime
+  periodEnd   DateTime
+
+  overall     Int      // 0-100
+  ruleAdherence   Int
+  riskDiscipline  Int
+  emotionalDiscipline Int
+  consistency     Int
+  // breakdown: JSON string with component inputs for full explainability
+  breakdown   String
+  createdAt   DateTime @default(now())
+
+  @@unique([userId, period, periodStart])
+  @@index([userId, periodStart])
+}
+
+// --------------------------------------------------------------------------
+// Ingestion audit
+// --------------------------------------------------------------------------
+
+model ImportBatch {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  source      String   // csv | api | manual
+  broker      String   // adapter key used
+  fileName    String?
+  rowCount    Int      @default(0)
+  importedCount Int    @default(0)
+  skippedCount  Int    @default(0)
+  // status: pending | completed | failed
+  status      String   @default("completed")
+  error       String?
+  createdAt   DateTime @default(now())
+
+  trades      Trade[]
+
+  @@index([userId])
+}
+
+// --------------------------------------------------------------------------
+// Prop firm tracking
+// --------------------------------------------------------------------------
+
+model PropAccount {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountId   String   @unique
+  account     TradingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  // firm: topstep | apex | tpt | custom
+  firm        String
+  // preset name for reference e.g. "Topstep 50K"
+  presetName  String
+  accountSize Float
+  // rule params (all currency amounts, positive numbers)
+  profitTarget      Float?
+  maxDailyLoss      Float?
+  maxDrawdown       Float?    // trailing or static per drawdownType
+  // drawdownType: trailing | static | eod_trailing
+  drawdownType      String    @default("trailing")
+  minTradingDays    Int?
+  // consistencyRule: max % of total profit allowed from a single day (e.g. 0.3)
+  consistencyPct    Float?
+  // phase: evaluation | funded | passed | failed
+  phase             String    @default("evaluation")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+}
+
+// --------------------------------------------------------------------------
+// Alerts (Phase 2 architecture — stored as backend flags for now)
+// --------------------------------------------------------------------------
+
+model Alert {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountId   String?
+  account     TradingAccount? @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  // type: daily_loss_limit | rule_violation | overtrading | risk_threshold | drawdown | profit_target
+  type        String
+  // severity: low | medium | high
+  severity    String   @default("medium")
+  title       String
+  message     String
+  // status: open | acknowledged | resolved
+  status      String   @default("open")
+  meta        String?  // serialized JSON
+  createdAt   DateTime @default(now())
+
+  @@index([userId, status])
+}

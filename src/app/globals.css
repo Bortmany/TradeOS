@@ -1,0 +1,158 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---------------------------------------------------------------------------
+   TradeOS design tokens. Dark-first "trading terminal" system: near-black
+   layered surfaces, restrained cool-blue primary, and dedicated profit/loss
+   semantics with muted variants for backgrounds. A light theme is provided for
+   completeness but the product is designed dark.
+--------------------------------------------------------------------------- */
+
+:root {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "SF Mono", ui-monospace, "JetBrains Mono", "Menlo", monospace;
+
+  /* Light theme */
+  --background: 210 20% 98%;
+  --foreground: 222 24% 12%;
+  --surface: 0 0% 100%;
+  --surface-raised: 210 20% 99%;
+  --surface-overlay: 0 0% 100%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 24% 12%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 24% 12%;
+  --primary: 221 70% 55%;
+  --primary-foreground: 0 0% 100%;
+  --muted: 210 16% 93%;
+  --muted-foreground: 220 9% 43%;
+  --accent: 210 16% 94%;
+  --accent-foreground: 222 24% 12%;
+  --border: 220 13% 88%;
+  --input: 220 13% 85%;
+  --ring: 221 70% 55%;
+
+  --profit: 152 58% 40%;
+  --profit-muted: 152 45% 92%;
+  --loss: 356 66% 52%;
+  --loss-muted: 356 60% 95%;
+  --warning: 38 92% 46%;
+  --warning-muted: 38 90% 94%;
+  --info: 221 70% 55%;
+
+  --radius: 0.625rem;
+}
+
+.dark {
+  /* Dark theme — the primary experience */
+  --background: 224 30% 6%;        /* near-black with a cool cast */
+  --foreground: 213 20% 92%;
+  --surface: 224 24% 8%;
+  --surface-raised: 223 22% 11%;
+  --surface-overlay: 223 24% 13%;
+  --card: 224 24% 9%;
+  --card-foreground: 213 20% 92%;
+  --popover: 223 24% 11%;
+  --popover-foreground: 213 20% 92%;
+  --primary: 215 90% 62%;
+  --primary-foreground: 224 30% 6%;
+  --muted: 223 18% 16%;
+  --muted-foreground: 217 12% 60%;
+  --accent: 223 20% 15%;
+  --accent-foreground: 213 20% 92%;
+  --border: 223 18% 17%;
+  --input: 223 18% 20%;
+  --ring: 215 90% 62%;
+
+  --profit: 152 62% 46%;           /* readable green on dark */
+  --profit-muted: 152 40% 14%;
+  --loss: 356 75% 60%;             /* readable red on dark */
+  --loss-muted: 356 45% 16%;
+  --warning: 40 92% 56%;
+  --warning-muted: 40 50% 15%;
+  --info: 215 90% 62%;
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Tabular, monospaced numerals everywhere financial figures appear. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+.font-mono {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Thin, unobtrusive scrollbars that suit a dense dashboard. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.5);
+  background-clip: content-box;
+}
+
+/* Subtle grid texture used behind hero / empty states. */
+.grid-texture {
+  background-image:
+    linear-gradient(hsl(var(--border) / 0.4) 1px, transparent 1px),
+    linear-gradient(90deg, hsl(var(--border) / 0.4) 1px, transparent 1px);
+  background-size: 40px 40px;
+  mask-image: radial-gradient(ellipse at center, black 30%, transparent 75%);
+}
+
+/* Loading shimmer */
+.shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    hsl(var(--foreground) / 0.04),
+    transparent
+  );
+  animation: shimmer 1.6s infinite;
+}
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* Focus ring consistent with the design system */
+:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
