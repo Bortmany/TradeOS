@@ -132,7 +132,7 @@ export default async function JournalPage({
                   const viol = t.violationCount ?? 0;
                   return (
                     <TableRow key={t.id} className="group relative cursor-pointer">
-                      <TableCell className="relative whitespace-nowrap text-muted-foreground">
+                      <TableCell className="whitespace-nowrap text-muted-foreground">
                         <Link
                           href={`/journal/${t.id}`}
                           className="absolute inset-0 z-10"
