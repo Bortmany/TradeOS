@@ -160,7 +160,8 @@ export function BrokerConnect() {
 
         <p className="text-2xs text-muted-foreground">
           Requires a TopstepX API key (Settings → API in TopstepX). Credentials are
-          encrypted at rest. Trades sync on demand — no orders are ever placed.
+          encrypted at rest. Trades sync automatically on a schedule and on demand —
+          no orders are ever placed.
         </p>
       </CardContent>
     </Card>

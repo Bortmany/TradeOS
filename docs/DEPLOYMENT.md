@@ -142,6 +142,29 @@ with feature gating still enforced and checkout shows a "not configured" notice.
 
 ---
 
+## E2. Scheduled broker auto-sync (TopstepX connector)
+
+Connected broker accounts can sync automatically on a schedule:
+
+1. **Set `CRON_SECRET`** in Vercel env vars (`openssl rand -base64 24`).
+   The cron endpoint `GET /api/cron/sync` requires it as a Bearer token —
+   Vercel Cron sends it automatically once the env var exists.
+2. **Schedule:** `vercel.json` already defines a cron hitting
+   `/api/cron/sync` every 30 minutes. **Vercel Hobby plans only allow daily
+   crons** — either change the schedule to `"0 22 * * *"` (once daily, after
+   the futures close) or use a Vercel Pro plan for the 30-minute cadence.
+3. **Verify:** after deploy, run
+   `curl -H "Authorization: Bearer $CRON_SECRET" https://<domain>/api/cron/sync`
+   — you should get a JSON summary (`connections`, `imported`, `failed`).
+   Per-connection failures land in the Import page's Broker API panel as an
+   error status with the reason; they never block other connections.
+4. **Self-hosted alternative:** on a VPS, schedule
+   `npx tsx scripts/sync-all.ts` with system cron instead (see the header of
+   that file for a crontab example). Users can always click **Sync now** in
+   the app regardless of scheduling.
+
+---
+
 ## F. Custom domain & PWA
 
 - **Custom domain:** Vercel project -> **Settings -> Domains -> Add**, then
