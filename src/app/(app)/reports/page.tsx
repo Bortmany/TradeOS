@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { FileDown, ShieldCheck, HeartPulse, AlertTriangle, ClipboardList } from "lucide-react";
+import { ShieldCheck, HeartPulse, AlertTriangle, ClipboardList } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth";
 import { buildReport, type ReportPeriod, type ReportData } from "@/lib/reports";
 import type { TradeRecord } from "@/lib/types";
@@ -8,7 +8,6 @@ import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Stat } from "@/components/ui/stat";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import {
   Table,
@@ -19,12 +18,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/empty-state";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { PrintButton } from "@/components/reports/print-button";
 import {
   cn,
   formatCurrency,
@@ -109,21 +103,7 @@ export default async function ReportsPage({
 }
 
 function ExportButton() {
-  return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span tabIndex={0} className="inline-block">
-            <Button variant="outline" disabled>
-              <FileDown className="h-4 w-4" />
-              Export PDF
-            </Button>
-          </span>
-        </TooltipTrigger>
-        <TooltipContent>PDF export coming soon</TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  );
+  return <PrintButton />;
 }
 
 function ReportBody({ report, periodLabel }: { report: ReportData; periodLabel: string }) {

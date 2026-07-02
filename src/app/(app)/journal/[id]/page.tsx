@@ -4,8 +4,10 @@ import { ArrowLeft, CheckCircle2, XCircle, MinusCircle } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth";
 import { getTradeDetail } from "@/lib/journal";
 import { TradeContextChart } from "@/components/journal/trade-context-chart";
+import { TradeReplay } from "@/components/journal/trade-replay";
 import { TradeEditor } from "@/components/journal/trade-editor";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { pointMultiplier } from "@/lib/ingestion/symbols";
 import {
@@ -102,21 +104,42 @@ export default async function TradeDetailPage({
         <div className="space-y-6 lg:col-span-2">
           <Card>
             <CardHeader>
-              <CardTitle>Price Context</CardTitle>
+              <CardTitle>Price Action</CardTitle>
               <p className="text-sm text-muted-foreground">
                 Illustrative path around your fills — synthesized from this trade&apos;s prices &amp;
                 times, not live market data.
               </p>
             </CardHeader>
             <CardContent>
-              <TradeContextChart
-                tradeId={trade.id}
-                side={trade.side}
-                entryPrice={trade.entryPrice}
-                exitPrice={trade.exitPrice}
-                isWin={trade.isWin}
-                pnl={trade.pnl}
-              />
+              <Tabs defaultValue="context">
+                <TabsList className="mb-4">
+                  <TabsTrigger value="context">Context</TabsTrigger>
+                  <TabsTrigger value="replay">Replay</TabsTrigger>
+                </TabsList>
+                <TabsContent value="context">
+                  <TradeContextChart
+                    tradeId={trade.id}
+                    side={trade.side}
+                    entryPrice={trade.entryPrice}
+                    exitPrice={trade.exitPrice}
+                    isWin={trade.isWin}
+                    pnl={trade.pnl}
+                  />
+                </TabsContent>
+                <TabsContent value="replay">
+                  <TradeReplay
+                    id={trade.id}
+                    symbol={trade.symbol}
+                    side={trade.side}
+                    entryPrice={trade.entryPrice}
+                    exitPrice={trade.exitPrice}
+                    entryTime={trade.entryTime}
+                    exitTime={trade.exitTime}
+                    quantity={trade.quantity}
+                    pnl={trade.pnl}
+                  />
+                </TabsContent>
+              </Tabs>
             </CardContent>
           </Card>
 

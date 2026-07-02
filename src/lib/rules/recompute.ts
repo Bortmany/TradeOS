@@ -13,6 +13,7 @@ import type { Side, TradeSource, Severity, RuleType, TradeRecord } from "@/lib/t
 import { evaluateTrades, etDayKey, type RuleLike, type EvalResult, type EvalContext } from "./engine";
 import { coerceConfig } from "./config";
 import { computeDisciplineScore } from "@/lib/discipline/score";
+import { generateAlerts } from "@/lib/alerts/generate";
 
 export async function recomputeUserCompliance(userId: string): Promise<void> {
   // ---- load ---------------------------------------------------------------
@@ -127,6 +128,9 @@ export async function recomputeUserCompliance(userId: string): Promise<void> {
 
   // ---- discipline snapshots ----------------------------------------------
   await writeSnapshots(userId, trades, evalsByTrade, tradeById);
+
+  // ---- behavioral / risk alerts (Phase 2 backend flags) ------------------
+  await generateAlerts(userId);
 }
 
 // --------------------------------------------------------------------------

@@ -25,12 +25,32 @@ export function PlanCards({ currentPlan }: { currentPlan: Plan }) {
         body: JSON.stringify({ plan }),
       });
       const json = await res.json();
-      // Stripe isn't wired — surface the stub message gracefully.
+      // When Stripe is configured the API returns a checkout URL to redirect to;
+      // otherwise it returns a graceful "not configured" message we surface.
+      if (json.ok && json.url) {
+        window.location.href = json.url as string;
+        return;
+      }
       setNotice(json.message ?? "Checkout is not available right now.");
     } catch {
       setNotice("Network error. Please try again.");
     } finally {
       setBusy(null);
+    }
+  }
+
+  async function onManage() {
+    setNotice(null);
+    try {
+      const res = await fetch("/api/billing/portal", { method: "POST" });
+      const json = await res.json();
+      if (json.ok && json.url) {
+        window.location.href = json.url as string;
+        return;
+      }
+      setNotice(json.message ?? "Subscription management isn't available yet.");
+    } catch {
+      setNotice("Network error. Please try again.");
     }
   }
 
@@ -83,9 +103,15 @@ export function PlanCards({ currentPlan }: { currentPlan: Plan }) {
                 </ul>
                 <div className="pt-5">
                   {isCurrent ? (
-                    <Button variant="outline" className="w-full" disabled>
-                      Current plan
-                    </Button>
+                    id === "free" ? (
+                      <Button variant="outline" className="w-full" disabled>
+                        Current plan
+                      </Button>
+                    ) : (
+                      <Button variant="outline" className="w-full" onClick={onManage}>
+                        Manage subscription
+                      </Button>
+                    )
                   ) : (
                     <Button
                       variant={plan.highlighted ? "default" : "secondary"}

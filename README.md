@@ -134,10 +134,23 @@ enforces gating today and lights up checkout when keys are added.
   depends on AI.
 
 ## Roadmap
-- **Phase 1 (this MVP):** auth, CSV import, journal, analytics, rule engine,
+- **Phase 1 (MVP):** auth, CSV import, journal, analytics, rule engine,
   discipline score, prop tracker, seed data. ✅
-- **Phase 2:** live API connectors, richer rule-builder, real-time alerts.
-- **Phase 3:** trade replay, screenshot analysis, advanced risk (Monte Carlo).
-- **Phase 4:** AI coaching layer, native iOS/Android (the web app is PWA-ready).
+- **Phase 2:** alerts engine (deterministic backend flags — daily-loss/drawdown/
+  overtrading/violations, wired into recompute ✅), no-code rule builder ✅,
+  account comparisons ✅. *Remaining: live broker API connectors.*
+- **Phase 3:** trade replay (schematic playback ✅), reports → PDF (print
+  pipeline ✅). *Remaining: screenshot analysis, Monte-Carlo risk-of-ruin.*
+- **Phase 4:** Stripe billing (env-gated: checkout, webhook, customer portal ✅),
+  AI coaching layer (provider interface + disabled default ✅ — no AI dependency
+  in core). *Remaining: real AI provider, native iOS/Android (web is PWA-ready).*
+
+### Enabling the env-gated pieces
+- **Stripe:** set `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and the
+  `NEXT_PUBLIC_STRIPE_PRICE_PRO/ELITE` price ids. Checkout, the customer portal,
+  and subscription-sync webhooks activate automatically; until then the UI shows
+  a graceful "not configured" notice and gating still works.
+- **AI coaching:** implement a `CoachingProvider` (see `src/lib/ai/types.ts`),
+  register it in `src/lib/ai/index.ts`, and set `AI_COACHING_ENABLED=true`.
 
 *For educational analytics only. Not financial advice.*

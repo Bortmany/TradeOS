@@ -156,3 +156,44 @@ body {
   outline: 2px solid hsl(var(--ring));
   outline-offset: 2px;
 }
+
+/* ---------------------------------------------------------------------------
+   Print styles — used by the Reports "Export PDF" (window.print) flow.
+   Re-theme to a clean light layout and drop the app chrome so a saved PDF is
+   a proper report, while keeping profit/loss color semantics intact.
+--------------------------------------------------------------------------- */
+@media print {
+  :root,
+  .dark {
+    --background: 0 0% 100%;
+    --foreground: 222 24% 12%;
+    --surface: 0 0% 100%;
+    --surface-raised: 0 0% 100%;
+    --surface-overlay: 0 0% 100%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 24% 12%;
+    --muted: 210 16% 96%;
+    --muted-foreground: 220 9% 40%;
+    --border: 220 13% 85%;
+    --profit: 152 58% 34%;
+    --loss: 356 66% 46%;
+    --warning: 38 92% 40%;
+  }
+  html {
+    color-scheme: light;
+  }
+  aside,
+  header,
+  .print\:hidden {
+    display: none !important;
+  }
+  main {
+    padding: 0 !important;
+  }
+  .container {
+    max-width: 100% !important;
+  }
+  .grid-texture {
+    display: none !important;
+  }
+}
