@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Wallet } from "lucide-react";
 import Link from "next/link";
 import { ImportWizard } from "@/components/import/import-wizard";
+import { BrokerConnect } from "@/components/import/broker-connect";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +45,8 @@ export default async function ImportPage() {
           brokers={brokers}
         />
       )}
+
+      <BrokerConnect />
     </div>
   );
 }

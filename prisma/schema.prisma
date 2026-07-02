@@ -47,6 +47,7 @@ model User {
   propAccounts    PropAccount[]
   alerts          Alert[]
   sessions        Session[]
+  brokerConnections BrokerConnection[]
 
   @@index([email])
 }
@@ -84,6 +85,7 @@ model TradingAccount {
   trades      Trade[]
   propAccount PropAccount?
   alerts      Alert[]
+  brokerConnection BrokerConnection?
 
   @@index([userId])
 }
@@ -295,6 +297,36 @@ model PropAccount {
   consistencyPct    Float?
   // phase: evaluation | funded | passed | failed
   phase             String    @default("evaluation")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+}
+
+// --------------------------------------------------------------------------
+// Broker API connections (Phase 2 — live connectors)
+// --------------------------------------------------------------------------
+
+model BrokerConnection {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountId   String   @unique
+  account     TradingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  broker      String   // topstepx (ProjectX gateway) — more adapters later
+  baseUrl     String   @default("https://api.topstepx.com")
+  username    String
+  // API key encrypted at rest (AES-256-GCM, key derived from AUTH_SECRET)
+  apiKeyEnc   String
+  // The broker-side account this connection maps to
+  externalAccountId   String
+  externalAccountName String?
+
+  // status: connected | error
+  status      String   @default("connected")
+  lastSyncAt  DateTime?
+  lastError   String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

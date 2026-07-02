@@ -89,8 +89,12 @@ prisma/
 ### Core systems
 - **Ingestion** — modular `BrokerAdapter`s for TopstepX/ProjectX, Tradovate,
   NinjaTrader, Rithmic, IBKR, plus a generic column-mapper. Everything normalizes
-  into one internal `Trade` schema. CSV + manual entry today; the adapter
-  registry is ready for API connectors.
+  into one internal `Trade` schema. CSV + manual entry, plus a **live TopstepX
+  API connector** (ProjectX Gateway): username + API key → account discovery →
+  on-demand sync. Fills are FIFO-paired into round trips (scale-ins, partial
+  closes, and reversals handled; fixture-tested), deduped by fill id, and
+  credentials are AES-256-GCM encrypted at rest. Read-only — no orders are ever
+  placed. Connect it from **Import → Broker API**.
 - **Rule engine** — no-code rules (time windows, risk/loss limits, max
   trades/contracts, anti-revenge/overtrading behavioral rules, indicator &
   setup-validation). Every trade gets pass/fail per rule + an auditable
@@ -138,7 +142,9 @@ enforces gating today and lights up checkout when keys are added.
   discipline score, prop tracker, seed data. ✅
 - **Phase 2:** alerts engine (deterministic backend flags — daily-loss/drawdown/
   overtrading/violations, wired into recompute ✅), no-code rule builder ✅,
-  account comparisons ✅. *Remaining: live broker API connectors.*
+  account comparisons ✅, **live TopstepX/ProjectX API connector** ✅ (verified
+  end-to-end against a mock gateway; needs a real API key for live use).
+  *Remaining: more live connectors (Tradovate, Rithmic).*
 - **Phase 3:** trade replay (schematic playback ✅), reports → PDF (print
   pipeline ✅). *Remaining: screenshot analysis, Monte-Carlo risk-of-ruin.*
 - **Phase 4:** Stripe billing (env-gated: checkout, webhook, customer portal ✅),
