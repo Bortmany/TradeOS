@@ -126,6 +126,13 @@ enforces gating today and lights up checkout when keys are added.
 
 ---
 
+## Deploying
+
+- **Railway (recommended):** persistent server + Postgres in one project,
+  in-process broker auto-sync, no cron setup — see `docs/DEPLOYMENT-RAILWAY.md`.
+- **Vercel + Supabase:** serverless alternative with Vercel Cron for auto-sync —
+  see `docs/DEPLOYMENT.md`.
+
 ## Swapping in production services
 
 - **Postgres / Supabase:** change the `provider` in `prisma/schema.prisma` to
