@@ -7,7 +7,9 @@
 // before the previous sync's cutoff — at the cost of a slightly larger fetch,
 // which is negligible for a single trading account.
 
-import "server-only";
+// NOTE: intentionally NOT importing "server-only" — this module is shared by
+// Next.js route handlers, the in-process auto-sync scheduler, and the
+// standalone scripts/sync-all.ts cron script (plain Node via tsx).
 import { prisma } from "@/lib/db";
 import { decryptSecret } from "@/lib/crypto";
 import {
@@ -35,7 +37,15 @@ export async function syncConnection(
   if (!conn) throw new ConnectorError("Connection not found.");
 
   try {
-    const apiKey = decryptSecret(conn.apiKeyEnc);
+    let apiKey: string;
+    try {
+      apiKey = decryptSecret(conn.apiKeyEnc);
+    } catch {
+      throw new ConnectorError(
+        "Stored credentials could not be decrypted (was AUTH_SECRET rotated?). Disconnect and reconnect this account.",
+        "auth"
+      );
+    }
     const token = await pxLogin(conn.baseUrl, conn.username, apiKey);
     const start = new Date(Date.now() - WINDOW_DAYS * 86_400_000);
     const fills = await pxSearchTrades(
