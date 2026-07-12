@@ -6,6 +6,7 @@ import { useState } from "react";
 import { LogOut, ChevronDown, Sparkles, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { cn } from "@/lib/utils";
 
 interface TopbarProps {
@@ -49,6 +50,8 @@ export function Topbar({ user, trialDaysLeft }: TopbarProps) {
             <span className="hidden sm:inline">Import</span>
           </Link>
         </Button>
+
+        <ThemeToggle />
 
         <div className="relative">
           <button

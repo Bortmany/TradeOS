@@ -97,9 +97,9 @@ function NavLink({
       <Link
         href={href}
         className={cn(
-          "group flex items-center gap-3 rounded-md px-2.5 py-2 text-sm font-medium transition-colors",
+          "group relative flex items-center gap-3 rounded-md px-2.5 py-2 text-sm font-medium transition-colors",
           active
-            ? "bg-accent text-foreground"
+            ? "bg-accent text-foreground before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-primary"
             : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
         )}
       >
