@@ -71,7 +71,12 @@ export default async function PropPage() {
           <EmptyState
             icon={<Landmark className="h-8 w-8" />}
             title="No prop accounts tracked"
-            description="Attach a prop-firm ruleset to a trading account to monitor your drawdown buffer, daily-loss limit, and profit target in real time."
+            description="Know exactly how close you are to a breach — before the firm tells you."
+            steps={[
+              { label: "Add an evaluation or funded account under Accounts" },
+              { label: "Attach its prop-firm ruleset (drawdown, daily loss, target)" },
+              { label: "Every buffer updates here with each imported trade" },
+            ]}
             action={
               <Button asChild>
                 <Link href="/accounts">Connect a prop account</Link>
@@ -80,11 +85,47 @@ export default async function PropPage() {
           />
         </div>
       ) : (
-        <div className="grid gap-6 xl:grid-cols-2">
-          {statuses.map((s) => (
-            <PropCard key={s.id} s={s} />
-          ))}
-        </div>
+        <>
+          {/* Status strip — one honest count per compliance state */}
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {(Object.keys(STATUS_META) as PropStatusLevel[]).map((level) => {
+              const meta = STATUS_META[level];
+              const count = statuses.filter((s) => s.status === level).length;
+              const Icon = meta.icon;
+              return (
+                <Card key={level}>
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <p className="text-2xs font-medium uppercase tracking-wide text-muted-foreground">
+                        {meta.label}
+                      </p>
+                      <Icon
+                        className={cn(
+                          "h-4 w-4",
+                          count > 0 ? meta.iconClass : "text-muted-foreground"
+                        )}
+                      />
+                    </div>
+                    <p
+                      className={cn(
+                        "mt-2 text-2xl font-semibold tabular",
+                        count > 0 ? meta.iconClass : "text-muted-foreground"
+                      )}
+                    >
+                      {count}
+                    </p>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+
+          <div className="grid gap-6 xl:grid-cols-2">
+            {statuses.map((s) => (
+              <PropCard key={s.id} s={s} />
+            ))}
+          </div>
+        </>
       )}
     </div>
   );

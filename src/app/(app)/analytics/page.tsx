@@ -58,6 +58,11 @@ export default async function AnalyticsPage({
             icon={<BarChart3 className="h-8 w-8" />}
             title="No trades to analyze"
             description="Import trades or log one manually to unlock the full analytics suite."
+            steps={[
+              { label: "Import trades from your broker (or load the sample set)" },
+              { label: "Define your rulebook in the Rule Engine" },
+              { label: "Dissect your edge by hour, weekday, session and strategy" },
+            ]}
           />
         </div>
       </div>
@@ -86,7 +91,7 @@ export default async function AnalyticsPage({
           </p>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-3 lg:grid-cols-5">
+          <div className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3 lg:grid-cols-5">
             <Stat
               label="Expectancy"
               value={formatCurrency(m.expectancy, { sign: true })}
@@ -162,7 +167,7 @@ export default async function AnalyticsPage({
           </div>
         </CardHeader>
         <CardContent>
-          <DrawdownChart data={data.drawdown} height={260} />
+          <DrawdownChart data={data.drawdown} height={220} />
         </CardContent>
       </Card>
 
@@ -174,7 +179,7 @@ export default async function AnalyticsPage({
             <p className="mt-0.5 text-sm text-muted-foreground">ET hour of entry</p>
           </CardHeader>
           <CardContent>
-            <BucketBar data={data.byHour} height={240} />
+            <BucketBar data={data.byHour} height={180} />
           </CardContent>
         </Card>
         <Card>
@@ -183,7 +188,7 @@ export default async function AnalyticsPage({
             <p className="mt-0.5 text-sm text-muted-foreground">P&L by day of week</p>
           </CardHeader>
           <CardContent>
-            <BucketBar data={data.byWeekday} height={240} />
+            <BucketBar data={data.byWeekday} height={180} />
           </CardContent>
         </Card>
         <Card>
@@ -192,7 +197,7 @@ export default async function AnalyticsPage({
             <p className="mt-0.5 text-sm text-muted-foreground">US futures sessions</p>
           </CardHeader>
           <CardContent>
-            <BucketBar data={data.bySession} layout="vertical" height={240} />
+            <BucketBar data={data.bySession} layout="vertical" height={180} />
           </CardContent>
         </Card>
       </div>
@@ -206,7 +211,7 @@ export default async function AnalyticsPage({
           </p>
         </CardHeader>
         <CardContent className="grid gap-6 lg:grid-cols-2">
-          <BucketBar data={data.byStrategy} layout="vertical" height={260} />
+          <BucketBar data={data.byStrategy} layout="vertical" height={220} />
           <BreakdownTable rows={data.byStrategy} label="Strategy" />
         </CardContent>
       </Card>

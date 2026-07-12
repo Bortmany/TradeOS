@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export default function AppError({
@@ -16,7 +17,10 @@ export default function AppError({
 
   return (
     <div className="container flex min-h-[60vh] max-w-md flex-col items-center justify-center text-center">
-      <h2 className="text-lg font-semibold">Something went wrong</h2>
+      <div className="flex h-11 w-11 items-center justify-center rounded-full bg-loss-muted text-loss">
+        <AlertTriangle className="h-5 w-5" />
+      </div>
+      <h2 className="mt-4 text-lg font-semibold">Something went wrong</h2>
       <p className="mt-1.5 text-sm text-muted-foreground">
         We hit an error rendering this view. Try again — if it persists, re-seed
         your data or reload.
@@ -24,6 +28,11 @@ export default function AppError({
       <Button onClick={reset} className="mt-5">
         Try again
       </Button>
+      {error.digest && (
+        <p className="mt-4 text-2xs uppercase tracking-wide text-muted-foreground/60">
+          Ref <span className="tabular normal-case">{error.digest}</span>
+        </p>
+      )}
     </div>
   );
 }

@@ -289,6 +289,8 @@ export function TradeReplay({
           fill="currentColor"
           fillOpacity={0.04}
         />
+        {/* In-trade region — fill strength follows the theme token so the
+            shading reads correctly on both paper-white and near-black. */}
         <rect
           x={model.entryX}
           y={M.top}
@@ -296,7 +298,7 @@ export function TradeReplay({
           height={H - M.top - M.bottom}
           className={outcomeClass}
           fill="currentColor"
-          fillOpacity={0.1}
+          style={{ fillOpacity: "var(--chart-area-opacity)" }}
         />
         {!open && (
           <rect

@@ -22,7 +22,7 @@ export default async function AuthLayout({
           <span className="font-semibold tracking-tight">TradeOS</span>
         </Link>
         <div className="flex flex-1 items-center justify-center">
-          <div className="w-full max-w-sm">{children}</div>
+          <div className="w-full max-w-md">{children}</div>
         </div>
       </div>
 

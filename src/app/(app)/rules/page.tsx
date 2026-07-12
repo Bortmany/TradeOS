@@ -22,7 +22,15 @@ import {
   AddRuleButton,
   RuleRowActions,
 } from "@/components/rules/rule-manager";
-import { cn, scoreColor } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+
+// Score-band text color — same >=80 / 60-79 / <60 bands as the dashboard's
+// ScoreRing/ScoreMeter, using the shared --score-* tokens.
+function scoreText(score: number): string {
+  if (score >= 80) return "text-score-high";
+  if (score >= 60) return "text-score-mid";
+  return "text-score-low";
+}
 
 export const dynamic = "force-dynamic";
 
@@ -67,8 +75,13 @@ export default async function RulesPage() {
         <div className="mt-6">
           <EmptyState
             icon={<ShieldCheck className="h-8 w-8" />}
-            title="No rulebooks yet"
-            description="Create your first rulebook to codify your trading plan — time windows, risk limits, max contracts, behavioral guardrails, and more."
+            title="Codify your trading plan"
+            description="Rulebooks turn your plan into deterministic rules that grade every trade — no black box."
+            steps={[
+              { label: "Create a rulebook (per strategy, account, or all trades)" },
+              { label: "Add rules — time windows, risk limits, behavioral guardrails" },
+              { label: "Every trade gets graded automatically into your discipline score" },
+            ]}
             action={<NewRuleBookButton />}
           />
         </div>
@@ -79,7 +92,7 @@ export default async function RulesPage() {
             <SummaryStat
               label="Overall Adherence"
               value={`${adherence}%`}
-              valueClass={scoreColor(adherence)}
+              valueClass={scoreText(adherence)}
               icon={ShieldCheck}
             />
             <SummaryStat
@@ -185,7 +198,11 @@ function RuleRow({ bookId, rule }: { bookId: string; rule: RuleWithStats }) {
           <div
             className={cn(
               "h-full rounded-full",
-              rule.adherence >= 80 ? "bg-profit" : rule.adherence >= 60 ? "bg-warning" : "bg-loss"
+              rule.adherence >= 80
+                ? "bg-score-high"
+                : rule.adherence >= 60
+                  ? "bg-score-mid"
+                  : "bg-score-low"
             )}
             style={{ width: `${rule.adherence}%` }}
           />

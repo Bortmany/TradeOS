@@ -238,7 +238,7 @@ export function RuleBookActiveToggle({ id, isActive }: { id: string; isActive: b
     >
       <span
         className={cn(
-          "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
+          "inline-block h-4 w-4 transform rounded-full bg-background shadow-sm ring-1 ring-border transition-transform",
           on ? "translate-x-4" : "translate-x-0.5"
         )}
       />

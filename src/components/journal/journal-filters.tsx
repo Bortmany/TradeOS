@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
-import { Wallet, Tag, LineChart, Trophy, Radio, X } from "lucide-react";
+import { SlidersHorizontal, Wallet, Tag, LineChart, Trophy, Radio, X } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -59,11 +59,18 @@ export function JournalFilters({
     outcome !== ALL ||
     source !== ALL;
 
+  const triggerClass = "h-8 gap-2 border-border bg-surface text-xs";
+
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface px-2.5 py-2">
+      <span className="flex items-center gap-1.5 pl-1 pr-1 text-2xs font-medium uppercase tracking-wide text-muted-foreground">
+        <SlidersHorizontal className="h-3.5 w-3.5" />
+        Filters
+      </span>
+
       <Select value={account} onValueChange={(v) => setParam("account", v)}>
-        <SelectTrigger className="h-9 w-[160px] gap-2">
-          <Wallet className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <SelectTrigger className={`${triggerClass} w-[160px]`}>
+          <Wallet className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           <SelectValue placeholder="All accounts" />
         </SelectTrigger>
         <SelectContent>
@@ -77,8 +84,8 @@ export function JournalFilters({
       </Select>
 
       <Select value={symbol} onValueChange={(v) => setParam("symbol", v)}>
-        <SelectTrigger className="h-9 w-[130px] gap-2">
-          <LineChart className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <SelectTrigger className={`${triggerClass} w-[124px]`}>
+          <LineChart className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           <SelectValue placeholder="All symbols" />
         </SelectTrigger>
         <SelectContent>
@@ -92,8 +99,8 @@ export function JournalFilters({
       </Select>
 
       <Select value={strategy} onValueChange={(v) => setParam("strategy", v)}>
-        <SelectTrigger className="h-9 w-[150px] gap-2">
-          <Tag className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <SelectTrigger className={`${triggerClass} w-[148px]`}>
+          <Tag className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           <SelectValue placeholder="All strategies" />
         </SelectTrigger>
         <SelectContent>
@@ -107,8 +114,8 @@ export function JournalFilters({
       </Select>
 
       <Select value={outcome} onValueChange={(v) => setParam("outcome", v)}>
-        <SelectTrigger className="h-9 w-[130px] gap-2">
-          <Trophy className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <SelectTrigger className={`${triggerClass} w-[124px]`}>
+          <Trophy className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           <SelectValue placeholder="All outcomes" />
         </SelectTrigger>
         <SelectContent>
@@ -119,8 +126,8 @@ export function JournalFilters({
       </Select>
 
       <Select value={source} onValueChange={(v) => setParam("source", v)}>
-        <SelectTrigger className="h-9 w-[130px] gap-2">
-          <Radio className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <SelectTrigger className={`${triggerClass} w-[124px]`}>
+          <Radio className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           <SelectValue placeholder="All sources" />
         </SelectTrigger>
         <SelectContent>
@@ -138,9 +145,9 @@ export function JournalFilters({
           variant="ghost"
           size="sm"
           onClick={() => router.push(pathname)}
-          className="text-muted-foreground"
+          className="h-8 text-xs text-muted-foreground"
         >
-          <X className="h-4 w-4" />
+          <X className="h-3.5 w-3.5" />
           Clear
         </Button>
       )}

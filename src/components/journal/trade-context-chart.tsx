@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { formatNumber } from "@/lib/utils";
 
 // Schematic, deterministic price-context chart. There is NO live market data in
 // TradeOS's MVP, so we synthesize a plausible-looking intrabar path from the
@@ -17,8 +18,8 @@ interface Props {
 }
 
 const W = 640;
-const H = 260;
-const M = { top: 18, right: 16, bottom: 24, left: 16 };
+const H = 300;
+const M = { top: 22, right: 16, bottom: 24, left: 16 };
 
 function hashSeed(str: string): number {
   let h = 2166136261;
@@ -136,6 +137,8 @@ export function TradeContextChart({ tradeId, side, entryPrice, exitPrice, isWin,
           fill="currentColor"
           fillOpacity={0.04}
         />
+        {/* During-trade region — fill strength follows the theme token so the
+            shading reads correctly on both paper-white and near-black. */}
         <rect
           x={model.entryX}
           y={M.top}
@@ -143,7 +146,7 @@ export function TradeContextChart({ tradeId, side, entryPrice, exitPrice, isWin,
           height={H - M.top - M.bottom}
           className={outcomeClass}
           fill="currentColor"
-          fillOpacity={0.1}
+          style={{ fillOpacity: "var(--chart-area-opacity)" }}
         />
         <rect
           x={model.exitX}
@@ -155,7 +158,7 @@ export function TradeContextChart({ tradeId, side, entryPrice, exitPrice, isWin,
           fillOpacity={0.04}
         />
 
-        {/* Entry / exit guide lines */}
+        {/* Entry / exit guide lines with price labels */}
         <line
           x1={model.entryX}
           x2={model.entryX}
@@ -165,16 +168,38 @@ export function TradeContextChart({ tradeId, side, entryPrice, exitPrice, isWin,
           stroke="currentColor"
           strokeDasharray="3 3"
         />
+        <text
+          x={model.entryX - 5}
+          y={M.top - 8}
+          textAnchor="end"
+          fontSize={10}
+          className="text-muted-foreground tabular"
+          fill="currentColor"
+        >
+          Entry {formatNumber(entryPrice, 2)}
+        </text>
         {!model.open && (
-          <line
-            x1={model.exitX}
-            x2={model.exitX}
-            y1={M.top}
-            y2={H - M.bottom}
-            className="text-border"
-            stroke="currentColor"
-            strokeDasharray="3 3"
-          />
+          <>
+            <line
+              x1={model.exitX}
+              x2={model.exitX}
+              y1={M.top}
+              y2={H - M.bottom}
+              className="text-border"
+              stroke="currentColor"
+              strokeDasharray="3 3"
+            />
+            <text
+              x={model.exitX + 5}
+              y={M.top - 8}
+              textAnchor="start"
+              fontSize={10}
+              className={`${outcomeClass} tabular`}
+              fill="currentColor"
+            >
+              Exit {formatNumber(exitPrice as number, 2)}
+            </text>
+          </>
         )}
 
         {/* Full path (context) */}
