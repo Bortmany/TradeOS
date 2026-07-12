@@ -43,57 +43,59 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold tracking-tight">
-        {isRegister ? "Start your free trial" : "Welcome back"}
-      </h1>
-      <p className="mt-1.5 text-sm text-muted-foreground">
-        {isRegister
-          ? "14 days of full access. No card required."
-          : "Sign in to your trading desk."}
-      </p>
+      <div className="card-highlight rounded-xl border border-border bg-card p-6 shadow-sm sm:p-8">
+        <h1 className="text-2xl font-semibold tracking-tight">
+          {isRegister ? "Start your free trial" : "Welcome back"}
+        </h1>
+        <p className="mt-1.5 text-sm text-muted-foreground">
+          {isRegister
+            ? "14 days of full access. No card required."
+            : "Sign in to your trading desk."}
+        </p>
 
-      <form onSubmit={onSubmit} className="mt-6 space-y-4">
-        {isRegister && (
+        <form onSubmit={onSubmit} className="mt-6 space-y-4">
+          {isRegister && (
+            <div className="space-y-1.5">
+              <Label htmlFor="displayName">Name</Label>
+              <Input id="displayName" name="displayName" placeholder="Your name" autoComplete="name" />
+            </div>
+          )}
           <div className="space-y-1.5">
-            <Label htmlFor="displayName">Name</Label>
-            <Input id="displayName" name="displayName" placeholder="Your name" autoComplete="name" />
+            <Label htmlFor="email">Email</Label>
+            <Input
+              id="email"
+              name="email"
+              type="email"
+              required
+              placeholder="you@email.com"
+              autoComplete="email"
+            />
           </div>
-        )}
-        <div className="space-y-1.5">
-          <Label htmlFor="email">Email</Label>
-          <Input
-            id="email"
-            name="email"
-            type="email"
-            required
-            placeholder="you@email.com"
-            autoComplete="email"
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="password">Password</Label>
-          <Input
-            id="password"
-            name="password"
-            type="password"
-            required
-            minLength={isRegister ? 8 : undefined}
-            placeholder={isRegister ? "At least 8 characters" : "••••••••"}
-            autoComplete={isRegister ? "new-password" : "current-password"}
-          />
-        </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="password">Password</Label>
+            <Input
+              id="password"
+              name="password"
+              type="password"
+              required
+              minLength={isRegister ? 8 : undefined}
+              placeholder={isRegister ? "At least 8 characters" : "••••••••"}
+              autoComplete={isRegister ? "new-password" : "current-password"}
+            />
+          </div>
 
-        {error && (
-          <p className="rounded-md border border-loss/30 bg-loss-muted px-3 py-2 text-sm text-loss">
-            {error}
-          </p>
-        )}
+          {error && (
+            <p className="rounded-md border border-loss/30 bg-loss-muted px-3 py-2 text-sm text-loss">
+              {error}
+            </p>
+          )}
 
-        <Button type="submit" className="w-full" disabled={loading}>
-          {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-          {isRegister ? "Create account" : "Sign in"}
-        </Button>
-      </form>
+          <Button type="submit" className="w-full" disabled={loading}>
+            {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+            {isRegister ? "Create account" : "Sign in"}
+          </Button>
+        </form>
+      </div>
 
       <p className="mt-6 text-center text-sm text-muted-foreground">
         {isRegister ? (

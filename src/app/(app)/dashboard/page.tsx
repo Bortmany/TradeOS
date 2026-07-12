@@ -55,8 +55,13 @@ export default async function DashboardPage({
         <div className="mt-10">
           <EmptyState
             icon={<Activity className="h-8 w-8" />}
-            title="No trades yet"
-            description="Import a CSV from your broker, add a trade manually, or load a realistic sample dataset to explore every feature in seconds."
+            title="Your discipline score starts here"
+            description="Three steps and every trade you take gets graded against your own rules."
+            steps={[
+              { label: "Import trades from your broker (or load the sample set)" },
+              { label: "Define your rulebook in the Rule Engine" },
+              { label: "Watch your 0–100 discipline score on every trade" },
+            ]}
             action={
               <div className="flex flex-col items-center gap-3 sm:flex-row">
                 <LoadSampleData />
@@ -91,7 +96,38 @@ export default async function DashboardPage({
         <AccountSwitcher accounts={accounts} />
       </PageHeader>
 
-      {/* KPI row */}
+      {/* Discipline hero — the score is the product's anchor metric */}
+      <Card>
+        <CardHeader className="flex-row items-center justify-between">
+          <div>
+            <CardTitle>Discipline Score</CardTitle>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              Every trade graded against your own rulebook — deterministic, no black box.
+            </p>
+          </div>
+          <Button asChild variant="outline" size="sm">
+            <Link href="/rules">Rulebook</Link>
+          </Button>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-6 md:flex-row md:items-center">
+          <div className="flex shrink-0 justify-center md:px-8">
+            <ScoreRing
+              score={data.discipline.overall}
+              size={168}
+              strokeWidth={12}
+              label="Overall"
+            />
+          </div>
+          <div className="hidden h-32 w-px shrink-0 bg-border md:block" />
+          <div className="grid flex-1 gap-x-8 gap-y-4 sm:grid-cols-2">
+            {data.discipline.breakdown.map((b) => (
+              <ScoreMeter key={b.label} label={b.label} score={b.score} detail={b.detail} />
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* KPI row — compact, secondary to the score */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Kpi
           label="Net P&L"
@@ -145,47 +181,6 @@ export default async function DashboardPage({
           </CardContent>
         </Card>
 
-        {/* Discipline */}
-        <Card>
-          <CardHeader className="flex-row items-center justify-between">
-            <CardTitle>Discipline Score</CardTitle>
-            <Link href="/rules" className="text-xs text-primary hover:underline">
-              Rules
-            </Link>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            <div className="flex justify-center">
-              <ScoreRing score={data.discipline.overall} label="Overall" />
-            </div>
-            <div className="space-y-3">
-              {data.discipline.breakdown.map((b) => (
-                <ScoreMeter key={b.label} label={b.label} score={b.score} detail={b.detail} />
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Secondary row */}
-      <div className="grid gap-6 lg:grid-cols-3">
-        <Card>
-          <CardHeader>
-            <CardTitle>P&L by Session</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <BucketBar data={data.bySession} layout="vertical" height={220} />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>P&L by Weekday</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <BucketBar data={data.byWeekday} height={220} />
-          </CardContent>
-        </Card>
-
         {/* Recent violations */}
         <Card>
           <CardHeader className="flex-row items-center justify-between">
@@ -222,6 +217,27 @@ export default async function DashboardPage({
                 </Link>
               ))
             )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Secondary row */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>P&L by Session</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <BucketBar data={data.bySession} layout="vertical" height={220} />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>P&L by Weekday</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <BucketBar data={data.byWeekday} height={220} />
           </CardContent>
         </Card>
       </div>

@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/page-header";
 import { JournalFilters } from "@/components/journal/journal-filters";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import {
   Table,
@@ -23,10 +24,11 @@ export const dynamic = "force-dynamic";
 
 const PAGE_SIZE = 150;
 
-function scoreBadgeVariant(score: number): "profit" | "warning" | "loss" {
-  if (score >= 80) return "profit";
-  if (score >= 60) return "warning";
-  return "loss";
+/** Score-band chip classes — same bands the dashboard ring uses (>=80/60-79/<60). */
+function scoreChipClass(score: number): string {
+  if (score >= 80) return "bg-score-high/15 text-score-high";
+  if (score >= 60) return "bg-score-mid/15 text-score-mid";
+  return "bg-score-low/15 text-score-low";
 }
 
 function isWinner(t: TradeRecord): boolean {
@@ -96,15 +98,34 @@ export default async function JournalPage({
       {rows.length === 0 ? (
         <Card>
           <CardContent className="p-0">
-            <EmptyState
-              icon={<BookOpen className="h-8 w-8" />}
-              title="No trades match these filters"
-              description={
-                accountTrades.length === 0
-                  ? "Import a CSV or log a trade to start building your journal."
-                  : "Try widening or clearing the filters above."
-              }
-            />
+            {accountTrades.length === 0 ? (
+              <EmptyState
+                icon={<BookOpen className="h-8 w-8" />}
+                title="Your journal is empty"
+                description="Three steps and every trade you take gets graded against your own rules."
+                steps={[
+                  { label: "Import trades from your broker CSV" },
+                  { label: "Define your rulebook in the Rule Engine" },
+                  { label: "See a 0–100 discipline score on every trade" },
+                ]}
+                action={
+                  <div className="flex flex-col items-center gap-3 sm:flex-row">
+                    <Button asChild>
+                      <Link href="/import">Import your trades</Link>
+                    </Button>
+                    <Button asChild variant="secondary">
+                      <Link href="/rules">Open the Rulebook</Link>
+                    </Button>
+                  </div>
+                }
+              />
+            ) : (
+              <EmptyState
+                icon={<BookOpen className="h-8 w-8" />}
+                title="No trades match these filters"
+                description="Try widening or clearing the filters above."
+              />
+            )}
           </CardContent>
         </Card>
       ) : (
@@ -132,7 +153,7 @@ export default async function JournalPage({
                   const viol = t.violationCount ?? 0;
                   return (
                     <TableRow key={t.id} className="group relative cursor-pointer">
-                      <TableCell className="whitespace-nowrap text-muted-foreground">
+                      <TableCell className="whitespace-nowrap text-xs tabular text-muted-foreground">
                         <Link
                           href={`/journal/${t.id}`}
                           className="absolute inset-0 z-10"
@@ -142,14 +163,18 @@ export default async function JournalPage({
                       </TableCell>
                       <TableCell className="font-medium">{t.symbol}</TableCell>
                       <TableCell>
-                        <Badge variant={t.side === "long" ? "profit" : "loss"}>
+                        <span
+                          className={`text-2xs font-semibold uppercase tracking-wide ${
+                            t.side === "long" ? "text-profit" : "text-loss"
+                          }`}
+                        >
                           {t.side}
-                        </Badge>
+                        </span>
                       </TableCell>
                       <TableCell className="text-right tabular">
                         {formatNumber(t.quantity)}
                       </TableCell>
-                      <TableCell className="text-right tabular text-muted-foreground">
+                      <TableCell className="whitespace-nowrap text-right tabular text-muted-foreground">
                         {formatNumber(t.entryPrice, 2)}
                         <span className="mx-1 text-muted-foreground/50">→</span>
                         {open ? (
@@ -165,25 +190,29 @@ export default async function JournalPage({
                         {score == null ? (
                           <span className="text-2xs text-muted-foreground">—</span>
                         ) : (
-                          <Badge variant={scoreBadgeVariant(score)} className="tabular">
+                          <span
+                            className={`inline-flex min-w-[2rem] justify-center rounded px-1.5 py-0.5 text-2xs font-semibold tabular ${scoreChipClass(score)}`}
+                          >
                             {score}
-                          </Badge>
+                          </span>
                         )}
                       </TableCell>
                       <TableCell>
                         {t.strategyTag ? (
-                          <Badge variant="secondary">{t.strategyTag}</Badge>
+                          <Badge variant="secondary" className="normal-case tracking-normal">
+                            {t.strategyTag}
+                          </Badge>
                         ) : (
                           <span className="text-2xs text-muted-foreground">—</span>
                         )}
                       </TableCell>
                       <TableCell className="text-center">
                         {viol > 0 ? (
-                          <Badge variant="loss" className="tabular">
+                          <span className="inline-flex min-w-[1.5rem] justify-center rounded bg-loss-muted px-1.5 py-0.5 text-2xs font-semibold tabular text-loss">
                             {viol}
-                          </Badge>
+                          </span>
                         ) : (
-                          <span className="text-2xs text-muted-foreground">0</span>
+                          <span className="text-2xs tabular text-muted-foreground/60">0</span>
                         )}
                       </TableCell>
                       <TableCell className="text-right">

@@ -18,6 +18,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Button } from "@/components/ui/button";
 import { PrintButton } from "@/components/reports/print-button";
 import {
   cn,
@@ -54,12 +55,12 @@ export default async function ReportsPage({
   const report = await buildReport(user.id, period, account);
 
   return (
-    <div className="container max-w-5xl space-y-6 py-6">
+    <div className="container max-w-7xl space-y-6 py-6">
       <PageHeader
         title="Reports"
         description="Print-ready performance & compliance summaries."
       >
-        <ExportButton />
+        <PrintButton />
       </PageHeader>
 
       {/* Server-driven tabs */}
@@ -94,6 +95,11 @@ export default async function ReportsPage({
           icon={<ClipboardList className="h-8 w-8" />}
           title={`No trades in this ${active.label.toLowerCase()} window`}
           description="Nothing to report for the selected period. Try a wider window or import more trades."
+          action={
+            <Button asChild variant="secondary" className="print:hidden">
+              <Link href="/import">Import trades</Link>
+            </Button>
+          }
         />
       ) : (
         <ReportBody report={report} periodLabel={active.label} />
@@ -102,21 +108,24 @@ export default async function ReportsPage({
   );
 }
 
-function ExportButton() {
-  return <PrintButton />;
-}
-
 function ReportBody({ report, periodLabel }: { report: ReportData; periodLabel: string }) {
   const m = report.metrics;
   return (
     <div className="space-y-6">
-      {/* Performance summary */}
+      {/* Performance summary — the date range lives here (not only in the
+          screen-only tab row) so a printed report still states its window. */}
       <Card>
-        <CardHeader>
-          <CardTitle>{periodLabel} Performance</CardTitle>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            {report.tradeCount} trades · {m.tradeCount} closed
-          </p>
+        <CardHeader className="flex-row items-center justify-between">
+          <div>
+            <CardTitle>{periodLabel} Performance</CardTitle>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              {formatDate(report.from)} – {formatDate(report.to)} · {report.tradeCount}{" "}
+              trades · {m.tradeCount} closed
+            </p>
+          </div>
+          <Badge variant={m.netPnl >= 0 ? "profit" : "loss"} className="tabular">
+            {formatCurrency(m.netPnl, { sign: true })}
+          </Badge>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-4">

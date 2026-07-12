@@ -84,7 +84,12 @@ export function TradeEditor({ tradeId, notes, emotions, strategyTag }: Props) {
   return (
     <div className="space-y-4">
       <div className="space-y-1.5">
-        <Label htmlFor="strategyTag">Strategy tag</Label>
+        <Label
+          htmlFor="strategyTag"
+          className="text-2xs uppercase tracking-wide text-muted-foreground"
+        >
+          Strategy tag
+        </Label>
         <Input
           id="strategyTag"
           value={strategyVal}
@@ -94,7 +99,12 @@ export function TradeEditor({ tradeId, notes, emotions, strategyTag }: Props) {
       </div>
 
       <div className="space-y-1.5">
-        <Label htmlFor="emotions">Emotions</Label>
+        <Label
+          htmlFor="emotions"
+          className="text-2xs uppercase tracking-wide text-muted-foreground"
+        >
+          Emotions
+        </Label>
         <Input
           id="emotions"
           value={emotionsVal}
@@ -113,7 +123,12 @@ export function TradeEditor({ tradeId, notes, emotions, strategyTag }: Props) {
       </div>
 
       <div className="space-y-1.5">
-        <Label htmlFor="notes">Notes</Label>
+        <Label
+          htmlFor="notes"
+          className="text-2xs uppercase tracking-wide text-muted-foreground"
+        >
+          Notes
+        </Label>
         <Textarea
           id="notes"
           value={notesVal}

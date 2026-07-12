@@ -1,0 +1,265 @@
+<!-- @dsCard group="Data Display" -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Discipline score — TradeOS DS</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; border-color:hsl(var(--border)); }
+  body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background:#e8e9ec; }
+  .panels { display:grid; grid-template-columns:1fr 1fr; min-height:100vh; }
+  @media (max-width: 720px) { .panels { grid-template-columns:1fr; } }
+  .panel { padding:28px; background:hsl(var(--background)); color:hsl(var(--foreground)); }
+  .panel-light { --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --font-mono: "SF Mono", ui-monospace, "JetBrains Mono", "Menlo", monospace;
+    --background: 220 24% 97%;
+    --foreground: 224 26% 11%;
+    --surface: 0 0% 100%;
+    --surface-raised: 0 0% 100%;
+    --surface-overlay: 0 0% 100%;
+    --card: 0 0% 100%;
+    --card-foreground: 224 26% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 224 26% 11%;
+    --primary: 221 83% 53%;
+    --primary-foreground: 0 0% 100%;
+    --muted: 220 16% 93%;
+    --muted-foreground: 220 10% 40%;
+    --accent: 220 18% 93%;
+    --accent-foreground: 224 26% 11%;
+    --border: 220 14% 87%;
+    --input: 220 14% 83%;
+    --ring: 221 83% 53%;
+    --profit: 152 64% 32%;
+    --profit-muted: 152 45% 93%;
+    --loss: 356 70% 45%;
+    --loss-muted: 356 60% 95%;
+    --warning: 36 95% 38%;
+    --warning-muted: 40 90% 93%;
+    --info: 221 83% 53%;
+    --score-high: 152 64% 32%;
+    --score-mid: 36 95% 38%;
+    --score-low: 356 70% 45%;
+    --chart-area-opacity: 0.10;
+    --radius: 0.75rem; }
+  .panel-dark { --background: 228 18% 5%;
+    --foreground: 214 18% 93%;
+    --surface: 227 16% 8%;
+    --surface-raised: 226 15% 11%;
+    --surface-overlay: 225 15% 14%;
+    --card: 227 16% 8.5%;
+    --card-foreground: 214 18% 93%;
+    --popover: 226 15% 12%;
+    --popover-foreground: 214 18% 93%;
+    --primary: 217 91% 65%;
+    --primary-foreground: 228 18% 5%;
+    --muted: 226 14% 15%;
+    --muted-foreground: 219 11% 62%;
+    --accent: 226 15% 14%;
+    --accent-foreground: 214 18% 93%;
+    --border: 225 14% 16%;
+    --input: 225 14% 19%;
+    --ring: 217 91% 65%;
+    --profit: 152 62% 46%;
+    --profit-muted: 152 40% 14%;
+    --loss: 356 75% 60%;
+    --loss-muted: 356 45% 16%;
+    --warning: 40 92% 56%;
+    --warning-muted: 40 50% 15%;
+    --info: 217 91% 65%;
+    --score-high: 152 62% 46%;
+    --score-mid: 40 92% 56%;
+    --score-low: 356 75% 60%;
+    --chart-area-opacity: 0.22; }
+  .panel-tag { font-size:10px; text-transform:uppercase; letter-spacing:.14em; color:hsl(var(--muted-foreground)); margin-bottom:18px; }
+  .tabular { font-variant-numeric: tabular-nums; font-feature-settings:"tnum"; }
+  .row { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:14px; }
+  .stack { display:flex; flex-direction:column; gap:14px; }
+  h3.sec { font-size:11px; text-transform:uppercase; letter-spacing:.12em; color:hsl(var(--muted-foreground)); margin:18px 0 8px; font-weight:600; }
+
+  /* buttons */
+  .btn { display:inline-flex; align-items:center; justify-content:center; gap:8px; white-space:nowrap;
+    border-radius:calc(var(--radius) - 2px); font-size:14px; font-weight:500; border:1px solid transparent;
+    height:36px; padding:0 16px; cursor:default; }
+  .btn-sm { height:32px; padding:0 12px; font-size:12px; }
+  .btn-lg { height:44px; padding:0 24px; }
+  .btn-default { background:hsl(var(--primary)); color:hsl(var(--primary-foreground)); box-shadow:0 1px 2px rgb(0 0 0 / .08); }
+  .btn-secondary { background:hsl(var(--surface-overlay)); color:hsl(var(--foreground)); border-color:hsl(var(--border)); }
+  .btn-outline { background:transparent; border-color:hsl(var(--input)); color:hsl(var(--foreground)); }
+  .btn-ghost { background:transparent; color:hsl(var(--foreground)); }
+  .btn-destructive { background:hsl(var(--loss)); color:hsl(var(--primary-foreground)); }
+  .btn-link { background:none; color:hsl(var(--primary)); text-decoration:underline; text-underline-offset:4px; }
+
+  /* badges */
+  .badge { display:inline-flex; align-items:center; border-radius:6px; border:1px solid transparent;
+    padding:2px 8px; font-size:11px; font-weight:500; text-transform:uppercase; letter-spacing:.05em; }
+  .badge-default { background:hsl(var(--primary)); color:hsl(var(--primary-foreground)); }
+  .badge-secondary { background:hsl(var(--surface-overlay)); color:hsl(var(--foreground)); }
+  .badge-outline { border-color:hsl(var(--border)); color:hsl(var(--foreground)); }
+  .badge-profit { background:hsl(var(--profit-muted)); color:hsl(var(--profit)); }
+  .badge-loss { background:hsl(var(--loss-muted)); color:hsl(var(--loss)); }
+  .badge-warning { background:hsl(var(--warning-muted)); color:hsl(var(--warning)); }
+  .badge-info { background:hsl(var(--primary) / .15); color:hsl(var(--info)); }
+
+  /* card */
+  .card { border-radius:var(--radius); border:1px solid hsl(var(--border)); background:hsl(var(--card));
+    color:hsl(var(--card-foreground)); box-shadow:0 1px 2px rgb(0 0 0 / .05); }
+  .panel-dark .card { background-image:linear-gradient(hsl(var(--foreground) / .03), transparent 45%); }
+  .card-h { padding:20px; display:flex; align-items:center; justify-content:space-between; }
+  .card-t { font-size:16px; font-weight:600; letter-spacing:-.01em; }
+  .card-d { font-size:14px; color:hsl(var(--muted-foreground)); margin-top:4px; }
+  .card-c { padding:20px; padding-top:0; }
+
+  /* misc */
+  .label { font-size:11px; font-weight:500; text-transform:uppercase; letter-spacing:.05em; color:hsl(var(--muted-foreground)); }
+  .meter { height:6px; width:100%; overflow:hidden; border-radius:999px; background:hsl(var(--muted)); }
+  .meter > div { height:100%; border-radius:999px; }
+  .swatch { width:100%; height:44px; border-radius:8px; border:1px solid hsl(var(--border)); }
+  .sw-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+  .sw-name { font-size:11px; margin-top:4px; color:hsl(var(--muted-foreground)); }
+  input.inp, select.inp, textarea.inp { display:block; width:100%; height:36px; border-radius:calc(var(--radius) - 2px);
+    border:1px solid hsl(var(--input)); background:hsl(var(--surface)); color:hsl(var(--foreground));
+    padding:4px 12px; font-size:14px; font-family:inherit; }
+  textarea.inp { height:auto; min-height:70px; padding-top:8px; }
+  .inp::placeholder { color:hsl(var(--muted-foreground)); }
+  table.tbl { width:100%; border-collapse:collapse; font-size:14px; }
+  table.tbl th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.05em;
+    color:hsl(var(--muted-foreground)); font-weight:500; padding:8px 12px; border-bottom:1px solid hsl(var(--border)); }
+  table.tbl td { padding:10px 12px; border-bottom:1px solid hsl(var(--border)); }
+  .t-profit { color:hsl(var(--profit)); } .t-loss { color:hsl(var(--loss)); }
+  .t-high { color:hsl(var(--score-high)); } .t-mid { color:hsl(var(--score-mid)); } .t-low { color:hsl(var(--score-low)); }
+  .chip { display:inline-block; padding:1px 7px; border-radius:6px; font-size:11px; font-weight:600; }
+  .chip-high { background:hsl(var(--score-high) / .15); color:hsl(var(--score-high)); }
+  .chip-mid { background:hsl(var(--score-mid) / .15); color:hsl(var(--score-mid)); }
+  .chip-low { background:hsl(var(--score-low) / .15); color:hsl(var(--score-low)); }
+  .skeleton { background:hsl(var(--muted)); border-radius:8px; }
+  .progress { height:8px; border-radius:999px; background:hsl(var(--muted)); overflow:hidden; }
+  .progress > div { height:100%; border-radius:999px; background:hsl(var(--primary)); }
+</style>
+</head>
+<body>
+  <div class="panels">
+    <div class="panel panel-dark"><div class="panel-tag">Dark (native)</div>
+  <h3 class="sec">The one gauge in the product — three bands</h3>
+  <div class="row" style="gap:24px;"><div style="position:relative;width:120px;height:120px;display:inline-flex;align-items:center;justify-content:center;">
+    <svg width="120" height="120" style="transform:rotate(-90deg)">
+      <circle cx="60" cy="60" r="55" fill="none" stroke="hsl(var(--muted))" stroke-width="10"/>
+      <circle cx="60" cy="60" r="55" fill="none" stroke="hsl(var(--score-high))" stroke-width="10"
+        stroke-dasharray="345.6" stroke-dashoffset="27.6" stroke-linecap="round"/>
+    </svg>
+    <div style="position:absolute;text-align:center;">
+      <div class="tabular t-high" style="font-size:28px;font-weight:600;">92</div>
+      <div class="label">Overall</div>
+    </div>
+  </div><div style="position:relative;width:120px;height:120px;display:inline-flex;align-items:center;justify-content:center;">
+    <svg width="120" height="120" style="transform:rotate(-90deg)">
+      <circle cx="60" cy="60" r="55" fill="none" stroke="hsl(var(--muted))" stroke-width="10"/>
+      <circle cx="60" cy="60" r="55" fill="none" stroke="hsl(var(--score-mid))" stroke-width="10"
+        stroke-dasharray="345.6" stroke-dashoffset="96.8" stroke-linecap="round"/>
+    </svg>
+    <div style="position:absolute;text-align:center;">
+      <div class="tabular t-mid" style="font-size:28px;font-weight:600;">72</div>
+      <div class="label">Overall</div>
+    </div>
+  </div><div style="position:relative;width:120px;height:120px;display:inline-flex;align-items:center;justify-content:center;">
+    <svg width="120" height="120" style="transform:rotate(-90deg)">
+      <circle cx="60" cy="60" r="55" fill="none" stroke="hsl(var(--muted))" stroke-width="10"/>
+      <circle cx="60" cy="60" r="55" fill="none" stroke="hsl(var(--score-low))" stroke-width="10"
+        stroke-dasharray="345.6" stroke-dashoffset="203.9" stroke-linecap="round"/>
+    </svg>
+    <div style="position:absolute;text-align:center;">
+      <div class="tabular t-low" style="font-size:28px;font-weight:600;">41</div>
+      <div class="label">Overall</div>
+    </div>
+  </div></div>
+  <h3 class="sec">Sub-score meters</h3>
+  <div class="stack">
+    <div>
+    <div style="display:flex;justify-content:space-between;align-items:baseline;">
+      <span style="font-size:14px;">Rule adherence</span>
+      <span class="tabular" style="font-size:14px;font-weight:600;">74</span>
+    </div>
+    <div class="meter" style="margin-top:6px;"><div style="width:74%;background:hsl(var(--score-mid));"></div></div>
+    <p style="font-size:11px;color:hsl(var(--muted-foreground));margin-top:4px;">1087/1500 rule checks passed (severity-weighted).</p>
+  </div>
+    <div>
+    <div style="display:flex;justify-content:space-between;align-items:baseline;">
+      <span style="font-size:14px;">Risk discipline</span>
+      <span class="tabular" style="font-size:14px;font-weight:600;">80</span>
+    </div>
+    <div class="meter" style="margin-top:6px;"><div style="width:80%;background:hsl(var(--score-high));"></div></div>
+    <p style="font-size:11px;color:hsl(var(--muted-foreground));margin-top:4px;">Loss control 80%; max drawdown 1487.</p>
+  </div>
+    <div>
+    <div style="display:flex;justify-content:space-between;align-items:baseline;">
+      <span style="font-size:14px;">Consistency</span>
+      <span class="tabular" style="font-size:14px;font-weight:600;">49</span>
+    </div>
+    <div class="meter" style="margin-top:6px;"><div style="width:49%;background:hsl(var(--score-low));"></div></div>
+    <p style="font-size:11px;color:hsl(var(--muted-foreground));margin-top:4px;">45 trading days; daily P&amp;L CV 1.19.</p>
+  </div>
+  </div></div>
+    <div class="panel panel-light"><div class="panel-tag">Light</div>
+  <h3 class="sec">The one gauge in the product — three bands</h3>
+  <div class="row" style="gap:24px;"><div style="position:relative;width:120px;height:120px;display:inline-flex;align-items:center;justify-content:center;">
+    <svg width="120" height="120" style="transform:rotate(-90deg)">
+      <circle cx="60" cy="60" r="55" fill="none" stroke="hsl(var(--muted))" stroke-width="10"/>
+      <circle cx="60" cy="60" r="55" fill="none" stroke="hsl(var(--score-high))" stroke-width="10"
+        stroke-dasharray="345.6" stroke-dashoffset="27.6" stroke-linecap="round"/>
+    </svg>
+    <div style="position:absolute;text-align:center;">
+      <div class="tabular t-high" style="font-size:28px;font-weight:600;">92</div>
+      <div class="label">Overall</div>
+    </div>
+  </div><div style="position:relative;width:120px;height:120px;display:inline-flex;align-items:center;justify-content:center;">
+    <svg width="120" height="120" style="transform:rotate(-90deg)">
+      <circle cx="60" cy="60" r="55" fill="none" stroke="hsl(var(--muted))" stroke-width="10"/>
+      <circle cx="60" cy="60" r="55" fill="none" stroke="hsl(var(--score-mid))" stroke-width="10"
+        stroke-dasharray="345.6" stroke-dashoffset="96.8" stroke-linecap="round"/>
+    </svg>
+    <div style="position:absolute;text-align:center;">
+      <div class="tabular t-mid" style="font-size:28px;font-weight:600;">72</div>
+      <div class="label">Overall</div>
+    </div>
+  </div><div style="position:relative;width:120px;height:120px;display:inline-flex;align-items:center;justify-content:center;">
+    <svg width="120" height="120" style="transform:rotate(-90deg)">
+      <circle cx="60" cy="60" r="55" fill="none" stroke="hsl(var(--muted))" stroke-width="10"/>
+      <circle cx="60" cy="60" r="55" fill="none" stroke="hsl(var(--score-low))" stroke-width="10"
+        stroke-dasharray="345.6" stroke-dashoffset="203.9" stroke-linecap="round"/>
+    </svg>
+    <div style="position:absolute;text-align:center;">
+      <div class="tabular t-low" style="font-size:28px;font-weight:600;">41</div>
+      <div class="label">Overall</div>
+    </div>
+  </div></div>
+  <h3 class="sec">Sub-score meters</h3>
+  <div class="stack">
+    <div>
+    <div style="display:flex;justify-content:space-between;align-items:baseline;">
+      <span style="font-size:14px;">Rule adherence</span>
+      <span class="tabular" style="font-size:14px;font-weight:600;">74</span>
+    </div>
+    <div class="meter" style="margin-top:6px;"><div style="width:74%;background:hsl(var(--score-mid));"></div></div>
+    <p style="font-size:11px;color:hsl(var(--muted-foreground));margin-top:4px;">1087/1500 rule checks passed (severity-weighted).</p>
+  </div>
+    <div>
+    <div style="display:flex;justify-content:space-between;align-items:baseline;">
+      <span style="font-size:14px;">Risk discipline</span>
+      <span class="tabular" style="font-size:14px;font-weight:600;">80</span>
+    </div>
+    <div class="meter" style="margin-top:6px;"><div style="width:80%;background:hsl(var(--score-high));"></div></div>
+    <p style="font-size:11px;color:hsl(var(--muted-foreground));margin-top:4px;">Loss control 80%; max drawdown 1487.</p>
+  </div>
+    <div>
+    <div style="display:flex;justify-content:space-between;align-items:baseline;">
+      <span style="font-size:14px;">Consistency</span>
+      <span class="tabular" style="font-size:14px;font-weight:600;">49</span>
+    </div>
+    <div class="meter" style="margin-top:6px;"><div style="width:49%;background:hsl(var(--score-low));"></div></div>
+    <p style="font-size:11px;color:hsl(var(--muted-foreground));margin-top:4px;">45 trading days; daily P&amp;L CV 1.19.</p>
+  </div>
+  </div></div>
+  </div>
+</body>
+</html>

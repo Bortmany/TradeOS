@@ -179,7 +179,11 @@ export function AccountDialog({
             </div>
           </div>
 
-          {error && <p className="text-sm text-loss">{error}</p>}
+          {error && (
+            <p className="rounded-md border border-loss/30 bg-loss-muted px-3 py-2 text-sm text-loss">
+              {error}
+            </p>
+          )}
 
           <DialogFooter>
             <Button type="submit" disabled={submitting || !name.trim()}>

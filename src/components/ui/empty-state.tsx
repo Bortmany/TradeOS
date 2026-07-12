@@ -1,5 +1,11 @@
 import * as React from "react";
+import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+export interface EmptyStateStep {
+  label: string;
+  done?: boolean;
+}
 
 export interface EmptyStateProps
   extends React.HTMLAttributes<HTMLDivElement> {
@@ -7,10 +13,13 @@ export interface EmptyStateProps
   title: string;
   description?: string;
   action?: React.ReactNode;
+  /** Optional activation checklist (e.g. import → rulebook → score) rendered
+      between the description and the action. */
+  steps?: EmptyStateStep[];
 }
 
 const EmptyState = React.forwardRef<HTMLDivElement, EmptyStateProps>(
-  ({ icon, title, description, action, className, ...props }, ref) => (
+  ({ icon, title, description, action, steps, className, ...props }, ref) => (
     <div
       ref={ref}
       className={cn(
@@ -32,6 +41,30 @@ const EmptyState = React.forwardRef<HTMLDivElement, EmptyStateProps>(
           </p>
         )}
       </div>
+      {steps && steps.length > 0 && (
+        <ol className="mt-1 flex flex-col items-start gap-1.5 text-left">
+          {steps.map((step, i) => (
+            <li
+              key={step.label}
+              className="flex items-center gap-2 text-sm text-muted-foreground"
+            >
+              <span
+                className={cn(
+                  "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-2xs tabular",
+                  step.done
+                    ? "border-transparent bg-profit-muted text-profit"
+                    : "border-border bg-surface"
+                )}
+              >
+                {step.done ? <Check className="h-3 w-3" /> : i + 1}
+              </span>
+              <span className={cn(step.done && "line-through opacity-70")}>
+                {step.label}
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
       {action && <div className="mt-1">{action}</div>}
     </div>
   )

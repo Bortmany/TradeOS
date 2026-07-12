@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { Wallet } from "lucide-react";
+import { Activity, Layers, TrendingUp, Wallet } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth";
 import { getAccountsWithStats } from "@/lib/accounts-data";
 import { withinLimit, getFeatures, effectivePlan } from "@/lib/billing/plans";
@@ -17,7 +17,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatCurrency, formatPercent, pnlColor } from "@/lib/utils";
+import { cn, formatCurrency, formatPercent, pnlColor } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +37,8 @@ export default async function AccountsPage() {
   if (!user) redirect("/login");
 
   const accounts = await getAccountsWithStats(user.id);
+  const totalPnl = accounts.reduce((sum, a) => sum + a.stats.netPnl, 0);
+  const totalTrades = accounts.reduce((sum, a) => sum + a.stats.tradeCount, 0);
 
   const limit = getFeatures(effectivePlan(user.plan as Plan, user.billingStatus)).maxAccounts;
   const atLimit = !withinLimit(user.plan as Plan, user.billingStatus, "maxAccounts", accounts.length);
@@ -60,10 +62,27 @@ export default async function AccountsPage() {
         <EmptyState
           icon={<Wallet className="h-8 w-8" />}
           title="No accounts yet"
-          description="Add your first trading account to start importing trades and tracking performance."
+          description="Accounts are where your trades live — live, prop, or paper."
+          steps={[
+            { label: "Add a trading account with its starting balance" },
+            { label: "Import trades into it from the Import page" },
+            { label: "Track realized P&L and discipline per account" },
+          ]}
         />
       ) : (
         <>
+          {/* Summary strip — computed from the stats already fetched */}
+          <div className="grid grid-cols-3 gap-3">
+            <SummaryStat
+              label="Combined Net P&L"
+              value={formatCurrency(totalPnl, { sign: true })}
+              valueClass={pnlColor(totalPnl)}
+              icon={TrendingUp}
+            />
+            <SummaryStat label="Accounts" value={String(accounts.length)} icon={Layers} />
+            <SummaryStat label="Closed Trades" value={String(totalTrades)} icon={Activity} />
+          </div>
+
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {accounts.map((a) => (
               <Card key={a.id} className="overflow-hidden">
@@ -97,7 +116,7 @@ export default async function AccountsPage() {
                     </div>
                     <div className="text-right">
                       <p className="text-2xs uppercase tracking-wide text-muted-foreground">
-                        Balance
+                        Starting balance
                       </p>
                       <p className="tabular text-sm text-muted-foreground">
                         {formatCurrency(a.startingBalance)}
@@ -168,5 +187,31 @@ function Metric({ label, value }: { label: string; value: string }) {
       <p className="text-2xs uppercase tracking-wide text-muted-foreground">{label}</p>
       <p className="tabular text-sm font-medium">{value}</p>
     </div>
+  );
+}
+
+function SummaryStat({
+  label,
+  value,
+  valueClass,
+  icon: Icon,
+}: {
+  label: string;
+  value: string;
+  valueClass?: string;
+  icon: React.ComponentType<{ className?: string }>;
+}) {
+  return (
+    <Card>
+      <CardContent className="p-4">
+        <div className="flex items-center justify-between">
+          <p className="text-2xs font-medium uppercase tracking-wide text-muted-foreground">
+            {label}
+          </p>
+          <Icon className="h-4 w-4 text-muted-foreground" />
+        </div>
+        <p className={cn("mt-2 text-2xl font-semibold tabular", valueClass)}>{value}</p>
+      </CardContent>
+    </Card>
   );
 }

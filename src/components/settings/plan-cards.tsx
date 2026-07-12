@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { Check, AlertTriangle } from "lucide-react";
-import { PLAN_DEFINITIONS } from "@/lib/billing/plans";
+import { PLAN_DEFINITIONS, TRIAL_DAYS } from "@/lib/billing/plans";
 import type { Plan } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -63,7 +63,13 @@ export function PlanCards({ currentPlan }: { currentPlan: Plan }) {
         </div>
       )}
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      {/* Trial terms up front — the category's #1 trust complaint is hiding them. */}
+      <p className="text-center text-sm text-muted-foreground">
+        <span className="font-medium text-foreground">{TRIAL_DAYS}-day free trial</span>{" "}
+        · no card required · cancel anytime
+      </p>
+
+      <div className="grid gap-4 pt-2 lg:grid-cols-3">
         {ORDER.map((id) => {
           const plan = PLAN_DEFINITIONS[id];
           const isCurrent = id === currentPlan;
@@ -72,14 +78,14 @@ export function PlanCards({ currentPlan }: { currentPlan: Plan }) {
               key={id}
               className={cn(
                 "relative flex flex-col",
-                plan.highlighted && "border-primary/50",
+                plan.highlighted && "border-primary shadow-lg shadow-primary/10",
                 isCurrent && "ring-1 ring-primary"
               )}
             >
-              {plan.highlighted && !isCurrent && (
-                <Badge variant="info" className="absolute right-4 top-4">
-                  Popular
-                </Badge>
+              {plan.highlighted && (
+                <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-primary px-3 py-0.5 text-2xs font-semibold uppercase tracking-wide text-primary-foreground">
+                  Most popular
+                </span>
               )}
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">

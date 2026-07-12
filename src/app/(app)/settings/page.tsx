@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowRight } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth";
 import { PLAN_DEFINITIONS } from "@/lib/billing/plans";
 import type { Plan } from "@/lib/types";
@@ -8,6 +7,7 @@ import { PageHeader } from "@/components/page-header";
 import { ProfileForm } from "@/components/settings/profile-form";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { formatDate } from "@/lib/utils";
 import { prisma } from "@/lib/db";
 
@@ -32,6 +32,9 @@ export default async function SettingsPage() {
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle>Profile</CardTitle>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              Your name and the timezone your sessions are bucketed in.
+            </p>
           </CardHeader>
           <CardContent>
             <ProfileForm displayName={user.displayName ?? ""} timezone={user.timezone} />
@@ -39,8 +42,16 @@ export default async function SettingsPage() {
         </Card>
 
         <Card>
-          <CardHeader>
-            <CardTitle>Account</CardTitle>
+          <CardHeader className="flex-row items-center justify-between">
+            <div>
+              <CardTitle>Account</CardTitle>
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                Sign-in and subscription details.
+              </p>
+            </div>
+            <Button asChild variant="outline" size="sm">
+              <Link href="/settings/billing">Billing</Link>
+            </Button>
           </CardHeader>
           <CardContent className="space-y-3">
             <Row label="Email" value={user.email} />
@@ -59,12 +70,6 @@ export default async function SettingsPage() {
               label="Member since"
               value={dbUser ? formatDate(dbUser.createdAt) : "—"}
             />
-            <Link
-              href="/settings/billing"
-              className="mt-2 flex items-center gap-1 text-sm text-primary hover:underline"
-            >
-              Manage billing <ArrowRight className="h-3.5 w-3.5" />
-            </Link>
           </CardContent>
         </Card>
       </div>

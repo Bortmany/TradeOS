@@ -32,7 +32,12 @@ export default async function ImportPage() {
         <EmptyState
           icon={<Wallet className="h-8 w-8" />}
           title="Add an account first"
-          description="You need at least one trading account before you can import or log trades."
+          description="Imports land in a trading account, so create one before bringing in trades."
+          steps={[
+            { label: "Create a trading account (live, prop, or paper)" },
+            { label: "Upload a broker CSV or connect TopstepX below" },
+            { label: "Trades hit your journal, graded against your rules" },
+          ]}
           action={
             <Button asChild>
               <Link href="/accounts">Go to Accounts</Link>

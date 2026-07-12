@@ -16,7 +16,8 @@ import { cn } from "@/lib/utils";
 
 export default function LandingPage() {
   return (
-    <div className="min-h-screen">
+    // The marketing page is always dark regardless of the user's app theme.
+    <div className="dark min-h-screen bg-background text-foreground">
       <SiteHeader />
       <Hero />
       <LogoStrip />
@@ -92,57 +93,20 @@ function Hero() {
 
         <div className="mx-auto mt-14 max-w-5xl">
           <div className="rounded-xl border border-border bg-surface p-2 shadow-2xl">
-            <div className="rounded-lg border border-border bg-background">
-              <PreviewDashboard />
-            </div>
+            {/* Real product, not a mockup — the score-first dashboard. */}
+            <img
+              src="/screenshots/dashboard-dark.png"
+              alt="The TradeOS dashboard: discipline score with rule adherence, risk, emotion and consistency breakdowns above the equity curve"
+              width={1360}
+              height={850}
+              className="rounded-lg border border-border"
+            />
           </div>
         </div>
       </div>
     </section>
   );
 }
-
-// A static, styled preview of the product to anchor the hero (no data fetch).
-function PreviewDashboard() {
-  const stats = [
-    { label: "Net P&L", value: "+$8,420", accent: "profit" },
-    { label: "Win Rate", value: "54.2%", accent: "neutral" },
-    { label: "Profit Factor", value: "1.86", accent: "neutral" },
-    { label: "Discipline", value: "82", accent: "profit" },
-  ];
-  return (
-    <div className="p-4 md:p-6">
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        {stats.map((s) => (
-          <div key={s.label} className="rounded-lg border border-border bg-surface-raised p-3">
-            <p className="text-2xs uppercase tracking-wide text-muted-foreground">{s.label}</p>
-            <p
-              className={cn(
-                "mt-1 text-xl font-semibold tabular",
-                s.accent === "profit" ? "text-profit" : "text-foreground"
-              )}
-            >
-              {s.value}
-            </p>
-          </div>
-        ))}
-      </div>
-      <div className="mt-3 flex h-40 items-end gap-1 rounded-lg border border-border bg-surface-raised p-4">
-        {EQUITY_BARS.map((h, i) => (
-          <div
-            key={i}
-            className="flex-1 rounded-sm bg-gradient-to-t from-primary/30 to-primary"
-            style={{ height: `${h}%` }}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-const EQUITY_BARS = [
-  20, 24, 22, 30, 34, 31, 40, 46, 44, 52, 58, 55, 63, 60, 70, 76, 74, 82, 88, 96,
-];
 
 function LogoStrip() {
   const names = ["Topstep", "Apex", "Tradovate", "NinjaTrader", "Rithmic", "Interactive Brokers"];
@@ -309,7 +273,7 @@ function Pricing() {
             Priced like one good trade a month.
           </h2>
           <p className="mt-3 text-muted-foreground">
-            Start with a 14-day full-access trial. Cancel anytime.
+            14-day full-access free trial · no card required · cancel anytime. Refunds, plainly: if it is not for you in the first 14 days, you pay nothing.
           </p>
         </div>
         <div className="mx-auto mt-12 grid max-w-5xl gap-5 md:grid-cols-3">

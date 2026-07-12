@@ -24,8 +24,10 @@ export function MobileNav() {
             key={href}
             href={href}
             className={cn(
-              "flex flex-1 flex-col items-center justify-center gap-1 text-2xs font-medium transition-colors",
-              active ? "text-primary" : "text-muted-foreground"
+              "relative flex flex-1 flex-col items-center justify-center gap-1 text-2xs font-medium transition-colors",
+              active
+                ? "text-primary before:absolute before:top-0 before:h-0.5 before:w-8 before:rounded-full before:bg-primary"
+                : "text-muted-foreground"
             )}
           >
             <Icon className="h-5 w-5" />

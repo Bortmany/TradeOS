@@ -234,29 +234,43 @@ function ConnectionRow({
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
+    <div
+      className={cn(
+        "flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3",
+        connection.status === "error" && "bg-loss-muted/40"
+      )}
+    >
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <p className="truncate text-sm font-medium">{connection.externalAccountName}</p>
           <Badge variant={connection.status === "connected" ? "profit" : "loss"}>
-            {connection.status === "connected" ? "Connected" : "Error"}
+            {connection.status === "connected" ? "Connected" : "Sync error"}
           </Badge>
         </div>
         <p className="mt-0.5 truncate text-2xs text-muted-foreground">
           → {connection.accountName} · Last sync{" "}
           <span className="tabular">
-            {connection.lastSyncAt ? relativeTime(connection.lastSyncAt) : "—"}
+            {connection.lastSyncAt ? relativeTime(connection.lastSyncAt) : "never"}
           </span>
         </p>
+        {/* Failures stay fully readable — never truncated, never buried. */}
         {connection.status === "error" && connection.lastError && (
-          <p className="mt-0.5 truncate text-2xs text-loss">{connection.lastError}</p>
+          <p className="mt-1 flex items-start gap-1 text-2xs text-loss">
+            <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
+            <span>{connection.lastError}</span>
+          </p>
         )}
         {syncResult && (
           <p className="mt-0.5 flex items-center gap-1 text-2xs text-profit">
             <CheckCircle2 className="h-3 w-3" /> {syncResult}
           </p>
         )}
-        {syncError && <p className="mt-0.5 truncate text-2xs text-loss">{syncError}</p>}
+        {syncError && (
+          <p className="mt-1 flex items-start gap-1 text-2xs text-loss">
+            <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
+            <span>{syncError}</span>
+          </p>
+        )}
       </div>
 
       <div className="flex shrink-0 items-center gap-2">

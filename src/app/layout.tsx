@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { ThemeProvider } from "@/components/theme-provider";
 import "./globals.css";
 
 const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
@@ -39,7 +40,10 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0b0f1a",
+  themeColor: [
+    { media: "(prefers-color-scheme: dark)", color: "#0a0c10" },
+    { media: "(prefers-color-scheme: light)", color: "#f5f6f8" },
+  ],
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
@@ -51,8 +55,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className="dark" suppressHydrationWarning>
-      <body>{children}</body>
+    <html lang="en" suppressHydrationWarning>
+      <body>
+        <ThemeProvider>{children}</ThemeProvider>
+      </body>
     </html>
   );
 }

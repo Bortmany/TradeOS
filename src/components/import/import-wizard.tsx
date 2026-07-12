@@ -4,6 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { UploadCloud, FileText, CheckCircle2, AlertTriangle, Download } from "lucide-react";
 import { SIDES, EMOTIONS } from "@/lib/types";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -34,6 +35,25 @@ interface ImportResult {
   imported: number;
   skipped: number;
   errors: string[];
+}
+
+// Shared honest-status panels — errors are never buried in plain text.
+function ErrorPanel({ message }: { message: string }) {
+  return (
+    <div className="flex items-start gap-2 rounded-md border border-loss/30 bg-loss-muted px-3 py-2">
+      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-loss" />
+      <p className="text-sm text-loss">{message}</p>
+    </div>
+  );
+}
+
+function SuccessPanel({ message }: { message: string }) {
+  return (
+    <div className="flex items-start gap-2 rounded-md border border-profit/30 bg-profit-muted px-3 py-2">
+      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-profit" />
+      <p className="text-sm text-profit">{message}</p>
+    </div>
+  );
 }
 
 export function ImportWizard({
@@ -206,11 +226,7 @@ function CsvImport({
             />
           </div>
 
-          {error && (
-            <p className="flex items-center gap-1.5 text-sm text-loss">
-              <AlertTriangle className="h-4 w-4" /> {error}
-            </p>
-          )}
+          {error && <ErrorPanel message={error} />}
 
           <div className="flex items-center gap-3">
             <Button onClick={onImport} disabled={busy} className="gap-1.5">
@@ -227,20 +243,40 @@ function CsvImport({
           </div>
 
           {result && (
-            <div className="rounded-lg border border-border bg-surface-raised p-4">
+            <div
+              className={cn(
+                "rounded-lg border bg-surface-raised p-4",
+                result.errors.length > 0 ? "border-warning/40" : "border-border"
+              )}
+            >
               <div className="flex items-center gap-2">
-                <CheckCircle2 className="h-4 w-4 text-profit" />
-                <p className="text-sm font-medium">Import complete</p>
+                {result.errors.length > 0 ? (
+                  <AlertTriangle className="h-4 w-4 text-warning" />
+                ) : (
+                  <CheckCircle2 className="h-4 w-4 text-profit" />
+                )}
+                <p className="text-sm font-medium">
+                  {result.errors.length > 0
+                    ? "Imported with warnings"
+                    : "Import complete"}
+                </p>
                 <Badge variant="info" className="ml-auto">
                   {result.broker}
                 </Badge>
               </div>
-              <div className="mt-3 grid grid-cols-2 gap-3">
+              <div className="mt-3 grid grid-cols-3 gap-3">
                 <div>
                   <p className="text-2xs uppercase tracking-wide text-muted-foreground">
                     Imported
                   </p>
-                  <p className="tabular text-lg font-semibold text-profit">{result.imported}</p>
+                  <p
+                    className={cn(
+                      "tabular text-lg font-semibold",
+                      result.imported > 0 ? "text-profit" : "text-muted-foreground"
+                    )}
+                  >
+                    {result.imported}
+                  </p>
                 </div>
                 <div>
                   <p className="text-2xs uppercase tracking-wide text-muted-foreground">
@@ -250,12 +286,30 @@ function CsvImport({
                     {result.skipped}
                   </p>
                 </div>
+                <div>
+                  <p className="text-2xs uppercase tracking-wide text-muted-foreground">
+                    Warnings
+                  </p>
+                  <p
+                    className={cn(
+                      "tabular text-lg font-semibold",
+                      result.errors.length > 0 ? "text-warning" : "text-muted-foreground"
+                    )}
+                  >
+                    {result.errors.length}
+                  </p>
+                </div>
               </div>
               {result.errors.length > 0 && (
-                <div className="mt-3 space-y-1 border-t border-border pt-3">
-                  <p className="text-2xs uppercase tracking-wide text-warning">Warnings</p>
+                <div className="mt-3 space-y-1.5 border-t border-border pt-3">
+                  <p className="text-2xs uppercase tracking-wide text-warning">
+                    Rows that need attention
+                  </p>
                   {result.errors.map((err, i) => (
-                    <p key={i} className="text-2xs text-muted-foreground">
+                    <p
+                      key={i}
+                      className="rounded-md bg-warning-muted px-2.5 py-1.5 text-2xs text-foreground"
+                    >
                       {err}
                     </p>
                   ))}
@@ -518,16 +572,8 @@ function ManualEntry({ accounts }: { accounts: AccountOption[] }) {
             />
           </div>
 
-          {error && (
-            <p className="flex items-center gap-1.5 text-sm text-loss">
-              <AlertTriangle className="h-4 w-4" /> {error}
-            </p>
-          )}
-          {done && (
-            <p className="flex items-center gap-1.5 text-sm text-profit">
-              <CheckCircle2 className="h-4 w-4" /> Trade saved. Log another below.
-            </p>
-          )}
+          {error && <ErrorPanel message={error} />}
+          {done && <SuccessPanel message="Trade saved. Log another below." />}
 
           <Button type="submit" disabled={busy}>
             {busy ? "Saving…" : "Save trade"}

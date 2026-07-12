@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { ArrowLeft, CheckCircle2, XCircle, MinusCircle } from "lucide-react";
+import { ArrowLeft, ShieldCheck } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth";
 import { getTradeDetail } from "@/lib/journal";
 import { TradeContextChart } from "@/components/journal/trade-context-chart";
@@ -9,6 +9,8 @@ import { TradeEditor } from "@/components/journal/trade-editor";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { pointMultiplier } from "@/lib/ingestion/symbols";
 import {
   formatCurrency,
@@ -21,10 +23,16 @@ import type { EvalStatus } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
-function scoreBadgeVariant(score: number): "profit" | "warning" | "loss" {
-  if (score >= 80) return "profit";
-  if (score >= 60) return "warning";
-  return "loss";
+/** Score-band text color — same bands as the dashboard ring (>=80/60-79/<60). */
+function scoreTextClass(score: number): string {
+  if (score >= 80) return "text-score-high";
+  if (score >= 60) return "text-score-mid";
+  return "text-score-low";
+}
+function scoreBarClass(score: number): string {
+  if (score >= 80) return "bg-score-high";
+  if (score >= 60) return "bg-score-mid";
+  return "bg-score-low";
 }
 
 export default async function TradeDetailPage({
@@ -57,6 +65,8 @@ export default async function TradeDetailPage({
   const rMultiple = !open && riskUnit ? trade.pnl / riskUnit : null;
 
   const failCount = evaluations.filter((e) => e.status === "fail").length;
+  const passCount = evaluations.filter((e) => e.status === "pass").length;
+  const applicable = passCount + failCount;
 
   return (
     <div className="container max-w-7xl space-y-6 py-6">
@@ -79,36 +89,49 @@ export default async function TradeDetailPage({
             </span>
           )}
         </div>
-        <div className="flex items-center gap-5">
+        <div className="flex items-center gap-6">
           <div className="text-right">
             <p className="text-2xs uppercase tracking-wide text-muted-foreground">Net P&amp;L</p>
             <p className={`text-xl font-semibold tabular ${pnlColor(trade.pnl)}`}>
               {open ? "Open" : formatCurrency(trade.pnl, { sign: true })}
             </p>
           </div>
+          <div className="hidden h-9 w-px bg-border sm:block" />
           <div className="text-right">
             <p className="text-2xs uppercase tracking-wide text-muted-foreground">Compliance</p>
             {trade.complianceScore == null ? (
               <p className="text-xl font-semibold text-muted-foreground">—</p>
             ) : (
-              <Badge variant={scoreBadgeVariant(trade.complianceScore)} className="mt-0.5 text-sm">
+              <p
+                className={`text-xl font-semibold tabular ${scoreTextClass(trade.complianceScore)}`}
+              >
                 {trade.complianceScore}
-              </Badge>
+              </p>
             )}
           </div>
         </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
-        {/* Left column */}
+        {/* Left column — the chart workspace */}
         <div className="space-y-6 lg:col-span-2">
           <Card>
-            <CardHeader>
-              <CardTitle>Price Action</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Illustrative path around your fills — synthesized from this trade&apos;s prices &amp;
-                times, not live market data.
-              </p>
+            <CardHeader className="flex-row items-center justify-between">
+              <div>
+                <CardTitle>Price Action</CardTitle>
+                <p className="mt-0.5 text-sm text-muted-foreground">
+                  Illustrative path around your fills — synthesized from this trade&apos;s prices
+                  &amp; times, not live market data.
+                </p>
+              </div>
+              <div className="hidden text-right sm:block">
+                <p className={`text-lg font-semibold tabular ${open ? "text-warning" : pnlColor(trade.pnl)}`}>
+                  {open ? "Open" : formatCurrency(trade.pnl, { sign: true })}
+                </p>
+                <p className="text-2xs uppercase tracking-wide text-muted-foreground">
+                  {open ? "Position live" : `Held ${formatDuration(holdMinutes)}`}
+                </p>
+              </div>
             </CardHeader>
             <CardContent>
               <Tabs defaultValue="context">
@@ -179,22 +202,68 @@ export default async function TradeDetailPage({
           </Card>
         </div>
 
-        {/* Right column */}
+        {/* Right column — the graded-trade breakdown is the star */}
         <div className="space-y-6">
           <Card>
             <CardHeader className="flex-row items-center justify-between">
-              <CardTitle>Rule Evaluations</CardTitle>
-              <Badge variant={failCount > 0 ? "loss" : "profit"}>
-                {failCount > 0 ? `${failCount} failed` : "Clean"}
-              </Badge>
+              <div>
+                <CardTitle>Rule Evaluations</CardTitle>
+                <p className="mt-0.5 text-sm text-muted-foreground">
+                  This trade, graded against your rulebook.
+                </p>
+              </div>
+              {applicable > 0 && (
+                <Badge variant={failCount > 0 ? "loss" : "profit"} className="tabular">
+                  {failCount > 0 ? `${failCount} failed` : "Clean"}
+                </Badge>
+              )}
             </CardHeader>
             <CardContent className="space-y-2">
+              {trade.complianceScore != null && evaluations.length > 0 && (
+                <div className="mb-3">
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-2xs uppercase tracking-wide text-muted-foreground">
+                      Compliance score
+                    </span>
+                    <span
+                      className={`text-sm font-semibold tabular ${scoreTextClass(trade.complianceScore)}`}
+                    >
+                      {trade.complianceScore} / 100
+                    </span>
+                  </div>
+                  <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                    <div
+                      className={`h-full rounded-full ${scoreBarClass(trade.complianceScore)}`}
+                      style={{ width: `${Math.max(0, Math.min(100, trade.complianceScore))}%` }}
+                    />
+                  </div>
+                  <p className="mt-1 text-2xs tabular text-muted-foreground">
+                    {passCount} of {applicable} applicable rules passed
+                  </p>
+                </div>
+              )}
               {evaluations.length === 0 ? (
-                <p className="py-6 text-center text-sm text-muted-foreground">
-                  No active rules evaluated this trade.
-                </p>
+                <EmptyState
+                  icon={<ShieldCheck className="h-6 w-6" />}
+                  title="No rules evaluated this trade"
+                  description="Define your rulebook and every trade gets a pass/fail breakdown here."
+                  className="py-6"
+                  action={
+                    <Button asChild variant="secondary" size="sm">
+                      <Link href="/rules">Open the Rulebook</Link>
+                    </Button>
+                  }
+                />
               ) : (
-                evaluations.map((e) => <EvalRow key={e.id} status={e.status} name={e.ruleName} severity={e.severity} explanation={e.explanation} />)
+                evaluations.map((e) => (
+                  <EvalRow
+                    key={e.id}
+                    status={e.status}
+                    name={e.ruleName}
+                    severity={e.severity}
+                    explanation={e.explanation}
+                  />
+                ))
               )}
             </CardContent>
           </Card>
@@ -251,31 +320,31 @@ function EvalRow({
 }) {
   const pass = status === "pass";
   const fail = status === "fail";
-  const Icon = pass ? CheckCircle2 : fail ? XCircle : MinusCircle;
-  const wrap = pass
-    ? "border-profit/30 bg-profit-muted/40"
+  // Same graded-trade chip treatment as the landing page's discipline card,
+  // using the profit/loss-muted pairs so it reads in both themes.
+  const chip = pass
+    ? "bg-profit-muted text-profit"
     : fail
-      ? "border-loss/30 bg-loss-muted/40"
-      : "border-border bg-surface-raised";
-  const iconClass = pass ? "text-profit" : fail ? "text-loss" : "text-muted-foreground";
+      ? "bg-loss-muted text-loss"
+      : "bg-surface-overlay text-muted-foreground";
+  const chipLabel = pass ? "Pass" : fail ? "Fail" : "N/A";
+  const sevDot =
+    severity === "high" ? "bg-loss" : severity === "medium" ? "bg-warning" : "bg-muted-foreground";
 
   return (
-    <div className={`rounded-lg border px-3 py-2.5 ${wrap}`}>
-      <div className="flex items-start gap-2.5">
-        <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${iconClass}`} />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center justify-between gap-2">
-            <p className="truncate text-sm font-medium">{name}</p>
-            <Badge
-              variant={severity === "high" ? "loss" : severity === "medium" ? "warning" : "secondary"}
-              className="shrink-0"
-            >
-              {severity}
-            </Badge>
-          </div>
-          <p className="mt-0.5 text-2xs text-muted-foreground">{explanation}</p>
+    <div className="rounded-lg border border-border bg-surface-raised px-3 py-2.5">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${sevDot}`} title={`${severity} severity`} />
+          <p className="truncate text-sm font-medium">{name}</p>
         </div>
+        <span
+          className={`shrink-0 rounded px-1.5 py-0.5 text-2xs font-semibold uppercase ${chip}`}
+        >
+          {chipLabel}
+        </span>
       </div>
+      <p className="mt-1 text-2xs text-muted-foreground">{explanation}</p>
     </div>
   );
 }
