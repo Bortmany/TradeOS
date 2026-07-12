@@ -3,67 +3,81 @@
 @tailwind utilities;
 
 /* ---------------------------------------------------------------------------
-   TradeOS design tokens. Dark-first "trading terminal" system: near-black
-   layered surfaces, restrained cool-blue primary, and dedicated profit/loss
-   semantics with muted variants for backgrounds. A light theme is provided for
-   completeness but the product is designed dark.
+   TradeOS design tokens. Dual-theme "trading terminal" system: the dark theme
+   is the product's native look (near-black layered surfaces, one electric-blue
+   accent, dedicated profit/loss semantics); the light theme mirrors the same
+   elevation logic on paper-white surfaces. Theme selection follows the OS via
+   next-themes (class strategy) with a user override in the topbar.
 --------------------------------------------------------------------------- */
 
 :root {
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: "SF Mono", ui-monospace, "JetBrains Mono", "Menlo", monospace;
 
-  /* Light theme */
-  --background: 210 20% 98%;
-  --foreground: 222 24% 12%;
+  /* Light theme — same elevation logic as dark: background sits lowest,
+     surfaces rise toward white, borders carry the separation. */
+  color-scheme: light;
+  --background: 220 24% 97%;
+  --foreground: 224 26% 11%;
   --surface: 0 0% 100%;
-  --surface-raised: 210 20% 99%;
+  --surface-raised: 0 0% 100%;
   --surface-overlay: 0 0% 100%;
   --card: 0 0% 100%;
-  --card-foreground: 222 24% 12%;
+  --card-foreground: 224 26% 11%;
   --popover: 0 0% 100%;
-  --popover-foreground: 222 24% 12%;
-  --primary: 221 70% 55%;
+  --popover-foreground: 224 26% 11%;
+  --primary: 221 83% 53%;
   --primary-foreground: 0 0% 100%;
-  --muted: 210 16% 93%;
-  --muted-foreground: 220 9% 43%;
-  --accent: 210 16% 94%;
-  --accent-foreground: 222 24% 12%;
-  --border: 220 13% 88%;
-  --input: 220 13% 85%;
-  --ring: 221 70% 55%;
+  --muted: 220 16% 93%;
+  --muted-foreground: 220 10% 40%;
+  --accent: 220 18% 93%;
+  --accent-foreground: 224 26% 11%;
+  --border: 220 14% 87%;
+  --input: 220 14% 83%;
+  --ring: 221 83% 53%;
 
-  --profit: 152 58% 40%;
-  --profit-muted: 152 45% 92%;
-  --loss: 356 66% 52%;
+  --profit: 152 64% 32%;
+  --profit-muted: 152 45% 93%;
+  --loss: 356 70% 45%;
   --loss-muted: 356 60% 95%;
-  --warning: 38 92% 46%;
-  --warning-muted: 38 90% 94%;
-  --info: 221 70% 55%;
+  --warning: 36 95% 38%;
+  --warning-muted: 40 90% 93%;
+  --info: 221 83% 53%;
 
-  --radius: 0.625rem;
+  /* Discipline-score bands — one consistent meaning everywhere the score
+     appears (ring, meters, badges, calendar): >=80 high, 60-79 mid, <60 low. */
+  --score-high: 152 64% 32%;
+  --score-mid: 36 95% 38%;
+  --score-low: 356 70% 45%;
+
+  /* Charts: area/gradient fill strength differs per theme so filled charts
+     read correctly on both paper and near-black. */
+  --chart-area-opacity: 0.10;
+
+  --radius: 0.75rem;
 }
 
 .dark {
-  /* Dark theme — the primary experience */
-  --background: 224 30% 6%;        /* near-black with a cool cast */
-  --foreground: 213 20% 92%;
-  --surface: 224 24% 8%;
-  --surface-raised: 223 22% 11%;
-  --surface-overlay: 223 24% 13%;
-  --card: 224 24% 9%;
-  --card-foreground: 213 20% 92%;
-  --popover: 223 24% 11%;
-  --popover-foreground: 213 20% 92%;
-  --primary: 215 90% 62%;
-  --primary-foreground: 224 30% 6%;
-  --muted: 223 18% 16%;
-  --muted-foreground: 217 12% 60%;
-  --accent: 223 20% 15%;
-  --accent-foreground: 213 20% 92%;
-  --border: 223 18% 17%;
-  --input: 223 18% 20%;
-  --ring: 215 90% 62%;
+  /* Dark theme — the product's native experience */
+  color-scheme: dark;
+  --background: 228 18% 5%;        /* calmer near-black, less blue cast */
+  --foreground: 214 18% 93%;
+  --surface: 227 16% 8%;
+  --surface-raised: 226 15% 11%;
+  --surface-overlay: 225 15% 14%;
+  --card: 227 16% 8.5%;
+  --card-foreground: 214 18% 93%;
+  --popover: 226 15% 12%;
+  --popover-foreground: 214 18% 93%;
+  --primary: 217 91% 65%;
+  --primary-foreground: 228 18% 5%;
+  --muted: 226 14% 15%;
+  --muted-foreground: 219 11% 62%;
+  --accent: 226 15% 14%;
+  --accent-foreground: 214 18% 93%;
+  --border: 225 14% 16%;
+  --input: 225 14% 19%;
+  --ring: 217 91% 65%;
 
   --profit: 152 62% 46%;           /* readable green on dark */
   --profit-muted: 152 40% 14%;
@@ -71,15 +85,17 @@
   --loss-muted: 356 45% 16%;
   --warning: 40 92% 56%;
   --warning-muted: 40 50% 15%;
-  --info: 215 90% 62%;
+  --info: 217 91% 65%;
+
+  --score-high: 152 62% 46%;
+  --score-mid: 40 92% 56%;
+  --score-low: 356 75% 60%;
+
+  --chart-area-opacity: 0.22;
 }
 
 * {
   border-color: hsl(var(--border));
-}
-
-html {
-  color-scheme: dark;
 }
 
 body {
@@ -125,6 +141,15 @@ body {
     linear-gradient(90deg, hsl(var(--border) / 0.4) 1px, transparent 1px);
   background-size: 40px 40px;
   mask-image: radial-gradient(ellipse at center, black 30%, transparent 75%);
+}
+
+/* Raised cards get a hairline top highlight in dark mode so elevation reads
+   without resorting to glow. No-op in light mode (shadows do the work there). */
+.dark .card-highlight {
+  background-image: linear-gradient(
+    hsl(var(--foreground) / 0.03),
+    transparent 45%
+  );
 }
 
 /* Loading shimmer */
@@ -178,6 +203,10 @@ body {
     --profit: 152 58% 34%;
     --loss: 356 66% 46%;
     --warning: 38 92% 40%;
+    --score-high: 152 58% 34%;
+    --score-mid: 38 92% 40%;
+    --score-low: 356 66% 46%;
+    --chart-area-opacity: 0.08;
   }
   html {
     color-scheme: light;
@@ -193,7 +222,8 @@ body {
   .container {
     max-width: 100% !important;
   }
-  .grid-texture {
-    display: none !important;
+  .grid-texture,
+  .card-highlight {
+    background-image: none !important;
   }
 }

@@ -52,6 +52,12 @@ const config: Config = {
           muted: "hsl(var(--warning-muted))",
         },
         info: "hsl(var(--info))",
+        // Discipline-score bands (>=80 / 60-79 / <60)
+        score: {
+          high: "hsl(var(--score-high))",
+          mid: "hsl(var(--score-mid))",
+          low: "hsl(var(--score-low))",
+        },
         card: {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",

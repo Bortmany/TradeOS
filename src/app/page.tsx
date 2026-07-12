@@ -16,7 +16,8 @@ import { cn } from "@/lib/utils";
 
 export default function LandingPage() {
   return (
-    <div className="min-h-screen">
+    // The marketing page is always dark regardless of the user's app theme.
+    <div className="dark min-h-screen bg-background text-foreground">
       <SiteHeader />
       <Hero />
       <LogoStrip />
