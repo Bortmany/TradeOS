@@ -23,5 +23,5 @@ Plain-English list of what to set up before launch. Full context: `Agents/docs/g
 - AI coaching (`AI_COACHING_ENABLED`, `ANTHROPIC_API_KEY`) — hard-disabled in code (future phase). Nothing to do.
 - No email provider is wired.
 
-## Security note (before scaling up)
-No committed secrets; broker keys are encrypted at rest; webhook signatures are verified. **Recommended before heavy public traffic:** add rate limiting to the login and demo-data/import endpoints (currently none). See B2 in the central audit.
+## Security note
+No committed secrets; broker keys are encrypted at rest; webhook signatures are verified. Audit item **B2 is now fixed**: login, register, and the heavy demo-data/import endpoints are rate-limited (`src/lib/rate-limit.ts`). Note: the limiter is in-memory (per process) — correct for the current single-instance deploy; revisit if you scale to multiple instances.
