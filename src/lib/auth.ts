@@ -110,6 +110,10 @@ export async function authenticate(email: string, password: string) {
 }
 
 export async function getCurrentUser(): Promise<SessionUser | null> {
+  // Enforce the strong-secret guard on the VERIFY path too, not just when a
+  // session is issued. Kept outside the try below so a weak-secret misconfig
+  // fails loudly in production instead of being swallowed into "logged out".
+  assertSecureSecret();
   const jar = await cookies();
   const token = jar.get(COOKIE_NAME)?.value;
   if (!token) return null;
