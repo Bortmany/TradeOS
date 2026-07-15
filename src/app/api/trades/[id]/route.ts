@@ -6,6 +6,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { enforceUserRateLimit } from "@/lib/rate-limit";
 
 const patchSchema = z.object({
   notes: z.string().max(5000).optional().nullable(),
@@ -33,6 +34,9 @@ export async function PATCH(
   } catch {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
+
+  const limited = enforceUserRateLimit("trades:update", user.id);
+  if (limited) return limited;
 
   try {
     const { id } = await params;
@@ -76,6 +80,9 @@ export async function DELETE(
   } catch {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
+
+  const limited = enforceUserRateLimit("trades:delete", user.id);
+  if (limited) return limited;
 
   try {
     const { id } = await params;

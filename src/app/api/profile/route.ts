@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { enforceUserRateLimit } from "@/lib/rate-limit";
 
 const schema = z
   .object({
@@ -19,6 +20,9 @@ export async function PATCH(req: Request) {
   } catch {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
+
+  const limited = enforceUserRateLimit("profile:write", user.id);
+  if (limited) return limited;
 
   try {
     const d = schema.parse(await req.json());

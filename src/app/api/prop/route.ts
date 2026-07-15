@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { PROP_PRESETS } from "@/lib/prop";
 import { PROP_FIRMS, DRAWDOWN_TYPES } from "@/lib/types";
 
@@ -34,6 +35,9 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
+
+  const limited = enforceUserRateLimit("prop:write", user.id);
+  if (limited) return limited;
 
   try {
     const body = await req.json();
