@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { BROKERS, ACCOUNT_KINDS, type Plan } from "@/lib/types";
 import { withinLimit } from "@/lib/billing/plans";
 
@@ -40,6 +41,9 @@ export async function POST(req: Request) {
   const user = await auth();
   if (!user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
 
+  const limited = enforceUserRateLimit("accounts:write", user.id);
+  if (limited) return limited;
+
   try {
     const d = createSchema.parse(await req.json());
 
@@ -77,6 +81,9 @@ export async function PATCH(req: Request) {
   const user = await auth();
   if (!user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
 
+  const limited = enforceUserRateLimit("accounts:write", user.id);
+  if (limited) return limited;
+
   try {
     const { id, ...updates } = patchSchema.parse(await req.json());
 
@@ -95,6 +102,9 @@ export async function PATCH(req: Request) {
 export async function DELETE(req: Request) {
   const user = await auth();
   if (!user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+
+  const limited = enforceUserRateLimit("accounts:write", user.id);
+  if (limited) return limited;
 
   try {
     const { id } = deleteSchema.parse(await req.json());

@@ -12,6 +12,7 @@ import {
 import { syncConnection } from "@/lib/connectors/sync";
 import { withinLimit } from "@/lib/billing/plans";
 import type { Plan } from "@/lib/types";
+import { enforceUserRateLimit, USER_EXTERNAL_LIMIT } from "@/lib/rate-limit";
 
 const discoverSchema = z.object({
   action: z.literal("discover"),
@@ -66,6 +67,11 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
+
+  // Tight limit: both actions reach out to the broker's API (login / account
+  // search / initial sync), so each request is slow and network-bound.
+  const limited = enforceUserRateLimit("connectors:write", user.id, USER_EXTERNAL_LIMIT);
+  if (limited) return limited;
 
   let body: unknown;
   try {
@@ -160,6 +166,10 @@ export async function DELETE(req: Request) {
   } catch {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
+
+  const limited = enforceUserRateLimit("connectors:delete", user.id);
+  if (limited) return limited;
+
   try {
     const { id } = z.object({ id: z.string().min(1) }).parse(await req.json());
     const conn = await prisma.brokerConnection.findFirst({ where: { id, userId: user.id } });

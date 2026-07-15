@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RULE_TYPES, SEVERITIES, RULE_CONFIG_SCHEMAS, type RuleType } from "@/lib/types";
 
 const createSchema = z.object({
@@ -51,6 +52,8 @@ function serializeConfig(type: RuleType, raw: unknown): string {
 export async function POST(req: Request) {
   const user = await auth();
   if (!user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  const limited = enforceUserRateLimit("rules:write", user.id);
+  if (limited) return limited;
   try {
     const d = createSchema.parse(await req.json());
     const book = await prisma.ruleBook.findFirst({
@@ -82,6 +85,8 @@ export async function POST(req: Request) {
 export async function PATCH(req: Request) {
   const user = await auth();
   if (!user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  const limited = enforceUserRateLimit("rules:write", user.id);
+  if (limited) return limited;
   try {
     const d = patchSchema.parse(await req.json());
     const existing = await prisma.rule.findFirst({
@@ -115,6 +120,8 @@ export async function PATCH(req: Request) {
 export async function DELETE(req: Request) {
   const user = await auth();
   if (!user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  const limited = enforceUserRateLimit("rules:write", user.id);
+  if (limited) return limited;
   try {
     const d = deleteSchema.parse(await req.json());
     const existing = await prisma.rule.findFirst({

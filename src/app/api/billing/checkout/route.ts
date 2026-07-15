@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getStripe, priceIdForPlan } from "@/lib/billing/stripe";
 import { PLANS } from "@/lib/types";
+import { enforceUserRateLimit, USER_EXTERNAL_LIMIT } from "@/lib/rate-limit";
 
 const schema = z.object({ plan: z.enum(PLANS) });
 
@@ -16,6 +17,10 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ ok: false, message: "Unauthorized" }, { status: 401 });
   }
+
+  // Tight limit: creates Stripe customers / checkout sessions (external, paid).
+  const limited = enforceUserRateLimit("billing:checkout", user.id, USER_EXTERNAL_LIMIT);
+  if (limited) return limited;
 
   const stripe = getStripe();
   if (!stripe) {

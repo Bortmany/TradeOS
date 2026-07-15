@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { syncConnection } from "@/lib/connectors/sync";
 import { ConnectorError } from "@/lib/connectors/topstepx";
+import { enforceUserRateLimit, USER_EXTERNAL_LIMIT } from "@/lib/rate-limit";
 
 export async function POST(req: Request) {
   let user;
@@ -11,6 +12,12 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
+
+  // Tight limit: each sync calls the broker's API and pulls fills. Guards both
+  // the broker's rate limits and our own worker from a hammering client.
+  const limited = enforceUserRateLimit("connectors:sync", user.id, USER_EXTERNAL_LIMIT);
+  if (limited) return limited;
+
   try {
     const { id } = z.object({ id: z.string().min(1) }).parse(await req.json());
     const result = await syncConnection(id, user.id);

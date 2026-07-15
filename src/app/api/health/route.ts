@@ -18,6 +18,7 @@ export async function GET() {
 
   checks.billing = process.env.STRIPE_SECRET_KEY ? "configured" : "dev-mode";
   checks.aiCoaching = process.env.AI_COACHING_ENABLED === "true" ? "enabled" : "disabled";
+  checks.errorTracking = process.env.SENTRY_DSN ? "configured" : "dormant";
 
   return NextResponse.json(
     { ok, status: ok ? "healthy" : "degraded", checks, time: new Date().toISOString() },

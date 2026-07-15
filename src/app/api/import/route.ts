@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { ingestCsv } from "@/lib/ingestion";
 import { getFeatures, effectivePlan } from "@/lib/billing/plans";
+import { rateLimit } from "@/lib/rate-limit";
 import type { Broker } from "@/lib/types";
 import { BROKERS } from "@/lib/types";
 
@@ -19,6 +20,15 @@ export async function POST(req: Request) {
     user = await requireUser();
   } catch {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Imports loop many DB writes — cap the rate. 20 per user / 10 min.
+  const rl = rateLimit(`import:${user.id}`, { limit: 20, windowMs: 10 * 60 * 1000 });
+  if (!rl.ok) {
+    return NextResponse.json(
+      { ok: false, error: "Too many imports in a short time. Please wait a few minutes." },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfter) } }
+    );
   }
 
   try {

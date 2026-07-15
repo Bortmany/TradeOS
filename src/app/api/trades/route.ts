@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { SIDES } from "@/lib/types";
 import { pointMultiplier } from "@/lib/ingestion/symbols";
+import { enforceUserRateLimit } from "@/lib/rate-limit";
 
 const schema = z.object({
   accountId: z.string().min(1),
@@ -28,6 +29,9 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
+
+  const limited = enforceUserRateLimit("trades:create", user.id);
+  if (limited) return limited;
 
   try {
     const d = schema.parse(await req.json());
