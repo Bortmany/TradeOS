@@ -4,9 +4,10 @@
 
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireUser } from "@/lib/auth";
+import { withUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
+import { recomputeCompliance } from "@/lib/rules/recompute-compliance";
 
 const patchSchema = z.object({
   notes: z.string().max(5000).optional().nullable(),
@@ -15,26 +16,11 @@ const patchSchema = z.object({
   tags: z.string().max(500).optional().nullable(),
 });
 
-async function recompute(userId: string) {
-  try {
-    const { recomputeUserCompliance } = await import("@/lib/rules/recompute");
-    await recomputeUserCompliance(userId);
-  } catch {
-    /* best-effort */
-  }
-}
-
-export async function PATCH(
+export const PATCH = withUser(async (
+  user,
   req: Request,
   { params }: { params: Promise<{ id: string }> }
-) {
-  let user;
-  try {
-    user = await requireUser();
-  } catch {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
-
+) => {
   const limited = enforceUserRateLimit("trades:update", user.id);
   if (limited) return limited;
 
@@ -56,7 +42,7 @@ export async function PATCH(
     if ("tags" in d) data.tags = d.tags ? d.tags : null;
 
     await prisma.trade.update({ where: { id }, data });
-    await recompute(user.id);
+    await recomputeCompliance(user.id);
 
     return NextResponse.json({ ok: true });
   } catch (err) {
@@ -68,19 +54,13 @@ export async function PATCH(
           : "Failed.";
     return NextResponse.json({ ok: false, error: message }, { status: 400 });
   }
-}
+});
 
-export async function DELETE(
+export const DELETE = withUser(async (
+  user,
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
-) {
-  let user;
-  try {
-    user = await requireUser();
-  } catch {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
-
+) => {
   const limited = enforceUserRateLimit("trades:delete", user.id);
   if (limited) return limited;
 
@@ -95,11 +75,11 @@ export async function DELETE(
     }
 
     await prisma.trade.delete({ where: { id } });
-    await recompute(user.id);
+    await recomputeCompliance(user.id);
 
     return NextResponse.json({ ok: true });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed.";
     return NextResponse.json({ ok: false, error: message }, { status: 400 });
   }
-}
+});

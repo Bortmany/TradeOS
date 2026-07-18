@@ -76,6 +76,8 @@ export async function getTrades(userId: string, filter: TradeFilter = {}) {
         : {}),
     },
     orderBy: { entryTime: "desc" },
+    // Memory guard at scale: cap one query at the 10,000 most recent trades — analytics below the cap are unchanged.
+    take: 10000,
   });
   return rows.map(mapTrade);
 }

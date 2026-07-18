@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireUser } from "@/lib/auth";
+import { withUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { encryptSecret } from "@/lib/crypto";
 import {
@@ -30,13 +30,7 @@ const connectSchema = z.object({
   externalAccountName: z.string().optional(),
 });
 
-export async function GET() {
-  let user;
-  try {
-    user = await requireUser();
-  } catch {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
+export const GET = withUser(async (user) => {
   const rows = await prisma.brokerConnection.findMany({
     where: { userId: user.id },
     include: { account: { select: { name: true } } },
@@ -58,16 +52,9 @@ export async function GET() {
       lastError: c.lastError,
     })),
   });
-}
+});
 
-export async function POST(req: Request) {
-  let user;
-  try {
-    user = await requireUser();
-  } catch {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
-
+export const POST = withUser(async (user, req: Request) => {
   // Tight limit: both actions reach out to the broker's API (login / account
   // search / initial sync), so each request is slow and network-bound.
   const limited = enforceUserRateLimit("connectors:write", user.id, USER_EXTERNAL_LIMIT);
@@ -157,16 +144,9 @@ export async function POST(req: Request) {
     const status = err instanceof ConnectorError && err.kind === "auth" ? 401 : 400;
     return NextResponse.json({ ok: false, error: message }, { status });
   }
-}
+});
 
-export async function DELETE(req: Request) {
-  let user;
-  try {
-    user = await requireUser();
-  } catch {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
-
+export const DELETE = withUser(async (user, req: Request) => {
   const limited = enforceUserRateLimit("connectors:delete", user.id);
   if (limited) return limited;
 
@@ -180,4 +160,4 @@ export async function DELETE(req: Request) {
   } catch {
     return NextResponse.json({ ok: false, error: "Invalid request." }, { status: 400 });
   }
-}
+});

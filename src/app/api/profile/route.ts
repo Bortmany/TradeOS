@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireUser } from "@/lib/auth";
+import { withUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 
@@ -13,14 +13,7 @@ const schema = z
     message: "Nothing to update.",
   });
 
-export async function PATCH(req: Request) {
-  let user;
-  try {
-    user = await requireUser();
-  } catch {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
-
+export const PATCH = withUser(async (user, req: Request) => {
   const limited = enforceUserRateLimit("profile:write", user.id);
   if (limited) return limited;
 
@@ -41,4 +34,4 @@ export async function PATCH(req: Request) {
       err instanceof z.ZodError ? "Please check your profile fields." : err instanceof Error ? err.message : "Failed.";
     return NextResponse.json({ ok: false, error: message }, { status: 400 });
   }
-}
+});

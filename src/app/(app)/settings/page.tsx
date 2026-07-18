@@ -5,6 +5,7 @@ import { PLAN_DEFINITIONS } from "@/lib/billing/plans";
 import type { Plan } from "@/lib/types";
 import { PageHeader } from "@/components/page-header";
 import { ProfileForm } from "@/components/settings/profile-form";
+import { DataPrivacy } from "@/components/settings/data-privacy";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -70,6 +71,18 @@ export default async function SettingsPage() {
               label="Member since"
               value={dbUser ? formatDate(dbUser.createdAt) : "—"}
             />
+          </CardContent>
+        </Card>
+
+        <Card className="lg:col-span-3">
+          <CardHeader>
+            <CardTitle>Data &amp; privacy</CardTitle>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              Export a copy of your data, or delete your account entirely.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <DataPrivacy />
           </CardContent>
         </Card>
       </div>
