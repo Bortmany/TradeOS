@@ -83,8 +83,12 @@ export default function PrivacyPage() {
       <Section title="Your controls">
         <ul className="list-disc space-y-1.5 pl-5">
           <li>
-            <strong>Export</strong> — download everything you&apos;ve stored as a JSON file from
-            Settings → Data &amp; privacy.
+            <strong>Export</strong> — download a copy of your profile, trading accounts,
+            trades, rulebooks and prop-firm data as a JSON file from
+            Settings → Data &amp; privacy. (Derived records the app computes for
+            you — alerts, rule evaluations, score history and import logs — are
+            not included, and broker connections are never exported because
+            they contain your encrypted API key.)
           </li>
           <li>
             <strong>Delete</strong> — permanently delete your account and all of its data

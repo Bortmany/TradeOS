@@ -8,7 +8,10 @@
 // Sentry DSN), add its origin to the matching directive here.
 const contentSecurityPolicy = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline'",
+  // Next's development server delivers code through eval(), so dev (and only
+  // dev) needs 'unsafe-eval' or the app renders blank locally. Production
+  // never gets it.
+  `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self' data:",

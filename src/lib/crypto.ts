@@ -10,8 +10,16 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 
 function key(): Buffer {
+  // Same rule as AUTH_SECRET in auth.ts: a weak dedicated secret in production
+  // would silently produce a guessable encryption key, so refuse it outright.
+  const dedicated = process.env.ENCRYPTION_SECRET;
+  if (dedicated !== undefined && dedicated.length < 32 && process.env.NODE_ENV === "production") {
+    throw new Error(
+      "ENCRYPTION_SECRET must be at least 32 characters in production. Generate one with: openssl rand -base64 32"
+    );
+  }
   const secret =
-    process.env.ENCRYPTION_SECRET ??
+    dedicated ??
     process.env.AUTH_SECRET ??
     "dev-secret-change-me-in-production-please-0000000000";
   return createHash("sha256").update(`${secret}:connector-secrets`).digest();
