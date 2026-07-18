@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireUser } from "@/lib/auth";
+import { withUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { PROP_PRESETS } from "@/lib/prop";
@@ -28,14 +28,7 @@ const customSchema = z.object({
   phase: z.string().optional(),
 });
 
-export async function POST(req: Request) {
-  let user;
-  try {
-    user = await requireUser();
-  } catch {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
-
+export const POST = withUser(async (user, req: Request) => {
   const limited = enforceUserRateLimit("prop:write", user.id);
   if (limited) return limited;
 
@@ -134,4 +127,4 @@ export async function POST(req: Request) {
           : "Failed.";
     return NextResponse.json({ ok: false, error: message }, { status: 400 });
   }
-}
+});

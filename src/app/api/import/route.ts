@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireUser } from "@/lib/auth";
+import { withUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { ingestCsv } from "@/lib/ingestion";
 import { getFeatures, effectivePlan } from "@/lib/billing/plans";
 import { rateLimit } from "@/lib/rate-limit";
+import { recomputeCompliance } from "@/lib/rules/recompute-compliance";
 import type { Broker } from "@/lib/types";
 import { BROKERS } from "@/lib/types";
 
@@ -14,14 +15,7 @@ const schema = z.object({
   broker: z.enum(BROKERS).optional(),
 });
 
-export async function POST(req: Request) {
-  let user;
-  try {
-    user = await requireUser();
-  } catch {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
-
+export const POST = withUser(async (user, req: Request) => {
   // Imports loop many DB writes — cap the rate. 20 per user / 10 min.
   const rl = rateLimit(`import:${user.id}`, { limit: 20, windowMs: 10 * 60 * 1000 });
   if (!rl.ok) {
@@ -105,12 +99,7 @@ export async function POST(req: Request) {
     });
 
     // Recompute discipline/compliance in the background of the request.
-    try {
-      const { recomputeUserCompliance } = await import("@/lib/rules/recompute");
-      await recomputeUserCompliance(user.id);
-    } catch {
-      // recompute is best-effort; import still succeeds.
-    }
+    await recomputeCompliance(user.id);
 
     return NextResponse.json({
       ok: true,
@@ -124,4 +113,4 @@ export async function POST(req: Request) {
       err instanceof z.ZodError ? "Invalid request." : err instanceof Error ? err.message : "Import failed.";
     return NextResponse.json({ ok: false, error: message }, { status: 400 });
   }
-}
+});

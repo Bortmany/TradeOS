@@ -6,6 +6,7 @@
 
 import "server-only";
 import { cookies } from "next/headers";
+import { NextResponse } from "next/server";
 import { SignJWT, jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
@@ -143,4 +144,26 @@ export async function requireUser(): Promise<SessionUser> {
   const user = await getCurrentUser();
   if (!user) throw new Error("UNAUTHORIZED");
   return user;
+}
+
+// Wraps an API route handler so it only runs for a signed-in user. Replaces the
+// repeated try/requireUser/catch block at the top of route handlers:
+//
+//   export const POST = withUser(async (user, req: Request) => { ... });
+//
+// The signed-in user is passed as the first argument; the route's normal
+// arguments (request, and `{ params }` for dynamic routes) follow. When there
+// is no valid session it returns the repo's standard 401 response.
+export function withUser<Args extends unknown[]>(
+  handler: (user: SessionUser, ...args: Args) => Promise<Response>
+): (...args: Args) => Promise<Response> {
+  return async (...args: Args) => {
+    let user: SessionUser;
+    try {
+      user = await requireUser();
+    } catch {
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    }
+    return handler(user, ...args);
+  };
 }

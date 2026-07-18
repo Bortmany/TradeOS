@@ -1,11 +1,27 @@
-// TradeOS — secret encryption at rest (broker API keys). AES-256-GCM with a key
-// derived from AUTH_SECRET, so no extra key management is needed for the MVP.
-// Rotating AUTH_SECRET invalidates stored credentials (users just reconnect).
+// TradeOS — secret encryption at rest (broker API keys). AES-256-GCM.
+// The key is derived from a dedicated ENCRYPTION_SECRET when one is set, so the
+// login-signing secret and the at-rest encryption key can be managed (and
+// rotated) independently. When ENCRYPTION_SECRET is unset the key falls back to
+// the original AUTH_SECRET derivation, so existing stored keys keep working.
+// Rotating whichever secret is in use invalidates stored credentials (users
+// just reconnect their broker) — set ENCRYPTION_SECRET on FIRST deploy, not
+// after keys have been stored.
 
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 
 function key(): Buffer {
-  const secret = process.env.AUTH_SECRET ?? "dev-secret-change-me-in-production-please-0000000000";
+  // Same rule as AUTH_SECRET in auth.ts: a weak dedicated secret in production
+  // would silently produce a guessable encryption key, so refuse it outright.
+  const dedicated = process.env.ENCRYPTION_SECRET;
+  if (dedicated !== undefined && dedicated.length < 32 && process.env.NODE_ENV === "production") {
+    throw new Error(
+      "ENCRYPTION_SECRET must be at least 32 characters in production. Generate one with: openssl rand -base64 32"
+    );
+  }
+  const secret =
+    dedicated ??
+    process.env.AUTH_SECRET ??
+    "dev-secret-change-me-in-production-please-0000000000";
   return createHash("sha256").update(`${secret}:connector-secrets`).digest();
 }
 

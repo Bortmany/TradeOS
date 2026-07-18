@@ -1,18 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireUser } from "@/lib/auth";
+import { withUser } from "@/lib/auth";
 import { syncConnection } from "@/lib/connectors/sync";
 import { ConnectorError } from "@/lib/connectors/topstepx";
 import { enforceUserRateLimit, USER_EXTERNAL_LIMIT } from "@/lib/rate-limit";
 
-export async function POST(req: Request) {
-  let user;
-  try {
-    user = await requireUser();
-  } catch {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
-
+export const POST = withUser(async (user, req: Request) => {
   // Tight limit: each sync calls the broker's API and pulls fills. Guards both
   // the broker's rate limits and our own worker from a hammering client.
   const limited = enforceUserRateLimit("connectors:sync", user.id, USER_EXTERNAL_LIMIT);
@@ -30,4 +23,4 @@ export async function POST(req: Request) {
     const status = err instanceof ConnectorError && err.kind === "auth" ? 401 : 400;
     return NextResponse.json({ ok: false, error: message }, { status });
   }
-}
+});

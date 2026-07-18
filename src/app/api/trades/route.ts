@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireUser } from "@/lib/auth";
+import { withUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { SIDES } from "@/lib/types";
 import { pointMultiplier } from "@/lib/ingestion/symbols";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
+import { recomputeCompliance } from "@/lib/rules/recompute-compliance";
 
 const schema = z.object({
   accountId: z.string().min(1),
@@ -22,14 +23,7 @@ const schema = z.object({
   tags: z.string().optional().nullable(),
 });
 
-export async function POST(req: Request) {
-  let user;
-  try {
-    user = await requireUser();
-  } catch {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
-
+export const POST = withUser(async (user, req: Request) => {
   const limited = enforceUserRateLimit("trades:create", user.id);
   if (limited) return limited;
 
@@ -75,12 +69,7 @@ export async function POST(req: Request) {
       },
     });
 
-    try {
-      const { recomputeUserCompliance } = await import("@/lib/rules/recompute");
-      await recomputeUserCompliance(user.id);
-    } catch {
-      /* best-effort */
-    }
+    await recomputeCompliance(user.id);
 
     return NextResponse.json({ ok: true, id: trade.id });
   } catch (err) {
@@ -88,4 +77,4 @@ export async function POST(req: Request) {
       err instanceof z.ZodError ? "Please check the trade fields." : err instanceof Error ? err.message : "Failed.";
     return NextResponse.json({ ok: false, error: message }, { status: 400 });
   }
-}
+});
