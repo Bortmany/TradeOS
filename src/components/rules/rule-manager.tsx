@@ -31,6 +31,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { RULE_TYPES, SEVERITIES, type RuleType, type Severity } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -263,15 +269,23 @@ export function RuleBookDeleteButton({ id, name }: { id: string; name: string })
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <Button
-        variant="ghost"
-        size="icon"
-        className="h-7 w-7 text-muted-foreground hover:text-loss"
-        aria-label="Delete rulebook"
-        onClick={() => setOpen(true)}
-      >
-        <Trash2 className="h-4 w-4" />
-      </Button>
+      {/* Hover hint so the icon-only button explains itself. */}
+      <TooltipProvider delayDuration={300}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-muted-foreground hover:text-loss"
+              aria-label="Delete rulebook"
+              onClick={() => setOpen(true)}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Delete rulebook</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle>Delete rulebook</DialogTitle>
@@ -788,24 +802,37 @@ export function RuleRowActions({ bookId, rule }: { bookId: string; rule: RuleIni
 
   return (
     <div className="flex items-center gap-0.5">
-      <Button
-        variant="ghost"
-        size="icon"
-        className="h-7 w-7 text-muted-foreground hover:text-foreground"
-        aria-label="Edit rule"
-        onClick={() => setEditOpen(true)}
-      >
-        <Pencil className="h-3.5 w-3.5" />
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon"
-        className="h-7 w-7 text-muted-foreground hover:text-loss"
-        aria-label="Delete rule"
-        onClick={() => setDelOpen(true)}
-      >
-        <Trash2 className="h-3.5 w-3.5" />
-      </Button>
+      {/* Hover hints so the icon-only buttons explain themselves. */}
+      <TooltipProvider delayDuration={300}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-muted-foreground hover:text-foreground"
+              aria-label="Edit rule"
+              onClick={() => setEditOpen(true)}
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Edit rule</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-muted-foreground hover:text-loss"
+              aria-label="Delete rule"
+              onClick={() => setDelOpen(true)}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Delete rule</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
 
       {editOpen && (
         <RuleFormDialog bookId={bookId} rule={rule} open={editOpen} onOpenChange={setEditOpen} />
