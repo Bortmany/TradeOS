@@ -1,8 +1,9 @@
 // TradeOS — data export. Returns everything the signed-in user has stored, as
 // one downloadable JSON file: profile (minus the password hash), trading
-// accounts, trades, rulebooks + rules, and prop-firm trackers. Broker
-// connections are deliberately NOT included — they hold the encrypted API key,
-// and broker credentials never leave the server in any form.
+// accounts, trades, rulebooks + rules, prop-firm trackers, backtest runs and
+// market datasets. Broker connections are deliberately NOT included — they
+// hold the encrypted API key, and broker credentials never leave the server
+// in any form.
 
 import { NextResponse } from "next/server";
 import { withUser } from "@/lib/auth";
@@ -19,7 +20,7 @@ export const GET = withUser(async (user) => {
     );
   }
 
-  const [profile, accounts, trades, ruleBooks, propAccounts] = await Promise.all([
+  const [profile, accounts, trades, ruleBooks, propAccounts, backtestRuns, marketDatasets] = await Promise.all([
     prisma.user.findUnique({
       where: { id: user.id },
       // Everything except passwordHash (never leaves the server).
@@ -44,6 +45,24 @@ export const GET = withUser(async (user) => {
       orderBy: { createdAt: "asc" },
     }),
     prisma.propAccount.findMany({ where: { userId: user.id }, orderBy: { createdAt: "asc" } }),
+    prisma.backtestRun.findMany({ where: { userId: user.id }, orderBy: { createdAt: "asc" } }),
+    // Metadata only — the candles column can be megabytes per dataset, and
+    // serializing every blob into one JSON response would exhaust memory.
+    prisma.marketDataset.findMany({
+      where: { userId: user.id },
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        name: true,
+        symbol: true,
+        timeframe: true,
+        candleCount: true,
+        firstTime: true,
+        lastTime: true,
+        source: true,
+        createdAt: true,
+      },
+    }),
   ]);
 
   const filename = `tradeos-export-${new Date().toISOString().slice(0, 10)}.json`;
@@ -55,6 +74,8 @@ export const GET = withUser(async (user) => {
       trades,
       ruleBooks,
       propAccounts,
+      backtestRuns,
+      marketDatasets,
     },
     { headers: { "Content-Disposition": `attachment; filename="${filename}"` } }
   );

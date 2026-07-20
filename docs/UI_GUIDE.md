@@ -76,6 +76,7 @@ Shared components:
 `components/theme-toggle.tsx` (ThemeToggle — already in the topbar; don't add more),
 `components/charts/equity-chart.tsx` (EquityChart `{data,height?,startingBalance?}`),
 `components/charts/bucket-bar.tsx` (BucketBar `{data,height?,layout?:"horizontal"|"vertical"}`),
+`components/charts/comparison-chart.tsx` (ComparisonChart `{variant,baseline?,variantLabel?,baselineLabel?,height?}` — two-series equity, variant vs. dashed muted baseline),
 `components/charts/score-ring.tsx` (ScoreRing `{score,size?,label?}`, ScoreMeter `{label,score,detail?}`).
 Charting lib: `recharts` (client only). `lucide-react` for icons.
 

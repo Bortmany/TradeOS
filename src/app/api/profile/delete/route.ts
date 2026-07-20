@@ -1,8 +1,9 @@
 // TradeOS — account deletion. Confirms the user's password, then deletes the
 // User row; every relation in the schema cascades from User (accounts, trades,
 // rulebooks, evaluations, snapshots, imports, prop trackers, alerts, broker
-// connections), so nothing of theirs is left behind. The session cookie is
-// cleared so the browser is signed out immediately.
+// connections, backtest runs, market datasets), so nothing of theirs is left
+// behind. The session cookie is cleared so the browser is signed out
+// immediately.
 
 import { NextResponse } from "next/server";
 import { z } from "zod";

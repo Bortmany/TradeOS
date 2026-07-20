@@ -10,6 +10,7 @@
 
 import { PrismaClient, Prisma } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import type { Candle, ReplayConfig, Side, SimConfig, TradeRecord, TradeSource } from "../src/lib/types";
 
 const prisma = new PrismaClient();
 
@@ -246,6 +247,55 @@ function generateTrades(
 }
 
 // --------------------------------------------------------------------------
+// Market-data generation (for the demo backtesting dataset)
+// --------------------------------------------------------------------------
+
+// Synthetic ES 5-minute RTH candles over the trailing ~30 weekdays: a bounded,
+// tick-aligned random walk. A SEPARATE PRNG instance keeps the shared `rand`
+// sequence untouched so all previously seeded data stays byte-identical.
+function generateCandles(next: () => number): Candle[] {
+  const candles: Candle[] = [];
+  const tick = 0.25;
+  let price = 5400;
+
+  const todayEt = etDateParts(new Date());
+  const baseUtc = Date.UTC(todayEt.year, todayEt.month - 1, todayEt.day, 12, 0, 0);
+
+  // Oldest day first (~44 calendar days back ≈ 30 weekdays) → newest.
+  for (let i = 44; i >= 0; i--) {
+    const dayDate = new Date(baseUtc - i * DAY_MS);
+    const dow = dayDate.getUTCDay();
+    if (dow === 0 || dow === 6) continue;
+
+    const year = dayDate.getUTCFullYear();
+    const month = dayDate.getUTCMonth() + 1;
+    const day = dayDate.getUTCDate();
+
+    // Small overnight gap, then 78 five-minute bars from 09:30 to 15:55 ET.
+    price = roundTick(price + (next() - 0.5) * 12, tick);
+    const dayDrift = (next() - 0.5) * 0.6; // mild directional bias per day
+    for (let bar = 0; bar < 78; bar++) {
+      const minutes = 570 + bar * 5;
+      const t = Math.floor(
+        etWallToUtc(year, month, day, Math.floor(minutes / 60), minutes % 60).getTime() / 1000
+      );
+      const o = price;
+      const c = roundTick(o + dayDrift + (next() - 0.5) * 4, tick);
+      const wiggleHi = next() * 1.5;
+      const wiggleLo = next() * 1.5;
+      const h = roundTick(Math.max(o, c) + wiggleHi, tick);
+      const l = roundTick(Math.min(o, c) - wiggleLo, tick);
+      candles.push({ t, o, h, l, c, v: 500 + Math.floor(next() * 4500) });
+      price = c;
+    }
+    // Keep the walk anchored near the base so prices stay realistic.
+    price = roundTick(price + (5400 - price) * 0.05, tick);
+  }
+
+  return candles;
+}
+
+// --------------------------------------------------------------------------
 // Main
 // --------------------------------------------------------------------------
 
@@ -456,6 +506,136 @@ async function main(): Promise<void> {
     ],
   });
 
+  // --- Backtesting: demo dataset + two recorded example runs ------------
+  // Computed with the real engines so the seeded portal shows honest numbers.
+  const candleRand = mulberry32(0x5eedca); // separate PRNG — see generateCandles
+  const candles = generateCandles(candleRand);
+  const dataset = await prisma.marketDataset.create({
+    data: {
+      userId: user.id,
+      name: "ES 5-minute (synthetic demo)",
+      symbol: "ES",
+      timeframe: "5m",
+      candleCount: candles.length,
+      firstTime: new Date(candles[0].t * 1000),
+      lastTime: new Date(candles[candles.length - 1].t * 1000),
+      candles: JSON.stringify(candles),
+      source: "seed",
+    },
+  });
+
+  let backtestCount = 0;
+  try {
+    const { runSimulation } = await import("../src/lib/backtest/simulate");
+    const { runReplay } = await import("../src/lib/backtest/replay");
+    const { assembleResults } = await import("../src/lib/backtest/results");
+
+    // Example 1: ORB 15m simulation on the demo dataset.
+    const simConfig: SimConfig = {
+      kind: "simulation",
+      datasetId: dataset.id,
+      strategy: "opening_range_breakout",
+      direction: "both",
+      contracts: 1,
+      stopPoints: 8,
+      targetPoints: 12,
+      rangeMinutes: 15,
+      fastPeriod: 9,
+      slowPeriod: 21,
+      maType: "sma",
+      levelSide: "both",
+      flattenAt: "15:55",
+      feesPerSide: 2.25,
+      slippageTicks: 1,
+      tickSize: 0.25,
+    };
+    const simTrades = runSimulation(candles, simConfig, "ES");
+    await prisma.backtestRun.create({
+      data: {
+        userId: user.id,
+        name: "ORB 15-minute on ES",
+        kind: "simulation",
+        status: "completed",
+        config: JSON.stringify(simConfig),
+        results: JSON.stringify(
+          assembleResults({ variant: simTrades, baseline: null, exclusions: [] })
+        ),
+        notes: "Demo run — opening range breakout with an 8pt stop / 12pt target bracket.",
+        datasetId: dataset.id,
+      },
+    });
+    backtestCount++;
+
+    // Example 2: replay — VWAP Reclaim, mornings only, skipping trades that
+    // broke the Intraday Discipline rulebook.
+    const tradeRecords: TradeRecord[] = trades.map((t, i) => ({
+      id: `seed-${i}`,
+      userId: user.id,
+      accountId: t.accountId,
+      symbol: t.symbol,
+      side: t.side as Side,
+      entryPrice: t.entryPrice,
+      exitPrice: (t.exitPrice as number | null) ?? null,
+      quantity: t.quantity,
+      entryTime: t.entryTime as Date,
+      exitTime: (t.exitTime as Date | null) ?? null,
+      fees: t.fees ?? 0,
+      pnl: t.pnl ?? 0,
+      pnlGross: (t.pnlGross as number | null) ?? null,
+      strategyTag: t.strategyTag ?? null,
+      notes: t.notes ?? null,
+      emotions: t.emotions ?? null,
+      tags: null,
+      source: (t.source ?? "manual") as TradeSource,
+      externalId: null,
+      isWin: t.isWin ?? null,
+    }));
+    const ruleRows = await prisma.rule.findMany({
+      where: { ruleBookId: intraday.id, isActive: true },
+      orderBy: { order: "asc" },
+    });
+    const replayConfig: ReplayConfig = {
+      kind: "replay",
+      strategyTags: ["VWAP Reclaim"],
+      sessions: ["rth_am"],
+      ruleBookId: intraday.id,
+    };
+    const outcome = runReplay(
+      tradeRecords,
+      replayConfig,
+      ruleRows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        type: r.type as never,
+        severity: r.severity as never,
+        weight: r.weight,
+        config: JSON.parse(r.config),
+      })),
+      { scope: intraday.scope, scopeValue: intraday.scopeValue }
+    );
+    await prisma.backtestRun.create({
+      data: {
+        userId: user.id,
+        name: "VWAP Reclaim, mornings only",
+        kind: "replay",
+        status: "completed",
+        config: JSON.stringify(replayConfig),
+        results: JSON.stringify(
+          assembleResults({
+            variant: outcome.variantTrades,
+            baseline: outcome.baselineTrades,
+            exclusions: outcome.exclusions,
+          })
+        ),
+        notes:
+          "Demo run — what the journal would look like trading only morning VWAP reclaims that pass the Intraday Discipline rules.",
+      },
+    });
+    backtestCount++;
+  } catch (e) {
+    console.warn("backtest examples skipped:", (e as Error).message);
+  }
+
   // --- Compliance recompute (module may not exist yet) ------------------
   try {
     const { recomputeUserCompliance } = await import("../src/lib/rules/recompute");
@@ -474,6 +654,7 @@ async function main(): Promise<void> {
   console.log(`  rulebooks: 2 (${intraday.name}, ${setupQuality.name}) / 6 rules`);
   console.log(`  prop:      1 (Topstep 50K evaluation)`);
   console.log(`  alerts:    4 open`);
+  console.log(`  backtests: ${backtestCount} recorded (+ 1 demo market dataset, ${candles.length} candles)`);
 }
 
 async function run(): Promise<void> {

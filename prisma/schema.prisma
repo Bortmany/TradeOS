@@ -48,6 +48,8 @@ model User {
   alerts          Alert[]
   sessions        Session[]
   brokerConnections BrokerConnection[]
+  backtestRuns    BacktestRun[]
+  marketDatasets  MarketDataset[]
 
   @@index([email])
 }
@@ -331,6 +333,58 @@ model BrokerConnection {
   updatedAt   DateTime @updatedAt
 
   @@index([userId])
+}
+
+// --------------------------------------------------------------------------
+// Backtesting — the Testing Portal. Every strategy test the user runs is
+// recorded as a BacktestRun; simulation runs read candles from a MarketDataset.
+// --------------------------------------------------------------------------
+
+model MarketDataset {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name        String
+  symbol      String
+  // Informational bar size, e.g. "5m", "1m", "1d"
+  timeframe   String   @default("5m")
+  candleCount Int      @default(0)
+  firstTime   DateTime?
+  lastTime    DateTime?
+  // Candles as one JSON string — array of {t,o,h,l,c,v?} with t in unix
+  // seconds. Stored as String for SQLite/Postgres portability (no scalar lists).
+  candles     String
+  // source: csv | seed
+  source      String   @default("csv")
+  createdAt   DateTime @default(now())
+
+  runs        BacktestRun[]
+
+  @@index([userId])
+}
+
+model BacktestRun {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name        String
+  // kind: replay | simulation
+  kind        String
+  // status: completed | failed
+  status      String   @default("completed")
+  // config / results are JSON strings (see src/lib/types.ts). Results are
+  // sanitized before storage: non-finite numbers (Infinity/NaN) become null.
+  config      String
+  results     String
+  notes       String?
+  // Runs are self-contained snapshots — they survive dataset deletion.
+  datasetId   String?
+  dataset     MarketDataset? @relation(fields: [datasetId], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+
+  @@index([userId, createdAt])
 }
 
 // --------------------------------------------------------------------------

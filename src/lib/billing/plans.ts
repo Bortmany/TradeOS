@@ -30,6 +30,7 @@ export const PLAN_DEFINITIONS: Record<Plan, PlanDefinition> = {
       propFirmModule: false,
       reports: false,
       advancedAnalytics: false,
+      backtesting: false,
       aiCoaching: false,
     },
     bullets: [
@@ -53,12 +54,14 @@ export const PLAN_DEFINITIONS: Record<Plan, PlanDefinition> = {
       propFirmModule: false,
       reports: true,
       advancedAnalytics: true,
+      backtesting: true,
       aiCoaching: false,
     },
     bullets: [
       "Unlimited accounts",
       "No-code rule engine + discipline score",
       "Full analytics (by time, session, strategy, weekday)",
+      "Strategy backtesting + testing portal",
       "Unlimited history",
       "Daily / weekly / monthly reports",
     ],
@@ -77,6 +80,7 @@ export const PLAN_DEFINITIONS: Record<Plan, PlanDefinition> = {
       propFirmModule: true,
       reports: true,
       advancedAnalytics: true,
+      backtesting: true,
       aiCoaching: false, // flips on when the AI layer ships
     },
     bullets: [
