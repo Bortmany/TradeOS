@@ -13,7 +13,15 @@
 :root {
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: "SF Mono", ui-monospace, "JetBrains Mono", "Menlo", monospace;
+}
 
+/* `.light` shares the light color values so a surface can pin itself light
+   (the marketing page does this per the executed redesign brief) even when the
+   OS/user theme put `.dark` on <html>. No token is duplicated — same block,
+   two selectors. Fonts stay in :root above so a next/font variable class can
+   override --font-sans on the same element without a specificity fight. */
+:root,
+.light {
   /* Light theme — same elevation logic as dark: background sits lowest,
      surfaces rise toward white, borders carry the separation. */
   color-scheme: light;
@@ -189,7 +197,8 @@ body {
 --------------------------------------------------------------------------- */
 @media print {
   :root,
-  .dark {
+  .dark,
+  .light {
     --background: 0 0% 100%;
     --foreground: 222 24% 12%;
     --surface: 0 0% 100%;
