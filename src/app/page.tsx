@@ -92,7 +92,7 @@ function Hero() {
         </div>
 
         <div className="mx-auto mt-14 max-w-5xl">
-          <div className="rounded-xl border border-border bg-surface p-2 shadow-2xl">
+          <div className="card-highlight rounded-xl border border-border bg-surface p-2">
             {/* Real product, not a mockup — the score-first dashboard. */}
             <img
               src="/screenshots/dashboard-dark.png"
@@ -282,7 +282,7 @@ function Pricing() {
               key={plan.id}
               className={cn(
                 "relative flex flex-col rounded-xl border bg-surface p-6",
-                plan.highlighted ? "border-primary shadow-lg shadow-primary/10" : "border-border"
+                plan.highlighted ? "card-highlight border-primary" : "border-border"
               )}
             >
               {plan.highlighted && (

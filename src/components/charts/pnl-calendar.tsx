@@ -7,6 +7,11 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { formatCurrency } from "@/lib/utils";
 
 interface DayPoint {
@@ -120,25 +125,37 @@ export function PnlCalendar({ data }: Props) {
                     </div>
                   );
                 }
+                const detail = (
+                  <>
+                    <p className={`font-semibold tabular ${pt.pnl >= 0 ? "text-profit" : "text-loss"}`}>
+                      {formatCurrency(pt.pnl, { sign: true })}
+                    </p>
+                    <p className="text-muted-foreground">
+                      {pt.trades} {pt.trades === 1 ? "trade" : "trades"}
+                    </p>
+                  </>
+                );
                 return (
-                  <Tooltip key={date}>
-                    <TooltipTrigger asChild>
-                      <div
-                        className="flex aspect-square cursor-default items-center justify-center rounded-[4px] text-[9px] font-medium text-foreground"
-                        style={cellStyle(pt.pnl)}
-                      >
-                        {day}
-                      </div>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p className={`font-semibold tabular ${pt.pnl >= 0 ? "text-profit" : "text-loss"}`}>
-                        {formatCurrency(pt.pnl, { sign: true })}
-                      </p>
-                      <p className="text-muted-foreground">
-                        {pt.trades} {pt.trades === 1 ? "trade" : "trades"}
-                      </p>
-                    </TooltipContent>
-                  </Tooltip>
+                  // Popover so the day's numbers open on tap/click (phones have
+                  // no hover); the tooltip still serves pointer users on hover.
+                  <Popover key={date}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <PopoverTrigger asChild>
+                          <button
+                            type="button"
+                            aria-label={`${date}: ${formatCurrency(pt.pnl, { sign: true })}, ${pt.trades} ${pt.trades === 1 ? "trade" : "trades"}`}
+                            className="flex aspect-square cursor-pointer items-center justify-center rounded-[4px] text-[9px] font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            style={cellStyle(pt.pnl)}
+                          >
+                            {day}
+                          </button>
+                        </PopoverTrigger>
+                      </TooltipTrigger>
+                      <TooltipContent>{detail}</TooltipContent>
+                    </Tooltip>
+                    <PopoverContent>{detail}</PopoverContent>
+                  </Popover>
                 );
               })}
             </div>
