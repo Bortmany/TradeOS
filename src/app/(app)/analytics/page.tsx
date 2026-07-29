@@ -285,32 +285,32 @@ function BreakdownTable({
       </div>
       {/* sm and up: the full table, unchanged. */}
       <div className="hidden sm:block">
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>{label}</TableHead>
-          <TableHead className="text-right">Trades</TableHead>
-          <TableHead className="text-right">Win %</TableHead>
-          <TableHead className="text-right">Net P&L</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {sorted.map((r) => (
-          <TableRow key={r.key}>
-            <TableCell className="font-medium">{r.key}</TableCell>
-            <TableCell className="text-right tabular text-muted-foreground">
-              {r.tradeCount}
-            </TableCell>
-            <TableCell className="text-right tabular">
-              {formatPercent(r.winRate)}
-            </TableCell>
-            <TableCell className={`text-right font-semibold tabular ${pnlColor(r.netPnl)}`}>
-              {formatCurrency(r.netPnl, { sign: true })}
-            </TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>{label}</TableHead>
+              <TableHead className="text-right">Trades</TableHead>
+              <TableHead className="text-right">Win %</TableHead>
+              <TableHead className="text-right">Net P&L</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {sorted.map((r) => (
+              <TableRow key={r.key}>
+                <TableCell className="font-medium">{r.key}</TableCell>
+                <TableCell className="text-right tabular text-muted-foreground">
+                  {r.tradeCount}
+                </TableCell>
+                <TableCell className="text-right tabular">
+                  {formatPercent(r.winRate)}
+                </TableCell>
+                <TableCell className={`text-right font-semibold tabular ${pnlColor(r.netPnl)}`}>
+                  {formatCurrency(r.netPnl, { sign: true })}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       </div>
     </>
   );

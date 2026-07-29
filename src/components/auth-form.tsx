@@ -8,15 +8,38 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+/** Which box to outline in red, when the message says so. */
+type ErrorField = "email" | "password" | "both" | null;
+
+function fieldForError(message: string): ErrorField {
+  const m = message.toLowerCase();
+  if (m.includes("already exists")) return "email";
+  if (m.includes("invalid email or password")) return "both";
+  if (m.includes("password")) return "password";
+  if (m.includes("email")) return "email";
+  // Rate limits, network trouble and the like aren't any one field's fault.
+  return null;
+}
+
 export function AuthForm({ mode }: { mode: "login" | "register" }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorField, setErrorField] = useState<ErrorField>(null);
   const isRegister = mode === "register";
+
+  // The moment the user starts fixing things, drop the red state.
+  function clearError() {
+    if (error) {
+      setError(null);
+      setErrorField(null);
+    }
+  }
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
+    setErrorField(null);
     setLoading(true);
     const form = new FormData(e.currentTarget);
     const payload = {
@@ -36,7 +59,9 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
       router.push("/dashboard");
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      const message = err instanceof Error ? err.message : "Something went wrong.";
+      setError(message);
+      setErrorField(fieldForError(message));
       setLoading(false);
     }
   }
@@ -69,7 +94,11 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
               required
               placeholder="you@email.com"
               autoComplete="email"
-              className={error ? "border-loss" : undefined}
+              onChange={clearError}
+              aria-invalid={errorField === "email" || errorField === "both" || undefined}
+              className={
+                errorField === "email" || errorField === "both" ? "border-loss" : undefined
+              }
             />
           </div>
           <div className="space-y-1.5">
@@ -82,7 +111,11 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
               minLength={isRegister ? 8 : undefined}
               placeholder={isRegister ? "At least 8 characters" : "••••••••"}
               autoComplete={isRegister ? "new-password" : "current-password"}
-              className={error ? "border-loss" : undefined}
+              onChange={clearError}
+              aria-invalid={errorField === "password" || errorField === "both" || undefined}
+              className={
+                errorField === "password" || errorField === "both" ? "border-loss" : undefined
+              }
             />
           </div>
 
