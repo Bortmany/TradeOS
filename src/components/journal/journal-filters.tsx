@@ -59,10 +59,10 @@ export function JournalFilters({
     outcome !== ALL ||
     source !== ALL;
 
-  const triggerClass = "h-8 gap-2 border-border bg-surface text-xs";
+  const triggerClass = "h-10 gap-2 border-border bg-surface text-xs";
 
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface px-2.5 py-2">
+    <div className="flex flex-wrap items-center gap-2.5 rounded-lg border border-border bg-surface px-2.5 py-2">
       <span className="flex items-center gap-1.5 pl-1 pr-1 text-2xs font-medium uppercase tracking-wide text-muted-foreground">
         <SlidersHorizontal className="h-3.5 w-3.5" />
         Filters
@@ -145,7 +145,7 @@ export function JournalFilters({
           variant="ghost"
           size="sm"
           onClick={() => router.push(pathname)}
-          className="h-8 text-xs text-muted-foreground"
+          className="h-10 text-xs text-muted-foreground"
         >
           <X className="h-3.5 w-3.5" />
           Clear

@@ -131,6 +131,75 @@ export default async function JournalPage({
       ) : (
         <Card>
           <CardContent className="p-0">
+            {/* Phone layout: stacked trade cards — one clear tap target each. */}
+            <div className="sm:hidden">
+              {rows.map((t) => {
+                const open = t.exitTime === null || t.exitPrice === null;
+                const score = t.complianceScore;
+                const viol = t.violationCount ?? 0;
+                return (
+                  <Link
+                    key={t.id}
+                    href={`/journal/${t.id}`}
+                    aria-label={`Open ${t.symbol} trade`}
+                    className="flex items-center gap-3 border-b border-border px-4 py-3 transition-colors last:border-0 hover:bg-surface-raised active:bg-surface-raised"
+                  >
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <div className="flex items-baseline gap-2">
+                        <span className="font-medium">{t.symbol}</span>
+                        <span
+                          className={`text-2xs font-semibold uppercase tracking-wide ${
+                            t.side === "long" ? "text-profit" : "text-loss"
+                          }`}
+                        >
+                          {t.side}
+                        </span>
+                        <span
+                          className={`ml-auto tabular font-medium ${pnlColor(t.pnl)}`}
+                        >
+                          {open ? "—" : formatCurrency(t.pnl, { sign: true })}
+                        </span>
+                      </div>
+                      <p className="text-xs tabular text-muted-foreground">
+                        {formatDateTime(t.entryTime)}
+                        <span className="mx-1.5 text-muted-foreground/50">·</span>
+                        {formatNumber(t.quantity)} @ {formatNumber(t.entryPrice, 2)}
+                        <span className="mx-1 text-muted-foreground/50">→</span>
+                        {open ? (
+                          <span className="text-warning">open</span>
+                        ) : (
+                          formatNumber(t.exitPrice as number, 2)
+                        )}
+                      </p>
+                      {(score != null || viol > 0 || t.strategyTag) && (
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {score != null && (
+                            <span
+                              className={`inline-flex min-w-[2rem] justify-center rounded px-1.5 py-0.5 text-2xs font-semibold tabular ${scoreChipClass(score)}`}
+                            >
+                              {score}
+                            </span>
+                          )}
+                          {viol > 0 && (
+                            <span className="inline-flex min-w-[1.5rem] justify-center rounded bg-loss-muted px-1.5 py-0.5 text-2xs font-semibold tabular text-loss">
+                              {viol}
+                            </span>
+                          )}
+                          {t.strategyTag && (
+                            <Badge variant="secondary" className="normal-case tracking-normal">
+                              {t.strategyTag}
+                            </Badge>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground/70" />
+                  </Link>
+                );
+              })}
+            </div>
+            {/* sm and up: the full 10-column table, unchanged. */}
+            <div className="hidden sm:block">
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
@@ -216,13 +285,14 @@ export default async function JournalPage({
                         )}
                       </TableCell>
                       <TableCell className="text-right">
-                        <ArrowRight className="h-4 w-4 text-muted-foreground/40 transition-colors group-hover:text-foreground" />
+                        <ArrowRight className="h-4 w-4 text-muted-foreground/70 transition-colors group-hover:text-foreground" />
                       </TableCell>
                     </TableRow>
                   );
                 })}
               </TableBody>
             </Table>
+            </div>
           </CardContent>
         </Card>
       )}

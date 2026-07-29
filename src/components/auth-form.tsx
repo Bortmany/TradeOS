@@ -69,6 +69,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
               required
               placeholder="you@email.com"
               autoComplete="email"
+              className={error ? "border-loss" : undefined}
             />
           </div>
           <div className="space-y-1.5">
@@ -81,6 +82,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
               minLength={isRegister ? 8 : undefined}
               placeholder={isRegister ? "At least 8 characters" : "••••••••"}
               autoComplete={isRegister ? "new-password" : "current-password"}
+              className={error ? "border-loss" : undefined}
             />
           </div>
 
@@ -90,7 +92,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
             </p>
           )}
 
-          <Button type="submit" className="w-full" disabled={loading}>
+          <Button type="submit" size="lg" className="w-full" disabled={loading}>
             {loading && <Loader2 className="h-4 w-4 animate-spin" />}
             {isRegister ? "Create account" : "Sign in"}
           </Button>

@@ -105,7 +105,7 @@ export default async function DashboardPage({
               Every trade graded against your own rulebook — deterministic, no black box.
             </p>
           </div>
-          <Button asChild variant="outline" size="sm">
+          <Button asChild variant="outline" size="lg" className="px-4">
             <Link href="/rules">Rulebook</Link>
           </Button>
         </CardHeader>
@@ -172,7 +172,10 @@ export default async function DashboardPage({
                 {formatCurrency(m.netPnl, { sign: true })}
               </p>
               <p className="text-2xs uppercase tracking-wide text-muted-foreground">
-                Streak {m.currentStreak > 0 ? `+${m.currentStreak}` : m.currentStreak}
+                Streak{" "}
+                <span className={`tabular ${pnlColor(m.currentStreak)}`}>
+                  {m.currentStreak > 0 ? `+${m.currentStreak}` : m.currentStreak}
+                </span>
               </p>
             </div>
           </CardHeader>

@@ -261,6 +261,30 @@ function BreakdownTable({
     );
   }
   return (
+    <>
+      {/* Phone layout: stacked rows instead of a sideways-scrolling table. */}
+      <div className="sm:hidden">
+        {sorted.map((r) => (
+          <div
+            key={r.key}
+            className="flex items-baseline justify-between gap-3 border-b border-border py-3 last:border-0"
+          >
+            <div className="min-w-0">
+              <p className="truncate font-medium">{r.key}</p>
+              <p className="text-xs tabular text-muted-foreground">
+                {r.tradeCount} {r.tradeCount === 1 ? "trade" : "trades"}
+                <span className="mx-1.5 text-muted-foreground/50">·</span>
+                {formatPercent(r.winRate)} win
+              </p>
+            </div>
+            <span className={`shrink-0 font-semibold tabular ${pnlColor(r.netPnl)}`}>
+              {formatCurrency(r.netPnl, { sign: true })}
+            </span>
+          </div>
+        ))}
+      </div>
+      {/* sm and up: the full table, unchanged. */}
+      <div className="hidden sm:block">
     <Table>
       <TableHeader>
         <TableRow>
@@ -287,5 +311,7 @@ function BreakdownTable({
         ))}
       </TableBody>
     </Table>
+      </div>
+    </>
   );
 }
