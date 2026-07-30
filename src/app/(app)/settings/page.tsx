@@ -29,7 +29,7 @@ export default async function SettingsPage() {
     <div className="container max-w-7xl space-y-6 py-6">
       <PageHeader title="Settings" description="Manage your profile and preferences." />
 
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle>Profile</CardTitle>
