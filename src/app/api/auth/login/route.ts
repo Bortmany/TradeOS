@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { authenticate } from "@/lib/auth";
 import { rateLimit, clientIp } from "@/lib/rate-limit";
+import { EMAIL_ERROR, isPossibleEmail } from "@/lib/validation";
 
 const schema = z.object({
-  email: z.string().email(),
+  email: z.string().trim().refine(isPossibleEmail, EMAIL_ERROR),
   password: z.string().min(1),
 });
 
@@ -27,9 +28,13 @@ export async function POST(req: Request) {
     await authenticate(email.toLowerCase().trim(), password);
     return NextResponse.json({ ok: true });
   } catch (err) {
+    // An impossible email is safe to name (it says nothing about who has an
+    // account) and lets the form put the red border on the right box.
     const message =
       err instanceof z.ZodError
-        ? "Please enter a valid email and password."
+        ? err.errors.some((e) => e.path[0] === "email")
+          ? EMAIL_ERROR
+          : "Please enter a valid email and password."
         : err instanceof Error
           ? err.message
           : "Something went wrong.";

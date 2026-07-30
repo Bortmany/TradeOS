@@ -7,6 +7,12 @@ import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  EMAIL_ERROR,
+  EMAIL_EXAMPLE,
+  NAME_EXAMPLE,
+  isPossibleEmail,
+} from "@/lib/validation";
 
 /** Which box to outline in red, when the message says so. */
 type ErrorField = "email" | "password" | "both" | null;
@@ -36,11 +42,18 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
     }
   }
 
+  // Catch an impossible address while the user is still looking at the box.
+  function checkEmail(value: string) {
+    if (value && !isPossibleEmail(value)) {
+      setError(EMAIL_ERROR);
+      setErrorField("email");
+    }
+  }
+
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
     setErrorField(null);
-    setLoading(true);
     const form = new FormData(e.currentTarget);
     const payload = {
       email: String(form.get("email") ?? ""),
@@ -48,6 +61,14 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
       ...(isRegister ? { displayName: String(form.get("displayName") ?? "") } : {}),
     };
 
+    // Never send an address that can't exist — same rule the server applies.
+    if (!isPossibleEmail(payload.email)) {
+      setError(EMAIL_ERROR);
+      setErrorField("email");
+      return;
+    }
+
+    setLoading(true);
     try {
       const res = await fetch(`/api/auth/${mode}`, {
         method: "POST",
@@ -82,7 +103,12 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
           {isRegister && (
             <div className="space-y-1.5">
               <Label htmlFor="displayName">Name</Label>
-              <Input id="displayName" name="displayName" placeholder="Your name" autoComplete="name" />
+              <Input
+                id="displayName"
+                name="displayName"
+                placeholder={NAME_EXAMPLE}
+                autoComplete="name"
+              />
             </div>
           )}
           <div className="space-y-1.5">
@@ -92,10 +118,14 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
               name="email"
               type="email"
               required
-              placeholder="you@email.com"
+              placeholder={EMAIL_EXAMPLE}
               autoComplete="email"
               onChange={clearError}
+              onBlur={(e) => checkEmail(e.currentTarget.value)}
               aria-invalid={errorField === "email" || errorField === "both" || undefined}
+              aria-describedby={
+                errorField === "email" || errorField === "both" ? "auth-form-error" : undefined
+              }
               className={
                 errorField === "email" || errorField === "both" ? "border-loss" : undefined
               }
@@ -113,6 +143,9 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
               autoComplete={isRegister ? "new-password" : "current-password"}
               onChange={clearError}
               aria-invalid={errorField === "password" || errorField === "both" || undefined}
+              aria-describedby={
+                errorField === "password" || errorField === "both" ? "auth-form-error" : undefined
+              }
               className={
                 errorField === "password" || errorField === "both" ? "border-loss" : undefined
               }
@@ -120,7 +153,11 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
           </div>
 
           {error && (
-            <p className="rounded-md border border-loss/30 bg-loss-muted px-3 py-2 text-sm text-loss">
+            <p
+              id="auth-form-error"
+              role="alert"
+              className="rounded-md border border-loss/30 bg-loss-muted px-3 py-2 text-sm text-loss"
+            >
               {error}
             </p>
           )}
