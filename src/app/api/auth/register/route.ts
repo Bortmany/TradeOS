@@ -2,9 +2,12 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { registerUser } from "@/lib/auth";
 import { rateLimit, clientIp } from "@/lib/rate-limit";
+import { EMAIL_ERROR, isPossibleEmail } from "@/lib/validation";
 
 const schema = z.object({
-  email: z.string().email(),
+  // Same shape check the form runs — an address the browser let through still
+  // has to look real here.
+  email: z.string().trim().refine(isPossibleEmail, EMAIL_ERROR),
   password: z.string().min(8, "Password must be at least 8 characters."),
   displayName: z.string().max(80).optional(),
 });

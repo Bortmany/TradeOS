@@ -13,6 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { NAME_EXAMPLE } from "@/lib/validation";
 
 export const TIMEZONES = [
   "America/New_York",
@@ -77,7 +78,7 @@ export function ProfileForm({
             setName(e.target.value);
             setSaved(false);
           }}
-          placeholder="Your name"
+          placeholder={NAME_EXAMPLE}
           maxLength={80}
         />
       </div>

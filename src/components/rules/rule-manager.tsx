@@ -519,6 +519,7 @@ function RuleFormDialog({
               max={100}
               value={weight}
               onChange={(e) => setWeight(e.target.value)}
+              placeholder="1–100"
               className="w-28"
             />
           </div>
@@ -604,6 +605,7 @@ function ConfigFields({
             min={1}
             value={cfg.maxPerDay ?? ""}
             onChange={(e) => setField("maxPerDay", e.target.value)}
+            placeholder="3"
           />
         </Field>
       );
@@ -616,6 +618,7 @@ function ConfigFields({
             step="any"
             value={cfg.maxContracts ?? ""}
             onChange={(e) => setField("maxContracts", e.target.value)}
+            placeholder="2"
           />
         </Field>
       );
@@ -628,6 +631,7 @@ function ConfigFields({
             step="any"
             value={cfg.maxDailyLoss ?? ""}
             onChange={(e) => setField("maxDailyLoss", e.target.value)}
+            placeholder="1000"
           />
         </Field>
       );
@@ -653,6 +657,7 @@ function ConfigFields({
                   min={1}
                   value={cfg.threshold ?? ""}
                   onChange={(e) => setField("threshold", e.target.value)}
+                  placeholder="4"
                 />
               </Field>
               <Field label="Window (minutes)">
@@ -661,6 +666,7 @@ function ConfigFields({
                   min={1}
                   value={cfg.windowMinutes ?? ""}
                   onChange={(e) => setField("windowMinutes", e.target.value)}
+                  placeholder="60"
                 />
               </Field>
             </div>
@@ -671,6 +677,7 @@ function ConfigFields({
                 min={1}
                 value={cfg.withinMinutes ?? ""}
                 onChange={(e) => setField("withinMinutes", e.target.value)}
+                placeholder="15"
               />
             </Field>
           )}

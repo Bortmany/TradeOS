@@ -422,7 +422,7 @@ function ConnectFlow({ onConnected }: { onConnected: () => Promise<void> }) {
               id="bc-username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder="TopstepX username"
+              placeholder="e.g. JohnDoe"
               autoComplete="off"
             />
           </div>
