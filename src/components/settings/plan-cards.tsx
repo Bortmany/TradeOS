@@ -69,7 +69,7 @@ export function PlanCards({ currentPlan }: { currentPlan: Plan }) {
         · no card required · cancel anytime
       </p>
 
-      <div className="grid gap-4 pt-2 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 pt-2 lg:grid-cols-3">
         {ORDER.map((id) => {
           const plan = PLAN_DEFINITIONS[id];
           const isCurrent = id === currentPlan;

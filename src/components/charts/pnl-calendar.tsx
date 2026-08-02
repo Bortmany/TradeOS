@@ -91,7 +91,7 @@ export function PnlCalendar({ data }: Props) {
 
   return (
     <TooltipProvider delayDuration={100}>
-      <div className="grid gap-6 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
         {months.map((mb) => (
           <div key={mb.key}>
             <p className="mb-2 text-2xs font-medium uppercase tracking-wide text-muted-foreground">

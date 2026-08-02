@@ -415,7 +415,7 @@ function ConnectFlow({ onConnected }: { onConnected: () => Promise<void> }) {
 
       {/* Step 1 — credentials */}
       <form onSubmit={onDiscover} className="space-y-3">
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div className="space-y-1.5">
             <Label htmlFor="bc-username">Username</Label>
             <Input
@@ -473,7 +473,7 @@ function ConnectFlow({ onConnected }: { onConnected: () => Promise<void> }) {
           <p className="text-2xs uppercase tracking-wide text-muted-foreground">
             Pick an account to link
           </p>
-          <div className="grid gap-2 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {accounts.map((a) => {
               const selected = a.id === selectedId;
               return (

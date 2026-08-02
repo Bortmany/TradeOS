@@ -172,7 +172,7 @@ export default async function AnalyticsPage({
       </Card>
 
       {/* Time-based edge */}
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <Card>
           <CardHeader>
             <CardTitle>By Hour</CardTitle>
@@ -210,7 +210,7 @@ export default async function AnalyticsPage({
             Which playbooks actually pay
           </p>
         </CardHeader>
-        <CardContent className="grid gap-6 lg:grid-cols-2">
+        <CardContent className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <BucketBar data={data.byStrategy} layout="vertical" height={220} />
           <BreakdownTable rows={data.byStrategy} label="Strategy" />
         </CardContent>

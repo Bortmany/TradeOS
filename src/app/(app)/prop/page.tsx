@@ -120,7 +120,7 @@ export default async function PropPage() {
             })}
           </div>
 
-          <div className="grid gap-6 xl:grid-cols-2">
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
             {statuses.map((s) => (
               <PropCard key={s.id} s={s} />
             ))}
@@ -194,7 +194,7 @@ function PropCard({ s }: { s: PropStatus }) {
           </div>
         )}
 
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {/* Profit target */}
           {s.profitTarget != null && (
             <Guardrail

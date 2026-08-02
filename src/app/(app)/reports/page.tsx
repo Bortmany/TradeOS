@@ -152,7 +152,7 @@ function ReportBody({ report, periodLabel }: { report: ReportData; periodLabel: 
         </CardContent>
       </Card>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Compliance */}
         <Card>
           <CardHeader className="flex-row items-center justify-between">
@@ -246,7 +246,7 @@ function ReportBody({ report, periodLabel }: { report: ReportData; periodLabel: 
               No rule breaks — disciplined {periodLabel.toLowerCase()}. 🎯
             </p>
           ) : (
-            <div className="grid gap-2 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {report.compliance.topViolations.map((v, i) => (
                 <div
                   key={v.ruleName}
@@ -269,7 +269,7 @@ function ReportBody({ report, periodLabel }: { report: ReportData; periodLabel: 
       </Card>
 
       {/* Best / worst trades */}
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <TradeList title="Best Trades" trades={report.best} tone="profit" />
         <TradeList title="Worst Trades" trades={report.worst} tone="loss" />
       </div>

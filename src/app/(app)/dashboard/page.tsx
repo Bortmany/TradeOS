@@ -98,14 +98,14 @@ export default async function DashboardPage({
 
       {/* Discipline hero — the score is the product's anchor metric */}
       <Card>
-        <CardHeader className="flex-row items-center justify-between">
-          <div>
+        <CardHeader className="flex-row items-center justify-between gap-3">
+          <div className="min-w-0">
             <CardTitle>Discipline Score</CardTitle>
             <p className="mt-0.5 text-sm text-muted-foreground">
               Every trade graded against your own rulebook — deterministic, no black box.
             </p>
           </div>
-          <Button asChild variant="outline" size="lg" className="px-4">
+          <Button asChild variant="outline" size="lg" className="shrink-0 px-4">
             <Link href="/rules">Rulebook</Link>
           </Button>
         </CardHeader>
@@ -119,7 +119,7 @@ export default async function DashboardPage({
             />
           </div>
           <div className="hidden h-32 w-px shrink-0 bg-border md:block" />
-          <div className="grid flex-1 gap-x-8 gap-y-4 sm:grid-cols-2">
+          <div className="grid flex-1 grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2">
             {data.discipline.breakdown.map((b) => (
               <ScoreMeter key={b.label} label={b.label} score={b.score} detail={b.detail} />
             ))}
@@ -157,17 +157,17 @@ export default async function DashboardPage({
         />
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Equity curve */}
         <Card className="lg:col-span-2">
-          <CardHeader className="flex-row items-center justify-between">
-            <div>
+          <CardHeader className="flex-row items-center justify-between gap-3">
+            <div className="min-w-0">
               <CardTitle>Equity Curve</CardTitle>
               <p className="mt-0.5 text-sm text-muted-foreground">
                 Cumulative net P&L over time
               </p>
             </div>
-            <div className="text-right">
+            <div className="shrink-0 text-right">
               <p className={`text-lg font-semibold tabular ${pnlColor(m.netPnl)}`}>
                 {formatCurrency(m.netPnl, { sign: true })}
               </p>
@@ -225,7 +225,7 @@ export default async function DashboardPage({
       </div>
 
       {/* Secondary row */}
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
             <CardTitle>P&L by Session</CardTitle>
@@ -257,7 +257,7 @@ export default async function DashboardPage({
               View all <ArrowRight className="h-3 w-3" />
             </Link>
           </CardHeader>
-          <CardContent className="grid gap-2 sm:grid-cols-2">
+          <CardContent className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {alerts.map((a) => (
               <div
                 key={a.id}
@@ -315,7 +315,13 @@ function Kpi({
           </p>
           <Icon className="h-4 w-4 text-muted-foreground" />
         </div>
-        <p className={`mt-2 text-2xl font-semibold tabular ${valueClass ?? ""}`}>{value}</p>
+        {/* Steps down a size where the column is narrow (2-up on phones, 4-up at
+            lg) so long P&L figures stay fully readable instead of being cut off. */}
+        <p
+          className={`mt-2 truncate text-xl font-semibold tabular sm:text-2xl lg:text-xl xl:text-2xl ${valueClass ?? ""}`}
+        >
+          {value}
+        </p>
         {hint && <p className="mt-1 text-2xs text-muted-foreground">{hint}</p>}
       </CardContent>
     </Card>
