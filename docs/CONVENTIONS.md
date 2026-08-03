@@ -6,6 +6,10 @@ House rules for anyone (human or agent) changing code in this repo. The generic 
 
 Next.js 15 (App Router) + React 19 + TypeScript, Prisma 5, Tailwind + Radix-style primitives. Before writing anything, read a reference implementation end to end — an existing route handler under `src/app/api/`, its lib module under `src/lib/`, and the component that consumes it — and match their style exactly.
 
+## Core guarantee
+
+TradeOS's core guarantee: FIFO trade pairing and the rule/discipline-score engine are deterministic and correct — proven by the automated suite `npm test` runs (`test/`, vitest). Any future change to FIFO pairing (`src/lib/connectors/topstepx.ts`), the rule engine (`src/lib/rules/engine.ts`), the discipline score (`src/lib/discipline/score.ts`), or the user-scoping in `src/lib/data.ts` must extend that suite in the same change — a guarantee-area diff with no test update is a review-blocking finding, not a nitpick.
+
 ## Non-negotiable rules
 
 - **Database portability**: the schema runs on SQLite (dev) AND Postgres (prod). No native enums, no scalar lists, no Postgres-only column types — status/type fields are plain `String` with the allowed values in a comment, exactly as the existing schema does.
@@ -32,4 +36,4 @@ Next.js 15 (App Router) + React 19 + TypeScript, Prisma 5, Tailwind + Radix-styl
 5. `npm run lint` if defined.
 6. `npm run typecheck` if defined, else `npx tsc --noEmit`.
 7. `npm run build`.
-8. Tests, if a test script exists.
+8. `npm test` — the vitest core-guarantee suite (`test/`: FIFO pairing, rule engine, discipline score, cross-user isolation). It creates and deletes its own throwaway SQLite database and never touches `prisma/dev.db`.
