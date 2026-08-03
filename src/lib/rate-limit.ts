@@ -1,5 +1,8 @@
 import "server-only";
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
+import { createHmac, randomUUID } from "node:crypto";
+import { authSecret } from "@/lib/auth";
 
 // A tiny in-memory rate limiter — no Redis or outside service needed.
 //
@@ -35,6 +38,19 @@ const store: Map<string, Bucket> =
   globalForRateLimit.rateLimitStore ?? new Map<string, Bucket>();
 if (process.env.NODE_ENV !== "production") {
   globalForRateLimit.rateLimitStore = store;
+}
+
+// Loud one-time startup warning: if we're running in production WITHOUT a
+// trusted proxy configured, anonymous rate limiting leans entirely on the
+// signed per-browser cookie (a determined bot that drops cookies lands in the
+// shared "unknown" bucket). On a real deployment behind Railway you almost
+// always want TRUST_PROXY="true" so limits key off the real visitor IP.
+if (process.env.NODE_ENV === "production" && !isProxyTrusted()) {
+  console.warn(
+    "[rate-limit] TRUST_PROXY is OFF in production. Anonymous limits fall back to " +
+      "a signed per-browser cookie. Set TRUST_PROXY=\"true\" (and PROXY_HOPS) so " +
+      "per-IP limits use the real visitor address. See .env.example."
+  );
 }
 
 export interface RateLimitResult {
@@ -104,9 +120,77 @@ export function clientIp(req: Request): string {
     if (real) return real;
   }
   // Untrusted: never key off a header the caller can forge. Route handlers don't
-  // get the raw socket address, so anonymous callers share one bucket here —
-  // fine for single-process local dev, and prod is expected to set TRUST_PROXY.
+  // get the raw socket address, so this pure helper can't tell callers apart —
+  // use `anonymousRateKey()` below, which gives each browser its own bucket via
+  // a signed cookie. Kept for the trusted-proxy path and its unit tests.
   return "direct";
+}
+
+// ── Per-browser key for ANONYMOUS traffic (login/register) ───────────────────
+//
+// The problem: with TRUST_PROXY off (the default), `clientIp()` can't tell one
+// anonymous visitor from another, so every logged-out request would share a
+// SINGLE bucket. That turns the login/register limiter into a self-inflicted
+// denial of service — one bot could exhaust the shared bucket and lock every
+// real visitor out.
+//
+// The fix: when the proxy is NOT trusted, give each browser a stable id in a
+// signed, httpOnly cookie (HMAC'd with AUTH_SECRET so a client can't forge or
+// borrow another browser's id) and key the anonymous limiter on that. The cookie
+// is minted on first contact; only that very first, pre-cookie request falls
+// back to the shared "unknown" bucket — every request after it carries the id.
+// When TRUST_PROXY/PROXY_HOPS is set we key on the real IP instead (via
+// `clientIp`). The separate per-EMAIL login limiter still protects individual
+// accounts no matter what an attacker does with cookies.
+const RL_COOKIE = "tradeos_rl";
+
+function signBrowserId(id: string): string {
+  const mac = createHmac("sha256", authSecret()).update(id).digest("base64url");
+  return `${id}.${mac}`;
+}
+
+// Returns the embedded id only if the signature matches — otherwise null.
+function verifyBrowserId(value: string): string | null {
+  const dot = value.lastIndexOf(".");
+  if (dot <= 0) return null;
+  const id = value.slice(0, dot);
+  const mac = value.slice(dot + 1);
+  const expected = createHmac("sha256", authSecret()).update(id).digest("base64url");
+  // Constant-time compare so a bad signature can't be probed byte by byte.
+  if (mac.length !== expected.length) return null;
+  let diff = 0;
+  for (let i = 0; i < mac.length; i++) diff |= mac.charCodeAt(i) ^ expected.charCodeAt(i);
+  return diff === 0 ? id : null;
+}
+
+export async function anonymousRateKey(req: Request): Promise<string> {
+  // Behind a trusted proxy we know the real visitor IP — use it directly.
+  if (isProxyTrusted()) return clientIp(req);
+
+  // Untrusted: identify the browser by its signed cookie.
+  try {
+    const jar = await cookies();
+    const existing = jar.get(RL_COOKIE)?.value;
+    if (existing) {
+      const id = verifyBrowserId(existing);
+      if (id) return `anon:${id}`;
+    }
+    // First contact (or a tampered/absent cookie): mint a fresh id, set it for
+    // next time, and count THIS request against the shared pre-cookie bucket.
+    const id = randomUUID();
+    jar.set(RL_COOKIE, signBrowserId(id), {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 365, // one year
+    });
+    return "anon:unknown";
+  } catch {
+    // No request/cookie context (or cookie writes unavailable) — fall back to
+    // the shared bucket rather than crash the request.
+    return "anon:unknown";
+  }
 }
 
 function isProxyTrusted(): boolean {

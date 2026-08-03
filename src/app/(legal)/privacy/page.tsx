@@ -64,8 +64,10 @@ export default function PrivacyPage() {
           <li>We don&apos;t sell your data or share it with advertisers.</li>
           <li>We don&apos;t run advertising or cross-site tracking scripts.</li>
           <li>
-            We use one cookie: an httpOnly session cookie that keeps you signed in for up
-            to 30 days. Signing out removes it.
+            We use two strictly-necessary httpOnly cookies and nothing else: a session
+            cookie that keeps you signed in for up to 30 days (signing out removes it), and,
+            when we aren&apos;t behind a proxy, a random anti-abuse cookie that lets us rate-limit
+            sign-in attempts per browser. Neither is used for advertising or tracking.
           </li>
         </ul>
       </Section>
