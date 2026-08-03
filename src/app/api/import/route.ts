@@ -6,6 +6,7 @@ import { ingestCsv } from "@/lib/ingestion";
 import { getFeatures, effectivePlan } from "@/lib/billing/plans";
 import { rateLimit } from "@/lib/rate-limit";
 import { recomputeCompliance } from "@/lib/rules/recompute-compliance";
+import { apiErrorResponse } from "@/lib/api-error";
 import type { Broker } from "@/lib/types";
 import { BROKERS } from "@/lib/types";
 
@@ -109,8 +110,8 @@ export const POST = withUser(async (user, req: Request) => {
       errors: result.errors.slice(0, 10),
     });
   } catch (err) {
-    const message =
-      err instanceof z.ZodError ? "Invalid request." : err instanceof Error ? err.message : "Import failed.";
-    return NextResponse.json({ ok: false, error: message }, { status: 400 });
+    // Never echo a raw error message to the client — the shared helper maps it
+    // to a safe, plain-English response (and handles bad-JSON bodies as a 400).
+    return apiErrorResponse(err, { validationMessage: "Invalid request." });
   }
 });

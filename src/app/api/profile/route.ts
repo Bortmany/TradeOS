@@ -3,6 +3,7 @@ import { z } from "zod";
 import { withUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
+import { apiErrorResponse } from "@/lib/api-error";
 
 const schema = z
   .object({
@@ -30,8 +31,8 @@ export const PATCH = withUser(async (user, req: Request) => {
 
     return NextResponse.json({ ok: true });
   } catch (err) {
-    const message =
-      err instanceof z.ZodError ? "Please check your profile fields." : err instanceof Error ? err.message : "Failed.";
-    return NextResponse.json({ ok: false, error: message }, { status: 400 });
+    // Route through the shared helper so a raw Prisma/unknown message can never
+    // reach the client (and a bad-JSON body returns a clean 400).
+    return apiErrorResponse(err, { validationMessage: "Please check your profile fields." });
   }
 });

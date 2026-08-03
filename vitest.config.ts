@@ -14,6 +14,9 @@ export default defineConfig({
     // is in .env.local so `npm test` can never read or write the seeded dev DB.
     env: {
       DATABASE_URL: "file:./test-core-guarantee.db",
+      // AUTH_SECRET is now REQUIRED in every environment (no built-in fallback).
+      // Give the suite a throwaway strong secret so auth/rate-limit code runs.
+      AUTH_SECRET: "test-only-auth-secret-at-least-32-characters-long",
     },
     // The cross-user isolation test shares one SQLite file — keep files serial.
     fileParallelism: false,

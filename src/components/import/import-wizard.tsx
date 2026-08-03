@@ -367,6 +367,11 @@ function ManualEntry({ accounts }: { accounts: AccountOption[] }) {
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [done, setDone] = React.useState(false);
+  // One idempotency key per "open form" — so a rapid double-submit (or a network
+  // retry) of the SAME trade lands as one row, not several. The API dedupes on
+  // this key; we mint a fresh one after each successful save so the next, genuinely
+  // different trade isn't mistaken for a duplicate.
+  const idempotencyKey = React.useRef<string>(crypto.randomUUID());
 
   function set<K extends keyof typeof form>(key: K, value: string) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -395,6 +400,7 @@ function ManualEntry({ accounts }: { accounts: AccountOption[] }) {
           strategyTag: form.strategyTag || null,
           emotions: form.emotions || null,
           notes: form.notes || null,
+          idempotencyKey: idempotencyKey.current,
         }),
       });
       const json = await res.json();
@@ -402,6 +408,8 @@ function ManualEntry({ accounts }: { accounts: AccountOption[] }) {
         setError(json.error ?? "Could not save trade.");
         return;
       }
+      // Saved: start a fresh dedupe key so the next trade is treated as new.
+      idempotencyKey.current = crypto.randomUUID();
       setForm({ ...empty, accountId: form.accountId });
       setDone(true);
       router.refresh();

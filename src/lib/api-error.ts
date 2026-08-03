@@ -27,6 +27,17 @@ export function apiErrorResponse(
   const validationMessage =
     opts.validationMessage ?? "Please check the details you entered.";
 
+  // A malformed or empty request body: `await req.json()` throws a SyntaxError
+  // ("Unexpected end of JSON input" / "Unexpected token …"). Left unhandled it
+  // falls through to an unhelpful 500 — return a clean 400 instead. Its message
+  // never quotes user data, but we replace it with a plain-English one anyway.
+  if (err instanceof SyntaxError) {
+    return NextResponse.json(
+      { ok: false, error: "The request body was not valid JSON." },
+      { status: 400 }
+    );
+  }
+
   // Input validation — safe to surface a plain-English hint.
   if (err instanceof z.ZodError) {
     return NextResponse.json(

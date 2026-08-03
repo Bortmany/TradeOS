@@ -7,7 +7,7 @@
 // the correct hop.
 
 import { describe, it, expect, afterEach } from "vitest";
-import { clientIp } from "@/lib/rate-limit";
+import { clientIp, anonymousRateKey } from "@/lib/rate-limit";
 
 function reqWith(headers: Record<string, string>): Request {
   return new Request("http://localhost/api/auth/login", { headers });
@@ -60,5 +60,28 @@ describe("clientIp — proxy trusted", () => {
     process.env.PROXY_HOPS = "1";
     const ip = clientIp(reqWith({ "x-forwarded-for": "5.5.5.5" }));
     expect(ip).toBe("5.5.5.5");
+  });
+});
+
+// anonymousRateKey is the key logged-out login/register limits actually use.
+// Behind a trusted proxy it keys on the real IP; with no trusted proxy it keys
+// on a signed per-browser cookie so visitors don't all share one bucket.
+describe("anonymousRateKey", () => {
+  it("keys on the real IP when a proxy is trusted", async () => {
+    process.env.TRUST_PROXY = "true";
+    process.env.PROXY_HOPS = "1";
+    const key = await anonymousRateKey(reqWith({ "x-forwarded-for": "4.4.4.4" }));
+    expect(key).toBe("4.4.4.4");
+  });
+
+  it("untrusted + no cookie context → shared pre-cookie bucket, never the spoofed header", async () => {
+    delete process.env.TRUST_PROXY;
+    delete process.env.PROXY_HOPS;
+    // Outside a Next request scope there is no cookie jar to read/write, so we
+    // land in the safe shared fallback — and crucially NOT in a bucket keyed off
+    // the attacker-controlled x-forwarded-for value.
+    const key = await anonymousRateKey(reqWith({ "x-forwarded-for": "1.2.3.4" }));
+    expect(key).toBe("anon:unknown");
+    expect(key).not.toContain("1.2.3.4");
   });
 });

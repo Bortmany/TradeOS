@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { authenticate } from "@/lib/auth";
-import { rateLimit, clientIp } from "@/lib/rate-limit";
+import { rateLimit, anonymousRateKey } from "@/lib/rate-limit";
 import { EMAIL_ERROR, isPossibleEmail } from "@/lib/validation";
 
 const schema = z.object({
@@ -19,8 +19,11 @@ function tooManyAttempts(retryAfter: number) {
 }
 
 export async function POST(req: Request) {
-  // Slow down password guessing from a single source: 10 attempts per IP / 15 min.
-  const ipLimit = rateLimit(`login:ip:${clientIp(req)}`, LOGIN_WINDOW);
+  // Slow down password guessing from a single source: 10 attempts per visitor /
+  // 15 min. `anonymousRateKey` gives each browser its own bucket (via a signed
+  // cookie) when there's no trusted proxy, so logged-out traffic can't all share
+  // one bucket and DoS everyone off the login form.
+  const ipLimit = rateLimit(`login:ip:${await anonymousRateKey(req)}`, LOGIN_WINDOW);
   if (!ipLimit.ok) return tooManyAttempts(ipLimit.retryAfter);
 
   try {

@@ -57,6 +57,15 @@ describe("apiErrorResponse", () => {
     expect(apiErrorResponse(err).status).toBe(400);
   });
 
+  it("malformed/empty JSON body (SyntaxError) → clean 400, not a 500", async () => {
+    // This is what `await req.json()` throws on a bad or empty body.
+    const err = new SyntaxError("Unexpected end of JSON input");
+    const res = apiErrorResponse(err);
+    expect(res.status).toBe(400);
+    const b = await body(res);
+    expect(b.error).toBe("The request body was not valid JSON.");
+  });
+
   it("an unexpected error → generic 500, raw message hidden", async () => {
     const res = apiErrorResponse(new Error("connect ECONNREFUSED 10.0.0.5:5432"));
     expect(res.status).toBe(500);
