@@ -252,10 +252,32 @@ function generateTrades(
 async function main(): Promise<void> {
   const email = "demo@tradeos.app";
 
+  // ── Safety guard ─────────────────────────────────────────────────────────
+  // The demo account is a real, public-credentials login. It must NEVER land in
+  // a production database. By default we only seed it outside production; set
+  // SEED_DEMO=true to force it (e.g. a throwaway demo deployment). In that case
+  // a strong password is mandatory — the built-in "demo1234" is refused.
+  const isProd = process.env.NODE_ENV === "production";
+  const forced = process.env.SEED_DEMO === "true";
+  if (isProd && !forced) {
+    console.log(
+      "Skipping demo seed: refusing to seed demo@tradeos.app into a production " +
+        "database. Set SEED_DEMO=true to override (and SEED_DEMO_PASSWORD to a strong value)."
+    );
+    return;
+  }
+
+  const demoPassword = process.env.SEED_DEMO_PASSWORD ?? "demo1234";
+  if (isProd && forced && demoPassword.length < 12) {
+    throw new Error(
+      "SEED_DEMO=true in production requires SEED_DEMO_PASSWORD of at least 12 characters."
+    );
+  }
+
   // Idempotent reset — cascades remove all owned rows.
   await prisma.user.deleteMany({ where: { email } });
 
-  const passwordHash = await bcrypt.hash("demo1234", 10);
+  const passwordHash = await bcrypt.hash(demoPassword, 10);
   const user = await prisma.user.create({
     data: {
       email,

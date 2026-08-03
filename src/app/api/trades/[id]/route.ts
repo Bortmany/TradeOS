@@ -4,10 +4,12 @@
 
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import { withUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { recomputeCompliance } from "@/lib/rules/recompute-compliance";
+import { apiErrorResponse } from "@/lib/api-error";
 
 const patchSchema = z.object({
   notes: z.string().max(5000).optional().nullable(),
@@ -46,13 +48,7 @@ export const PATCH = withUser(async (
 
     return NextResponse.json({ ok: true });
   } catch (err) {
-    const message =
-      err instanceof z.ZodError
-        ? "Please check the journal fields."
-        : err instanceof Error
-          ? err.message
-          : "Failed.";
-    return NextResponse.json({ ok: false, error: message }, { status: 400 });
+    return apiErrorResponse(err, { validationMessage: "Please check the journal fields." });
   }
 });
 
@@ -74,12 +70,21 @@ export const DELETE = withUser(async (
       return NextResponse.json({ ok: false, error: "Trade not found." }, { status: 404 });
     }
 
-    await prisma.trade.delete({ where: { id } });
+    try {
+      await prisma.trade.delete({ where: { id } });
+    } catch (err) {
+      // Two deletes raced and the row is already gone. The end state the caller
+      // wanted (trade removed) is true, so treat it as a clean success rather
+      // than leaking the raw Prisma "record not found" error.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") {
+        return NextResponse.json({ ok: true });
+      }
+      throw err;
+    }
     await recomputeCompliance(user.id);
 
     return NextResponse.json({ ok: true });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed.";
-    return NextResponse.json({ ok: false, error: message }, { status: 400 });
+    return apiErrorResponse(err);
   }
 });

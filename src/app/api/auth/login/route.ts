@@ -9,23 +9,32 @@ const schema = z.object({
   password: z.string().min(1),
 });
 
+const LOGIN_WINDOW = { limit: 10, windowMs: 15 * 60 * 1000 } as const;
+
+function tooManyAttempts(retryAfter: number) {
+  return NextResponse.json(
+    { ok: false, error: "Too many attempts. Please wait a few minutes and try again." },
+    { status: 429, headers: { "Retry-After": String(retryAfter) } }
+  );
+}
+
 export async function POST(req: Request) {
-  // Slow down password guessing: at most 10 login attempts per IP / 15 min.
-  const limit = rateLimit(`login:${clientIp(req)}`, {
-    limit: 10,
-    windowMs: 15 * 60 * 1000,
-  });
-  if (!limit.ok) {
-    return NextResponse.json(
-      { ok: false, error: "Too many attempts. Please wait a few minutes and try again." },
-      { status: 429, headers: { "Retry-After": String(limit.retryAfter) } }
-    );
-  }
+  // Slow down password guessing from a single source: 10 attempts per IP / 15 min.
+  const ipLimit = rateLimit(`login:ip:${clientIp(req)}`, LOGIN_WINDOW);
+  if (!ipLimit.ok) return tooManyAttempts(ipLimit.retryAfter);
 
   try {
     const body = await req.json();
     const { email, password } = schema.parse(body);
-    await authenticate(email.toLowerCase().trim(), password);
+    const normalizedEmail = email.toLowerCase().trim();
+
+    // Also throttle by TARGET ACCOUNT. This is the fix that survives an attacker
+    // rotating their source IP (or a spoofed X-Forwarded-For): one email can
+    // only be guessed 10 times / 15 min no matter where the attempts come from.
+    const emailLimit = rateLimit(`login:email:${normalizedEmail}`, LOGIN_WINDOW);
+    if (!emailLimit.ok) return tooManyAttempts(emailLimit.retryAfter);
+
+    await authenticate(normalizedEmail, password);
     return NextResponse.json({ ok: true });
   } catch (err) {
     // An impossible email is safe to name (it says nothing about who has an

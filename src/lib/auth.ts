@@ -19,13 +19,21 @@ const rawSecret = process.env.AUTH_SECRET ?? DEV_SECRET;
 // Fail loudly if a production deployment is still using the dev secret — a weak
 // signing key would let anyone forge sessions. This runs only when a session is
 // actually issued/verified, so it never blocks the build.
+let warnedWeakSecret = false;
 function assertSecureSecret() {
-  if (
-    process.env.NODE_ENV === "production" &&
-    (rawSecret === DEV_SECRET || rawSecret.length < 32)
-  ) {
+  const weak = rawSecret === DEV_SECRET || rawSecret.length < 32;
+  if (process.env.NODE_ENV === "production" && weak) {
     throw new Error(
       "AUTH_SECRET is missing or insecure in production. Set a strong value (openssl rand -base64 32)."
+    );
+  }
+  // Outside production we don't hard-fail (local dev must keep working), but we
+  // warn ONCE so a staging/preview box on the dev secret is impossible to miss.
+  if (weak && !warnedWeakSecret) {
+    warnedWeakSecret = true;
+    console.warn(
+      "[auth] AUTH_SECRET is the built-in dev value or shorter than 32 chars. " +
+        "This is fine for local dev only — set a strong AUTH_SECRET before deploying."
     );
   }
 }
@@ -76,13 +84,20 @@ export async function clearSessionCookie() {
   jar.delete(COOKIE_NAME);
 }
 
+// Registers a new user WITHOUT revealing whether the email was already taken.
+// If the address is free we create the account and sign them in. If it is
+// already registered we quietly do nothing and report `created: false` — the
+// API route returns the same success shape either way so an outsider can't use
+// sign-up to discover which emails have accounts (account enumeration). When an
+// email/notification channel is wired up, the "someone tried to sign up with
+// your existing address" notice should be sent out-of-band from the `false` branch.
 export async function registerUser(
   email: string,
   password: string,
   displayName?: string
-) {
+): Promise<{ created: boolean }> {
   const existing = await prisma.user.findUnique({ where: { email } });
-  if (existing) throw new Error("An account with that email already exists.");
+  if (existing) return { created: false };
 
   const passwordHash = await hashPassword(password);
   const trialEndsAt = new Date(Date.now() + TRIAL_DAYS * 24 * 60 * 60 * 1000);
@@ -98,7 +113,7 @@ export async function registerUser(
     },
   });
   await setSessionCookie(user.id);
-  return user;
+  return { created: true };
 }
 
 export async function authenticate(email: string, password: string) {
