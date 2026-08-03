@@ -4,7 +4,9 @@ import { withUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { PROP_PRESETS } from "@/lib/prop";
-import { PROP_FIRMS, DRAWDOWN_TYPES } from "@/lib/types";
+import { PROP_FIRMS, DRAWDOWN_TYPES, type Plan } from "@/lib/types";
+import { hasFeature } from "@/lib/billing/plans";
+import { apiErrorResponse } from "@/lib/api-error";
 
 // Two ways to create a PropAccount:
 //  1. { accountId, preset } — hydrate rule params from a built-in preset.
@@ -31,6 +33,19 @@ const customSchema = z.object({
 export const POST = withUser(async (user, req: Request) => {
   const limited = enforceUserRateLimit("prop:write", user.id);
   if (limited) return limited;
+
+  // Server-side feature gate: the prop-firm tracker is an Elite feature. The UI
+  // hides it on lower plans, but the API must enforce it too — the button being
+  // hidden is not a security control.
+  if (!hasFeature(user.plan as Plan, user.billingStatus, "propFirmModule")) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "The prop-firm tracker is available on the Elite plan. Upgrade to use it.",
+      },
+      { status: 403 }
+    );
+  }
 
   try {
     const body = await req.json();
@@ -119,12 +134,6 @@ export const POST = withUser(async (user, req: Request) => {
 
     return NextResponse.json({ ok: true, id: created.id });
   } catch (err) {
-    const message =
-      err instanceof z.ZodError
-        ? "Please check the prop account fields."
-        : err instanceof Error
-          ? err.message
-          : "Failed.";
-    return NextResponse.json({ ok: false, error: message }, { status: 400 });
+    return apiErrorResponse(err, { validationMessage: "Please check the prop account fields." });
   }
 });

@@ -3,6 +3,9 @@ import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
+import { hasFeature } from "@/lib/billing/plans";
+import type { Plan } from "@/lib/types";
+import { apiErrorResponse } from "@/lib/api-error";
 
 const SCOPES = ["all", "strategy", "account"] as const;
 
@@ -45,6 +48,13 @@ export async function POST(req: Request) {
   if (!user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   const limited = enforceUserRateLimit("rulebooks:write", user.id);
   if (limited) return limited;
+  // Server-side gate: the rule engine (rulebooks + rules) is a paid feature.
+  if (!hasFeature(user.plan as Plan, user.billingStatus, "ruleEngine")) {
+    return NextResponse.json(
+      { ok: false, error: "Rulebooks are part of the rule engine. Upgrade to Pro to create one." },
+      { status: 403 }
+    );
+  }
   try {
     const d = createSchema.parse(await req.json());
     const book = await prisma.ruleBook.create({
@@ -59,7 +69,7 @@ export async function POST(req: Request) {
     await recompute(user.id);
     return NextResponse.json({ ok: true, id: book.id });
   } catch (err) {
-    return NextResponse.json({ ok: false, error: errMessage(err) }, { status: 400 });
+    return apiErrorResponse(err, { validationMessage: "Please check the rulebook fields." });
   }
 }
 
@@ -85,7 +95,7 @@ export async function PATCH(req: Request) {
     await recompute(user.id);
     return NextResponse.json({ ok: true });
   } catch (err) {
-    return NextResponse.json({ ok: false, error: errMessage(err) }, { status: 400 });
+    return apiErrorResponse(err, { validationMessage: "Please check the rulebook fields." });
   }
 }
 
@@ -103,11 +113,6 @@ export async function DELETE(req: Request) {
     await recompute(user.id);
     return NextResponse.json({ ok: true });
   } catch (err) {
-    return NextResponse.json({ ok: false, error: errMessage(err) }, { status: 400 });
+    return apiErrorResponse(err, { validationMessage: "Please check the rulebook fields." });
   }
-}
-
-function errMessage(err: unknown): string {
-  if (err instanceof z.ZodError) return "Please check the rulebook fields.";
-  return err instanceof Error ? err.message : "Failed.";
 }

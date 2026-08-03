@@ -28,15 +28,24 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
     const { email, password, displayName } = schema.parse(body);
+    // registerUser never reveals whether the email already existed; we return
+    // the SAME success response whether or not a new account was created, so
+    // sign-up can't be used to probe which emails have accounts.
     await registerUser(email.toLowerCase().trim(), password, displayName);
     return NextResponse.json({ ok: true });
   } catch (err) {
-    const message =
-      err instanceof z.ZodError
-        ? err.errors[0]?.message ?? "Invalid input."
-        : err instanceof Error
-          ? err.message
-          : "Something went wrong.";
-    return NextResponse.json({ ok: false, error: message }, { status: 400 });
+    // Validation problems (e.g. weak/short password) are safe to spell out.
+    if (err instanceof z.ZodError) {
+      return NextResponse.json(
+        { ok: false, error: err.errors[0]?.message ?? "Invalid input." },
+        { status: 400 }
+      );
+    }
+    // Anything else stays generic — never echo a raw server error to the client.
+    console.error("Register error:", err);
+    return NextResponse.json(
+      { ok: false, error: "Something went wrong. Please try again." },
+      { status: 400 }
+    );
   }
 }

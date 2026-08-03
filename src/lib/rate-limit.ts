@@ -69,12 +69,58 @@ export function rateLimit(
   return { ok: true, retryAfter: 0 };
 }
 
-// Best-effort visitor IP. Behind Railway's proxy the real IP is the first
-// entry of the x-forwarded-for header; fall back sensibly otherwise.
+// Best-effort visitor IP used to key anonymous rate limits.
+//
+// SECURITY: `x-forwarded-for` is set by the CLIENT unless a trusted proxy sits
+// in front of the app and overwrites/appends it. Trusting the first hop blindly
+// let an attacker rotate that header to get a fresh limit bucket every request
+// and walk straight past the login/register limits. So we only read forwarded
+// headers when the deployment explicitly says a trusted proxy is in front:
+//
+//   TRUST_PROXY=true        — turn on forwarded-header trust (set this on Railway)
+//   PROXY_HOPS=1            — how many proxies you run; we take the address the
+//                            outermost trusted proxy saw (the Nth entry from the
+//                            right of x-forwarded-for). Defaults to 1.
+//
+// With trust OFF (the default, and how local dev runs) forwarded headers are
+// ignored entirely — a spoofed X-Forwarded-For can no longer mint new buckets.
 export function clientIp(req: Request): string {
-  const forwarded = req.headers.get("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0]!.trim();
-  return req.headers.get("x-real-ip")?.trim() || "unknown";
+  if (isProxyTrusted()) {
+    const forwarded = req.headers.get("x-forwarded-for");
+    if (forwarded) {
+      const hops = forwarded
+        .split(",")
+        .map((h) => h.trim())
+        .filter(Boolean);
+      if (hops.length > 0) {
+        const n = proxyHops();
+        // Take the Nth hop from the right — the IP the outermost trusted proxy
+        // actually observed. Anything further left is client-controlled.
+        const idx = Math.max(0, hops.length - n);
+        return hops[idx]!;
+      }
+    }
+    const real = req.headers.get("x-real-ip")?.trim();
+    if (real) return real;
+  }
+  // Untrusted: never key off a header the caller can forge. Route handlers don't
+  // get the raw socket address, so anonymous callers share one bucket here —
+  // fine for single-process local dev, and prod is expected to set TRUST_PROXY.
+  return "direct";
+}
+
+function isProxyTrusted(): boolean {
+  return process.env.TRUST_PROXY === "true" || proxyHopsRaw() > 0;
+}
+
+function proxyHopsRaw(): number {
+  const n = Number(process.env.PROXY_HOPS);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function proxyHops(): number {
+  const n = proxyHopsRaw();
+  return n > 0 ? Math.floor(n) : 1;
 }
 
 // ── Per-user limiting for authed mutation endpoints ──────────────────────────

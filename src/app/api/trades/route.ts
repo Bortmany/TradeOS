@@ -1,26 +1,34 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import { withUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { SIDES } from "@/lib/types";
 import { pointMultiplier } from "@/lib/ingestion/symbols";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { recomputeCompliance } from "@/lib/rules/recompute-compliance";
+import { apiErrorResponse } from "@/lib/api-error";
 
 const schema = z.object({
   accountId: z.string().min(1),
-  symbol: z.string().min(1),
+  symbol: z.string().min(1).max(40),
   side: z.enum(SIDES),
-  entryPrice: z.coerce.number(),
-  exitPrice: z.coerce.number().optional().nullable(),
-  quantity: z.coerce.number().positive(),
+  // `.finite()` rejects Infinity/NaN before they ever reach the database.
+  entryPrice: z.coerce.number().finite(),
+  exitPrice: z.coerce.number().finite().optional().nullable(),
+  quantity: z.coerce.number().finite().positive(),
   entryTime: z.coerce.date(),
   exitTime: z.coerce.date().optional().nullable(),
-  fees: z.coerce.number().default(0),
-  strategyTag: z.string().optional().nullable(),
-  notes: z.string().optional().nullable(),
-  emotions: z.string().optional().nullable(),
-  tags: z.string().optional().nullable(),
+  fees: z.coerce.number().finite().default(0),
+  strategyTag: z.string().max(120).optional().nullable(),
+  // Match the length caps the PATCH route already enforces.
+  notes: z.string().max(5000).optional().nullable(),
+  emotions: z.string().max(500).optional().nullable(),
+  tags: z.string().max(500).optional().nullable(),
+  // Optional caller-supplied dedupe token. Retrying the same create with the
+  // same key returns the original trade instead of inserting a duplicate — so
+  // 5 parallel identical submits produce ONE row, not five.
+  idempotencyKey: z.string().min(1).max(200).optional(),
 });
 
 export const POST = withUser(async (user, req: Request) => {
@@ -47,34 +55,57 @@ export const POST = withUser(async (user, req: Request) => {
       isWin = pnl > 0;
     }
 
-    const trade = await prisma.trade.create({
-      data: {
-        userId: user.id,
-        accountId: account.id,
-        symbol: d.symbol.toUpperCase(),
-        side: d.side,
-        entryPrice: d.entryPrice,
-        exitPrice: d.exitPrice ?? null,
-        quantity: d.quantity,
-        entryTime: d.entryTime,
-        exitTime: d.exitTime ?? null,
-        fees: d.fees,
-        pnl,
-        strategyTag: d.strategyTag || null,
-        notes: d.notes || null,
-        emotions: d.emotions || null,
-        tags: d.tags || null,
-        source: "manual",
-        isWin,
-      },
-    });
+    // When an idempotency key is supplied we store it as the trade's externalId
+    // (namespaced so it can't collide with a real broker order id). The schema's
+    // @@unique([accountId, externalId]) then guarantees at most one row per key.
+    const externalId = d.idempotencyKey ? `idmp:${d.idempotencyKey}` : null;
+
+    let tradeId: string;
+    try {
+      const trade = await prisma.trade.create({
+        data: {
+          userId: user.id,
+          accountId: account.id,
+          symbol: d.symbol.toUpperCase(),
+          side: d.side,
+          entryPrice: d.entryPrice,
+          exitPrice: d.exitPrice ?? null,
+          quantity: d.quantity,
+          entryTime: d.entryTime,
+          exitTime: d.exitTime ?? null,
+          fees: d.fees,
+          pnl,
+          strategyTag: d.strategyTag || null,
+          notes: d.notes || null,
+          emotions: d.emotions || null,
+          tags: d.tags || null,
+          source: "manual",
+          externalId,
+          isWin,
+        },
+      });
+      tradeId = trade.id;
+    } catch (err) {
+      // A concurrent create with the same idempotency key hit the unique index —
+      // return the trade that won the race so the retry is a no-op success.
+      if (
+        externalId &&
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === "P2002"
+      ) {
+        const existing = await prisma.trade.findFirst({
+          where: { accountId: account.id, externalId },
+          select: { id: true },
+        });
+        if (existing) return NextResponse.json({ ok: true, id: existing.id });
+      }
+      throw err;
+    }
 
     await recomputeCompliance(user.id);
 
-    return NextResponse.json({ ok: true, id: trade.id });
+    return NextResponse.json({ ok: true, id: tradeId });
   } catch (err) {
-    const message =
-      err instanceof z.ZodError ? "Please check the trade fields." : err instanceof Error ? err.message : "Failed.";
-    return NextResponse.json({ ok: false, error: message }, { status: 400 });
+    return apiErrorResponse(err, { validationMessage: "Please check the trade fields." });
   }
 });

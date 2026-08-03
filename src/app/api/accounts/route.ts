@@ -5,12 +5,15 @@ import { prisma } from "@/lib/db";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { BROKERS, ACCOUNT_KINDS, type Plan } from "@/lib/types";
 import { withinLimit } from "@/lib/billing/plans";
+import { apiErrorResponse } from "@/lib/api-error";
 
 const createSchema = z.object({
   name: z.string().min(1).max(80),
   broker: z.enum(BROKERS).default("manual"),
   kind: z.enum(ACCOUNT_KINDS).default("live"),
-  startingBalance: z.coerce.number().default(0),
+  // A starting balance can't be negative or non-finite (guards against an
+  // Infinity value blowing up equity-curve math downstream).
+  startingBalance: z.coerce.number().finite().min(0).default(0),
   color: z
     .string()
     .regex(/^#[0-9a-fA-F]{6}$/)
@@ -71,9 +74,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: true, id: account.id });
   } catch (err) {
-    const message =
-      err instanceof z.ZodError ? "Please check the account fields." : err instanceof Error ? err.message : "Failed.";
-    return NextResponse.json({ ok: false, error: message }, { status: 400 });
+    return apiErrorResponse(err, { validationMessage: "Please check the account fields." });
   }
 }
 
@@ -93,9 +94,7 @@ export async function PATCH(req: Request) {
     await prisma.tradingAccount.update({ where: { id }, data: updates });
     return NextResponse.json({ ok: true });
   } catch (err) {
-    const message =
-      err instanceof z.ZodError ? "Invalid request." : err instanceof Error ? err.message : "Failed.";
-    return NextResponse.json({ ok: false, error: message }, { status: 400 });
+    return apiErrorResponse(err, { validationMessage: "Invalid request." });
   }
 }
 
@@ -115,8 +114,6 @@ export async function DELETE(req: Request) {
     await prisma.tradingAccount.delete({ where: { id } });
     return NextResponse.json({ ok: true });
   } catch (err) {
-    const message =
-      err instanceof z.ZodError ? "Invalid request." : err instanceof Error ? err.message : "Failed.";
-    return NextResponse.json({ ok: false, error: message }, { status: 400 });
+    return apiErrorResponse(err, { validationMessage: "Invalid request." });
   }
 }
