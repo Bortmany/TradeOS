@@ -175,8 +175,11 @@ export async function anonymousRateKey(req: Request): Promise<string> {
       const id = verifyBrowserId(existing);
       if (id) return `anon:${id}`;
     }
-    // First contact (or a tampered/absent cookie): mint a fresh id, set it for
-    // next time, and count THIS request against the shared pre-cookie bucket.
+    // First contact (or a tampered/absent cookie): mint a fresh id and set the
+    // cookie for next time. Key THIS request on that same fresh id right away —
+    // never on a shared "unknown" bucket — so a cookie-dropping bot can't deny
+    // every other cookie-less visitor (including everyone's very first request)
+    // by exhausting one shared bucket.
     const id = randomUUID();
     jar.set(RL_COOKIE, signBrowserId(id), {
       httpOnly: true,
@@ -185,7 +188,7 @@ export async function anonymousRateKey(req: Request): Promise<string> {
       path: "/",
       maxAge: 60 * 60 * 24 * 365, // one year
     });
-    return "anon:unknown";
+    return `anon:${id}`;
   } catch {
     // No request/cookie context (or cookie writes unavailable) — fall back to
     // the shared bucket rather than crash the request.

@@ -8,28 +8,36 @@ import { pointMultiplier } from "@/lib/ingestion/symbols";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { recomputeCompliance } from "@/lib/rules/recompute-compliance";
 import { apiErrorResponse } from "@/lib/api-error";
+import { isValidTradeTimeOrder, TRADE_TIME_ORDER_ERROR } from "@/lib/validation";
 
-const schema = z.object({
-  accountId: z.string().min(1),
-  symbol: z.string().min(1).max(40),
-  side: z.enum(SIDES),
-  // `.finite()` rejects Infinity/NaN before they ever reach the database.
-  entryPrice: z.coerce.number().finite(),
-  exitPrice: z.coerce.number().finite().optional().nullable(),
-  quantity: z.coerce.number().finite().positive(),
-  entryTime: z.coerce.date(),
-  exitTime: z.coerce.date().optional().nullable(),
-  fees: z.coerce.number().finite().default(0),
-  strategyTag: z.string().max(120).optional().nullable(),
-  // Match the length caps the PATCH route already enforces.
-  notes: z.string().max(5000).optional().nullable(),
-  emotions: z.string().max(500).optional().nullable(),
-  tags: z.string().max(500).optional().nullable(),
-  // Optional caller-supplied dedupe token. Retrying the same create with the
-  // same key returns the original trade instead of inserting a duplicate — so
-  // 5 parallel identical submits produce ONE row, not five.
-  idempotencyKey: z.string().min(1).max(200).optional(),
-});
+const schema = z
+  .object({
+    accountId: z.string().min(1),
+    symbol: z.string().min(1).max(40),
+    side: z.enum(SIDES),
+    // `.finite()` rejects Infinity/NaN before they ever reach the database.
+    entryPrice: z.coerce.number().finite(),
+    exitPrice: z.coerce.number().finite().optional().nullable(),
+    quantity: z.coerce.number().finite().positive(),
+    entryTime: z.coerce.date(),
+    exitTime: z.coerce.date().optional().nullable(),
+    fees: z.coerce.number().finite().default(0),
+    strategyTag: z.string().max(120).optional().nullable(),
+    // Match the length caps the PATCH route already enforces.
+    notes: z.string().max(5000).optional().nullable(),
+    emotions: z.string().max(500).optional().nullable(),
+    tags: z.string().max(500).optional().nullable(),
+    // Optional caller-supplied dedupe token. Retrying the same create with the
+    // same key returns the original trade instead of inserting a duplicate — so
+    // 5 parallel identical submits produce ONE row, not five.
+    idempotencyKey: z.string().min(1).max(200).optional(),
+  })
+  // A trade can't exit before it entered — reject the impossible instead of
+  // silently persisting a negative-duration trade.
+  .refine((d) => isValidTradeTimeOrder(d.entryTime, d.exitTime), {
+    message: TRADE_TIME_ORDER_ERROR,
+    path: ["exitTime"],
+  });
 
 export const POST = withUser(async (user, req: Request) => {
   const limited = enforceUserRateLimit("trades:create", user.id);

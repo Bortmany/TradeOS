@@ -134,9 +134,13 @@ export interface TradeRecord {
 // Rule engine config shapes (the `Rule.config` JSON blob, keyed by rule.type)
 // --------------------------------------------------------------------------
 
+// "HH:MM" 24-hour, hours 00-23 and minutes 00-59 only — a plain \d{2}:\d{2}
+// regex would also accept impossible times like "99:99".
+const TIME_OF_DAY = /^([01]\d|2[0-3]):[0-5]\d$/;
+
 export const TimeWindowConfig = z.object({
-  start: z.string().regex(/^\d{2}:\d{2}$/), // "09:30" local exchange time
-  end: z.string().regex(/^\d{2}:\d{2}$/),
+  start: z.string().regex(TIME_OF_DAY, "Enter a valid time (HH:MM, 00:00-23:59)."), // "09:30" local exchange time
+  end: z.string().regex(TIME_OF_DAY, "Enter a valid time (HH:MM, 00:00-23:59)."),
   timezone: z.string().default("America/New_York"),
 });
 

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { withUser } from "@/lib/auth";
 import { loadSampleData } from "@/lib/demo";
 import { rateLimit } from "@/lib/rate-limit";
+import { apiErrorResponse } from "@/lib/api-error";
 
 // One-click activation: populate a new user's account with realistic sample
 // trades + a starter rulebook so they see the product working immediately.
@@ -25,9 +26,7 @@ export const POST = withUser(async (user) => {
     }
     return NextResponse.json({ ok: true, created: result.created });
   } catch (err) {
-    return NextResponse.json(
-      { ok: false, error: err instanceof Error ? err.message : "Failed to load sample data." },
-      { status: 500 }
-    );
+    // Never echo a raw internal error message to the client.
+    return apiErrorResponse(err);
   }
 });

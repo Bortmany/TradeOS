@@ -27,3 +27,19 @@ export function isPossibleEmail(value: string): boolean {
   if (!v || v.length > 254) return false;
   return EMAIL_SHAPE.test(v);
 }
+
+/** Plain-English message shown when a trade's exit is before its entry. */
+export const TRADE_TIME_ORDER_ERROR = "Exit time can't be before entry time.";
+
+/**
+ * True when a trade's exit time doesn't come before its entry time. An open
+ * trade (no exit yet) always passes. Shared by the manual trade-create route
+ * and the CSV import path so both reject the same impossible trade.
+ */
+export function isValidTradeTimeOrder(
+  entryTime: Date,
+  exitTime: Date | null | undefined
+): boolean {
+  if (exitTime == null) return true;
+  return exitTime >= entryTime;
+}
