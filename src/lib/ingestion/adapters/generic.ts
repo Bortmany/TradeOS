@@ -19,6 +19,7 @@ import {
   type Side,
 } from "@/lib/types";
 import { pointMultiplier } from "@/lib/ingestion/symbols";
+import { isValidTradeTimeOrder } from "@/lib/validation";
 
 // --------------------------------------------------------------------------
 // Adapter contract (re-exported so every adapter file imports it from here).
@@ -214,6 +215,13 @@ export class TradeCollector {
     const fees = f.fees ?? 0;
     const exitPrice = f.exitPrice ?? null;
     const exitTime = exitPrice != null ? f.exitTime ?? null : null;
+
+    // A trade can't exit before it entered — reject rather than persist a
+    // negative-duration trade (e.g. a broker export glitch or a crafted CSV).
+    if (!isValidTradeTimeOrder(f.entryTime, exitTime)) {
+      return this.fail(rowNumber, "exit time is before entry time");
+    }
+
     const pnl =
       f.pnl != null
         ? f.pnl

@@ -3,10 +3,11 @@ import { z } from "zod";
 import { authenticate } from "@/lib/auth";
 import { rateLimit, anonymousRateKey } from "@/lib/rate-limit";
 import { EMAIL_ERROR, isPossibleEmail } from "@/lib/validation";
+import { apiErrorResponse } from "@/lib/api-error";
 
 const schema = z.object({
   email: z.string().trim().refine(isPossibleEmail, EMAIL_ERROR),
-  password: z.string().min(1),
+  password: z.string().min(1).max(200, "Password is too long."),
 });
 
 const LOGIN_WINDOW = { limit: 10, windowMs: 15 * 60 * 1000 } as const;
@@ -42,14 +43,18 @@ export async function POST(req: Request) {
   } catch (err) {
     // An impossible email is safe to name (it says nothing about who has an
     // account) and lets the form put the red border on the right box.
-    const message =
-      err instanceof z.ZodError
-        ? err.errors.some((e) => e.path[0] === "email")
-          ? EMAIL_ERROR
-          : "Please enter a valid email and password."
-        : err instanceof Error
-          ? err.message
-          : "Something went wrong.";
-    return NextResponse.json({ ok: false, error: message }, { status: 400 });
+    if (err instanceof z.ZodError) {
+      const message = err.errors.some((e) => e.path[0] === "email")
+        ? EMAIL_ERROR
+        : "Please enter a valid email and password.";
+      return NextResponse.json({ ok: false, error: message }, { status: 400 });
+    }
+    // The one deliberate, safe-to-show message authenticate() throws.
+    if (err instanceof Error && err.message === "Invalid email or password.") {
+      return NextResponse.json({ ok: false, error: err.message }, { status: 400 });
+    }
+    // Everything else — including a malformed JSON body, whose raw SyntaxError
+    // message must never reach the client — goes through the shared responder.
+    return apiErrorResponse(err);
   }
 }
