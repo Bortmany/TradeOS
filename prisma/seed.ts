@@ -249,14 +249,38 @@ function generateTrades(
 // Main
 // --------------------------------------------------------------------------
 
+// The demo login's password comes from SEED_DEMO_PASSWORD — there is NO built-in
+// default on purpose. A hardcoded default (the old "demo1234") is a public
+// constant that a first-guess brute force walks straight into, so we refuse to
+// seed the demo account unless a strong, non-default password is supplied. This
+// mirrors the InvestIQ / Oman / Dukkani seeds, which already reject weak seed
+// passwords. Known-weak values are rejected outright even if long enough.
+const WEAK_DEMO_PASSWORDS = new Set([
+  "demo1234",
+  "demo",
+  "password",
+  "changeme",
+]);
+
+function assertStrongDemoPassword(pw: string | undefined): asserts pw is string {
+  if (!pw || pw.length < 12 || WEAK_DEMO_PASSWORDS.has(pw.toLowerCase())) {
+    throw new Error(
+      "Refusing to seed demo@tradeos.app with a weak password. Set a strong " +
+        "SEED_DEMO_PASSWORD in your environment before seeding — at least 12 " +
+        "characters, and not a known-weak value like \"demo1234\". This keeps a " +
+        "guessable demo login off any deployment."
+    );
+  }
+}
+
 async function main(): Promise<void> {
   const email = "demo@tradeos.app";
 
   // ── Safety guard ─────────────────────────────────────────────────────────
-  // The demo account is a real, public-credentials login. It must NEVER land in
-  // a production database. By default we only seed it outside production; set
-  // SEED_DEMO=true to force it (e.g. a throwaway demo deployment). In that case
-  // a strong password is mandatory — the built-in "demo1234" is refused.
+  // The demo account is a real login. It must NEVER land in a production
+  // database. By default we only seed it outside production; set SEED_DEMO=true
+  // to force it (e.g. a throwaway demo deployment). Either way, a strong
+  // SEED_DEMO_PASSWORD is mandatory — there is no guessable default.
   const isProd = process.env.NODE_ENV === "production";
   const forced = process.env.SEED_DEMO === "true";
   if (isProd && !forced) {
@@ -267,12 +291,8 @@ async function main(): Promise<void> {
     return;
   }
 
-  const demoPassword = process.env.SEED_DEMO_PASSWORD ?? "demo1234";
-  if (isProd && forced && demoPassword.length < 12) {
-    throw new Error(
-      "SEED_DEMO=true in production requires SEED_DEMO_PASSWORD of at least 12 characters."
-    );
-  }
+  const demoPassword = process.env.SEED_DEMO_PASSWORD;
+  assertStrongDemoPassword(demoPassword);
 
   // Idempotent reset — cascades remove all owned rows.
   await prisma.user.deleteMany({ where: { email } });

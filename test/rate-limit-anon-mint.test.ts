@@ -1,13 +1,15 @@
-// Rate-limit hardening, item 2 — the shared "unknown" anonymous bucket.
+// Rate-limit hardening, item 2 — cookie-less anonymous keying.
 //
-// With TRUST_PROXY off, `anonymousRateKey()` used to key EVERY visitor's very
-// first (pre-cookie) request on a single shared "register:anon:unknown" /
-// "login:ip:anon:unknown" bucket. A cookie-dropping bot could exhaust that one
-// bucket and lock out every other cookie-less visitor, including every new
-// visitor's first request ever. The fix: mint the signed per-browser id and
-// key THAT SAME request on it immediately, instead of falling back to
-// "unknown". This file mocks `next/headers` so `cookies()` succeeds outside a
-// real Next.js request scope, letting the actual mint-and-key path run.
+// History: the shared "unknown" bucket let one cookie-dropping bot DoS every
+// cookie-less visitor; the follow-up fix over-corrected and minted a FRESH id on
+// every pre-cookie request, which gave a cookie-less client a brand-new bucket
+// each request — so register/login were effectively unlimited again.
+//
+// End state (pinned here): a cookie-less caller is keyed on its STABLE socket
+// address (`anon:sock:<ip>`), never a fresh id and never the shared "unknown"
+// literal. A returning browser that keeps the signed cookie keys on its own id.
+// This file mocks `next/headers` so `cookies()` succeeds outside a real Next.js
+// request scope, letting the actual key path run.
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
@@ -30,29 +32,52 @@ function reqWith(headers: Record<string, string> = {}): Request {
   return new Request("http://localhost/api/auth/login", { headers });
 }
 
-describe("anonymousRateKey — first-contact mint", () => {
+describe("anonymousRateKey — cookie-less caller keys on the stable socket address", () => {
   beforeEach(() => {
     store.clear();
     delete process.env.TRUST_PROXY;
     delete process.env.PROXY_HOPS;
   });
 
-  it("keys the very first request on a freshly minted id, never the shared 'unknown' bucket", async () => {
-    const key = await anonymousRateKey(reqWith());
+  it("keys a cookie-less caller on its socket address, not a fresh id or 'unknown'", async () => {
+    const key = await anonymousRateKey(reqWith(), "203.0.113.7");
+    expect(key).toBe("anon:sock:203.0.113.7");
     expect(key).not.toBe("anon:unknown");
-    expect(key).toMatch(/^anon:[0-9a-f-]{36}$/);
+    expect(key).not.toMatch(/^anon:[0-9a-f-]{36}$/); // never a raw minted UUID
   });
 
-  it("two different first-time visitors (no shared cookie state) get two different buckets", async () => {
-    const keyA = await anonymousRateKey(reqWith());
-    store.clear(); // simulate a second browser that has never had the cookie
-    const keyB = await anonymousRateKey(reqWith());
-    expect(keyA).not.toBe(keyB);
+  it("a cookie-dropping flood from one socket lands in ONE bucket (bounded)", async () => {
+    // Simulate a client that never keeps the cookie: clear the jar every request.
+    const keys = new Set<string>();
+    for (let i = 0; i < 5; i++) {
+      store.clear();
+      keys.add(await anonymousRateKey(reqWith(), "198.51.100.9"));
+    }
+    expect(keys.size).toBe(1);
+    expect([...keys][0]).toBe("anon:sock:198.51.100.9");
   });
 
-  it("a returning visitor with the signed cookie keys on the same id every request", async () => {
-    const first = await anonymousRateKey(reqWith());
-    const second = await anonymousRateKey(reqWith());
-    expect(second).toBe(first);
+  it("two different sockets get two different buckets (no shared-bucket DoS)", async () => {
+    store.clear();
+    const a = await anonymousRateKey(reqWith(), "198.51.100.1");
+    store.clear();
+    const b = await anonymousRateKey(reqWith(), "198.51.100.2");
+    expect(a).not.toBe(b);
+  });
+
+  it("a returning visitor that keeps the signed cookie keys on its own id", async () => {
+    // First (cookie-less) request sets the cookie; the jar persists it here.
+    const first = await anonymousRateKey(reqWith(), "198.51.100.5");
+    expect(first).toBe("anon:sock:198.51.100.5"); // first request keyed on socket
+    const second = await anonymousRateKey(reqWith(), "198.51.100.5");
+    expect(second).toMatch(/^anon:[0-9a-f-]{36}$/); // now on its own browser id
+    const third = await anonymousRateKey(reqWith(), "198.51.100.5");
+    expect(third).toBe(second); // stable across later requests
+  });
+
+  it("no socket address available falls back to one shared bucket (last resort)", async () => {
+    store.clear();
+    const key = await anonymousRateKey(reqWith());
+    expect(key).toBe("anon:unknown");
   });
 });
