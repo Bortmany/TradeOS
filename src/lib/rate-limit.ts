@@ -163,18 +163,35 @@ function verifyBrowserId(value: string): string | null {
   return diff === 0 ? id : null;
 }
 
+// ── Real socket IP (server-stamped, never client-set) ────────────────────────
+//
+// The name of an INTERNAL header that carries the caller's true TCP peer address.
+// src/instrumentation-node.ts subscribes to Node's `diagnostics_channel` and
+// stamps the real `socket.remoteAddress` onto this header on EVERY incoming
+// request, BEFORE Next.js — or any client-controlled code — reads it. That stamp
+// unconditionally OVERWRITES whatever a caller tried to send under this name, so
+// unlike `x-forwarded-for` it can't be spoofed. It is a server-to-server signal;
+// never treat it as trusted in a context that didn't go through that subscriber.
+export const SOCKET_IP_HEADER = "x-tradeos-internal-socket-ip";
+
 // Best-effort real TCP peer address of the caller, used to key anonymous limits
 // for a client that never keeps our cookie. Unlike `x-forwarded-for` the socket
 // address can't be forged by the client, and unlike a freshly minted id it's
 // STABLE for the life of the connection — so a cookie-dropping flood can't mint a
 // brand-new limit bucket on every request.
 //
-// Next.js's web `Request` deliberately doesn't expose the socket, but some
-// runtimes / a custom Node server attach the original request (with
-// `socket.remoteAddress`) to the request object; read that defensively and
-// return `undefined` when it isn't there. We NEVER read a client-forgeable
-// header here — that path stays behind the trusted-proxy check in `clientIp`.
+// The reliable source is SOCKET_IP_HEADER, stamped by the diagnostics-channel
+// subscriber in src/instrumentation-node.ts. Next.js's web `Request` never
+// exposes the raw socket in `next start`, so the old `req.socket.remoteAddress`
+// read returned nothing in production and every cookie-less caller collapsed into
+// one shared "anon:unknown" bucket (a site-wide login/register DoS). We now read
+// the stamped header first; the socket-object read is kept only as a fallback for
+// an exotic custom Node server. Returns `undefined` when neither is present (e.g.
+// a bare Request built in a unit test that never hit the real HTTP server).
 export function socketAddress(req: Request): string | undefined {
+  const stamped = req.headers.get(SOCKET_IP_HEADER)?.trim();
+  if (stamped) return stamped;
+
   const holder = req as unknown as {
     socket?: { remoteAddress?: unknown };
     ip?: unknown;

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import { withUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { ingestCsv } from "@/lib/ingestion";
@@ -62,6 +63,8 @@ export const POST = withUser(async (user, req: Request) => {
     });
 
     let imported = 0;
+    let deduped = 0;
+    const insertErrors: string[] = [];
     for (const t of result.trades) {
       try {
         await prisma.trade.create({
@@ -89,14 +92,31 @@ export const POST = withUser(async (user, req: Request) => {
           },
         });
         imported++;
-      } catch {
-        // Likely a unique-constraint dedupe on [accountId, externalId]; skip.
+      } catch (e) {
+        // Only a GENUINE dedupe — the unique index on [accountId, externalId]
+        // rejecting a row we've already imported — is an expected, silent skip.
+        // Anything else (bad data that slipped through, a real database error)
+        // must be surfaced as an error, never quietly counted as a skip, or a
+        // whole import can report "ok" while silently dropping rows.
+        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+          deduped++;
+        } else {
+          insertErrors.push(`${t.symbol}: could not be saved (unexpected data in this row).`);
+        }
       }
     }
 
+    // "skipped" in the response is the honest count of rows that were not saved
+    // for a benign reason (parser skips + genuine dedupes). Rows that failed to
+    // insert for any OTHER reason are reported in `errors`, not hidden here.
+    const skipped = result.skipped + deduped;
+    const errors = [...result.errors, ...insertErrors].slice(0, 10);
+
+    // The batch row has no error column, so its skippedCount records every row
+    // that didn't make it in (dedupes + failed inserts) to keep rowCount honest.
     await prisma.importBatch.update({
       where: { id: batch.id },
-      data: { importedCount: imported, skippedCount: result.skipped + (result.trades.length - imported) },
+      data: { importedCount: imported, skippedCount: skipped + insertErrors.length },
     });
 
     // Recompute discipline/compliance in the background of the request.
@@ -106,8 +126,8 @@ export const POST = withUser(async (user, req: Request) => {
       ok: true,
       broker: result.broker,
       imported,
-      skipped: result.skipped + (result.trades.length - imported),
-      errors: result.errors.slice(0, 10),
+      skipped,
+      errors,
     });
   } catch (err) {
     // Never echo a raw error message to the client — the shared helper maps it

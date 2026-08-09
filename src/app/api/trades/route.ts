@@ -3,7 +3,7 @@ import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { withUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { SIDES } from "@/lib/types";
+import { SIDES, MAX_TRADE_PRICE, MAX_TRADE_QUANTITY, MAX_TRADE_FEES } from "@/lib/types";
 import { pointMultiplier } from "@/lib/ingestion/symbols";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { recomputeCompliance } from "@/lib/rules/recompute-compliance";
@@ -15,13 +15,14 @@ const schema = z
     accountId: z.string().min(1),
     symbol: z.string().min(1).max(40),
     side: z.enum(SIDES),
-    // `.finite()` rejects Infinity/NaN before they ever reach the database.
-    entryPrice: z.coerce.number().finite(),
-    exitPrice: z.coerce.number().finite().optional().nullable(),
-    quantity: z.coerce.number().finite().positive(),
+    // `.finite()` rejects Infinity/NaN before they ever reach the database; the
+    // upper bounds reject absurd values that could overflow a later multiplication.
+    entryPrice: z.coerce.number().finite().min(-MAX_TRADE_PRICE).max(MAX_TRADE_PRICE),
+    exitPrice: z.coerce.number().finite().min(-MAX_TRADE_PRICE).max(MAX_TRADE_PRICE).optional().nullable(),
+    quantity: z.coerce.number().finite().positive().max(MAX_TRADE_QUANTITY),
     entryTime: z.coerce.date(),
     exitTime: z.coerce.date().optional().nullable(),
-    fees: z.coerce.number().finite().default(0),
+    fees: z.coerce.number().finite().min(-MAX_TRADE_FEES).max(MAX_TRADE_FEES).default(0),
     strategyTag: z.string().max(120).optional().nullable(),
     // Match the length caps the PATCH route already enforces.
     notes: z.string().max(5000).optional().nullable(),
