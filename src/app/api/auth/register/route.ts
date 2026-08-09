@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { registerUser } from "@/lib/auth";
-import { rateLimit, anonymousRateKey } from "@/lib/rate-limit";
+import { rateLimit, anonymousRateKey, socketAddress } from "@/lib/rate-limit";
 import { EMAIL_ERROR, isPossibleEmail } from "@/lib/validation";
 
 const schema = z.object({
@@ -13,9 +13,11 @@ const schema = z.object({
 });
 
 export async function POST(req: Request) {
-  // Curb sign-up spam: at most 5 new accounts per visitor / hour. Each browser
-  // gets its own bucket (signed cookie) when there's no trusted proxy in front.
-  const limit = rateLimit(`register:${await anonymousRateKey(req)}`, {
+  // Curb sign-up spam: at most 5 new accounts per visitor / hour. Each visitor
+  // gets its own bucket — a signed cookie for real browsers, and the stable
+  // socket address for a cookie-less client — when there's no trusted proxy in
+  // front, so a cookie-dropping flood is bounded per source instead of unlimited.
+  const limit = rateLimit(`register:${await anonymousRateKey(req, socketAddress(req))}`, {
     limit: 5,
     windowMs: 60 * 60 * 1000,
   });

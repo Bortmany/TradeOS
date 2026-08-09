@@ -163,11 +163,48 @@ function verifyBrowserId(value: string): string | null {
   return diff === 0 ? id : null;
 }
 
-export async function anonymousRateKey(req: Request): Promise<string> {
+// Best-effort real TCP peer address of the caller, used to key anonymous limits
+// for a client that never keeps our cookie. Unlike `x-forwarded-for` the socket
+// address can't be forged by the client, and unlike a freshly minted id it's
+// STABLE for the life of the connection — so a cookie-dropping flood can't mint a
+// brand-new limit bucket on every request.
+//
+// Next.js's web `Request` deliberately doesn't expose the socket, but some
+// runtimes / a custom Node server attach the original request (with
+// `socket.remoteAddress`) to the request object; read that defensively and
+// return `undefined` when it isn't there. We NEVER read a client-forgeable
+// header here — that path stays behind the trusted-proxy check in `clientIp`.
+export function socketAddress(req: Request): string | undefined {
+  const holder = req as unknown as {
+    socket?: { remoteAddress?: unknown };
+    ip?: unknown;
+  };
+  const candidate =
+    (typeof holder.socket?.remoteAddress === "string" && holder.socket.remoteAddress) ||
+    (typeof holder.ip === "string" && holder.ip) ||
+    "";
+  const trimmed = candidate.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+export async function anonymousRateKey(
+  req: Request,
+  socketIp?: string
+): Promise<string> {
   // Behind a trusted proxy we know the real visitor IP — use it directly.
   if (isProxyTrusted()) return clientIp(req);
 
-  // Untrusted: identify the browser by its signed cookie.
+  // The stable per-connection fallback for a cookie-less caller: the real TCP
+  // socket address. NOT a freshly minted per-request id (that gave a cookie-less
+  // client a brand-new bucket every request, so register/login were effectively
+  // unlimited) and NOT a single shared "unknown" literal (that let one bot DoS
+  // every cookie-less visitor). Only when no socket address is available at all
+  // do we share one bucket as a last resort.
+  const sock = (socketIp ?? "").trim();
+  const socketKey = sock ? `anon:sock:${sock}` : "anon:unknown";
+
+  // Untrusted: prefer the signed per-browser cookie so real browsers each get
+  // their own (finer-grained) bucket.
   try {
     const jar = await cookies();
     const existing = jar.get(RL_COOKIE)?.value;
@@ -175,11 +212,9 @@ export async function anonymousRateKey(req: Request): Promise<string> {
       const id = verifyBrowserId(existing);
       if (id) return `anon:${id}`;
     }
-    // First contact (or a tampered/absent cookie): mint a fresh id and set the
-    // cookie for next time. Key THIS request on that same fresh id right away —
-    // never on a shared "unknown" bucket — so a cookie-dropping bot can't deny
-    // every other cookie-less visitor (including everyone's very first request)
-    // by exhausting one shared bucket.
+    // Cookie-less (or a tampered/absent cookie): set the cookie so a browser that
+    // DOES persist it upgrades to its own bucket next time — but key THIS request
+    // on the stable socket address, never on the fresh id we just minted.
     const id = randomUUID();
     jar.set(RL_COOKIE, signBrowserId(id), {
       httpOnly: true,
@@ -188,12 +223,19 @@ export async function anonymousRateKey(req: Request): Promise<string> {
       path: "/",
       maxAge: 60 * 60 * 24 * 365, // one year
     });
-    return `anon:${id}`;
+    return socketKey;
   } catch {
-    // No request/cookie context (or cookie writes unavailable) — fall back to
-    // the shared bucket rather than crash the request.
-    return "anon:unknown";
+    // No request/cookie context (or cookie writes unavailable) — the socket key
+    // still bounds the caller; only when neither is available do we share.
+    return socketKey;
   }
+}
+
+// Forget a key's bucket entirely — used to clear a per-account failure counter
+// after a SUCCESSFUL login so a few earlier wrong guesses don't linger against a
+// legitimate user.
+export function resetRateLimit(key: string): void {
+  store.delete(key);
 }
 
 function isProxyTrusted(): boolean {
