@@ -117,11 +117,19 @@ export function BrokerConnect() {
   return (
     <Card>
       <CardHeader className="flex-row items-center justify-between">
-        <CardTitle className="flex items-center gap-2">
-          <Plug className="h-4 w-4 text-muted-foreground" />
-          Broker API — TopstepX (ProjectX)
-        </CardTitle>
-        <Badge variant="outline">Sync only</Badge>
+        <div className="min-w-0">
+          <CardTitle className="flex items-center gap-2">
+            <Plug className="h-4 w-4 text-muted-foreground" />
+            Broker API — TopstepX (ProjectX)
+          </CardTitle>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            A read-only link: TradeOS pulls your filled trades in. It can never place,
+            change or cancel an order, and it can never move money.
+          </p>
+        </div>
+        <Badge variant="outline" className="shrink-0">
+          Read-only sync
+        </Badge>
       </CardHeader>
       <CardContent className="space-y-5">
         {/* Existing connections */}
@@ -141,7 +149,7 @@ export function BrokerConnect() {
                 className="rounded-lg border border-dashed border-border py-8"
                 icon={<Link2 className="h-5 w-5" />}
                 title="No broker connections yet"
-                description="Link a TopstepX account below to sync fills automatically — no CSV wrangling."
+                description="Link a TopstepX account below to pull your fills in automatically — read-only, no CSV wrangling."
               />
             )
           ) : (
@@ -159,9 +167,10 @@ export function BrokerConnect() {
         <ConnectFlow onConnected={refreshAll} />
 
         <p className="text-2xs text-muted-foreground">
-          Requires a TopstepX API key (Settings → API in TopstepX). Credentials are
-          encrypted at rest. Trades sync automatically on a schedule and on demand —
-          no orders are ever placed.
+          Requires a TopstepX API key (Settings → API in TopstepX) — never your broker
+          password. The key is encrypted at rest and only ever used to read your trades:
+          they sync on a schedule and on demand, and no order is ever placed. Disconnect
+          any time; your imported trades stay in your journal.
         </p>
       </CardContent>
     </Card>

@@ -9,7 +9,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth";
-import { getAccounts, getDashboardData, getOpenAlerts } from "@/lib/data";
+import { getAccounts, getDashboardData, getOpenAlerts, getTrades } from "@/lib/data";
 import { PageHeader } from "@/components/page-header";
 import { AccountSwitcher } from "@/components/account-switcher";
 import { EquityChart } from "@/components/charts/equity-chart";
@@ -26,6 +26,7 @@ import {
   pnlColor,
   formatDuration,
   formatDateTime,
+  formatDate,
 } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -39,10 +40,13 @@ export default async function DashboardPage({
   if (!user) redirect("/login");
   const { account } = await searchParams;
 
-  const [accounts, data, alerts] = await Promise.all([
+  const [accounts, data, alerts, trades] = await Promise.all([
     getAccounts(user.id),
     getDashboardData(user.id, account),
     getOpenAlerts(user.id),
+    // Same user-scoped, account-filtered set the dashboard data uses — read only,
+    // so violations can be shown with the symbol, date and P&L of their trade.
+    getTrades(user.id, account ? { accountId: account } : {}),
   ]);
 
   const activeAccount = account ? accounts.find((a) => a.id === account) : null;
@@ -78,12 +82,22 @@ export default async function DashboardPage({
 
   const startingBalance = activeAccount?.startingBalance ?? 0;
 
-  // Flatten failing evaluations across trades for the "recent violations" feed.
-  const violations = Object.entries(data.evaluations)
-    .flatMap(([tradeId, evs]) =>
-      evs.filter((e) => e.status === "fail").map((e) => ({ tradeId, ...e }))
+  // Failing evaluations, newest trade first, carrying enough of the trade for the
+  // feed to read like a journal entry (which rule, what it cost, when).
+  const violations = trades
+    .flatMap((t) =>
+      (data.evaluations[t.id] ?? [])
+        .filter((e) => e.status === "fail")
+        .map((e) => ({
+          tradeId: t.id,
+          symbol: t.symbol,
+          entryTime: t.entryTime,
+          pnl: t.pnl,
+          isOpen: t.exitTime === null,
+          ...e,
+        }))
     )
-    .slice(0, 6);
+    .slice(0, 5);
 
   return (
     <div className="container max-w-7xl space-y-6 py-6">
@@ -109,19 +123,23 @@ export default async function DashboardPage({
             <Link href="/rules">Rulebook</Link>
           </Button>
         </CardHeader>
-        <CardContent className="flex flex-col gap-6 md:flex-row md:items-center">
-          <div className="flex shrink-0 justify-center md:px-8">
+        {/* The ring owns the card on its own row; the four sub-scores sit under
+            it as a compact strip so nothing competes with the anchor metric. */}
+        <CardContent className="space-y-5">
+          <div className="flex flex-col items-center gap-1.5 py-2">
             <ScoreRing
               score={data.discipline.overall}
-              size={168}
-              strokeWidth={12}
+              size={208}
+              strokeWidth={14}
               label="Overall"
             />
+            <p className="text-2xs uppercase tracking-wide text-muted-foreground">
+              Out of 100 · {m.tradeCount} trades graded
+            </p>
           </div>
-          <div className="hidden h-32 w-px shrink-0 bg-border md:block" />
-          <div className="grid flex-1 grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2">
+          <div className="grid grid-cols-2 gap-x-6 gap-y-4 border-t border-border pt-4 sm:grid-cols-4">
             {data.discipline.breakdown.map((b) => (
-              <ScoreMeter key={b.label} label={b.label} score={b.score} detail={b.detail} />
+              <ScoreMeter key={b.label} label={b.label} score={b.score} detail={b.detail} compact />
             ))}
           </div>
         </CardContent>
@@ -184,10 +202,16 @@ export default async function DashboardPage({
           </CardContent>
         </Card>
 
-        {/* Recent violations */}
+        {/* Recent violations — written as journal entries: the rule you broke,
+            what it cost you, and when. Each one opens that trade's journal. */}
         <Card>
           <CardHeader className="flex-row items-center justify-between">
-            <CardTitle>Recent Violations</CardTitle>
+            <div className="min-w-0">
+              <CardTitle>Recent Violations</CardTitle>
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                Straight from your journal — tap one to read the whole trade.
+              </p>
+            </div>
             <Badge variant={violations.length ? "loss" : "profit"}>
               {violations.length ? `${violations.length}` : "Clean"}
             </Badge>
@@ -202,21 +226,29 @@ export default async function DashboardPage({
                 <Link
                   key={i}
                   href={`/journal/${v.tradeId}`}
-                  className="flex items-start gap-2.5 rounded-lg border border-border bg-surface-raised px-3 py-2 transition-colors hover:border-loss/40"
+                  className="block rounded-lg border border-border bg-surface-raised px-3 py-2.5 transition-colors hover:border-loss/40"
                 >
-                  <span
-                    className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${
-                      v.severity === "high"
-                        ? "bg-loss"
-                        : v.severity === "medium"
-                          ? "bg-warning"
-                          : "bg-muted-foreground"
-                    }`}
-                  />
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">{v.ruleName}</p>
-                    <p className="truncate text-2xs text-muted-foreground">{v.explanation}</p>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                        v.severity === "high"
+                          ? "bg-loss"
+                          : v.severity === "medium"
+                            ? "bg-warning"
+                            : "bg-muted-foreground"
+                      }`}
+                    />
+                    <p className="min-w-0 flex-1 truncate text-sm font-medium">{v.ruleName}</p>
+                    <span className={`shrink-0 text-2xs font-semibold tabular ${pnlColor(v.pnl)}`}>
+                      {v.isOpen ? "Open" : formatCurrency(v.pnl, { sign: true })}
+                    </span>
                   </div>
+                  <p className="mt-1 text-2xs leading-relaxed text-muted-foreground">
+                    {v.explanation}
+                  </p>
+                  <p className="mt-1 text-2xs uppercase tracking-wide text-muted-foreground/60">
+                    {v.symbol} · {formatDate(v.entryTime)}
+                  </p>
                 </Link>
               ))
             )}
