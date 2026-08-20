@@ -1,6 +1,12 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ShieldCheck, HeartPulse, AlertTriangle, ClipboardList } from "lucide-react";
+import {
+  ShieldCheck,
+  HeartPulse,
+  AlertTriangle,
+  ClipboardList,
+  NotebookPen,
+} from "lucide-react";
 import { getCurrentUser } from "@/lib/auth";
 import { buildReport, type ReportPeriod, type ReportData } from "@/lib/reports";
 import type { TradeRecord } from "@/lib/types";
@@ -60,7 +66,15 @@ export default async function ReportsPage({
         title="Reports"
         description="Print-ready performance & compliance summaries."
       >
-        <PrintButton />
+        <div className="flex items-center gap-2">
+          <Button asChild variant="secondary" className="gap-1.5 print:hidden">
+            <Link href="/reports/review">
+              <NotebookPen className="h-4 w-4" />
+              Weekly review
+            </Link>
+          </Button>
+          <PrintButton />
+        </div>
       </PageHeader>
 
       {/* Server-driven tabs */}

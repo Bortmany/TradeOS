@@ -48,6 +48,7 @@ model User {
   alerts          Alert[]
   sessions        Session[]
   brokerConnections BrokerConnection[]
+  weeklyReviews   WeeklyReview[]
 
   @@index([email])
 }
@@ -244,6 +245,28 @@ model DisciplineSnapshot {
 
   @@unique([userId, period, periodStart])
   @@index([userId, periodStart])
+}
+
+// --------------------------------------------------------------------------
+// Guided weekly review — the trader's own written reflection on a week
+// --------------------------------------------------------------------------
+
+model WeeklyReview {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Monday of the reviewed week, stored as UTC midnight of that ET calendar day
+  // so one week always maps to exactly one row per user.
+  weekStart   DateTime
+  // answers is a JSON string { worked, costliestRule, oneChange } — stored as
+  // String (not Json/scalar list) so the schema stays SQLite+Postgres portable.
+  answers     String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, weekStart])
+  @@index([userId])
 }
 
 // --------------------------------------------------------------------------

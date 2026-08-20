@@ -75,8 +75,8 @@ export function DataPrivacy() {
       <div>
         <p className="text-sm font-medium">Export your data</p>
         <p className="mt-0.5 text-sm text-muted-foreground">
-          Download everything you&apos;ve stored — profile, accounts, trades, rulebooks and
-          prop trackers — as one JSON file.
+          Download everything you&apos;ve stored — profile, accounts, trades, rulebooks,
+          prop trackers and weekly reviews — as one JSON file.
         </p>
         <Button
           variant="secondary"

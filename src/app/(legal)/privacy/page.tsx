@@ -42,7 +42,7 @@ export default function PrivacyPage() {
           </li>
           <li>
             <strong>Journal content</strong> — the notes, emotion tags and labels you attach
-            to trades.
+            to trades, and the written answers you save in a weekly review.
           </li>
           <li>
             <strong>Broker connection (optional)</strong> — if you link a TopstepX account:
@@ -86,7 +86,7 @@ export default function PrivacyPage() {
         <ul className="list-disc space-y-1.5 pl-5">
           <li>
             <strong>Export</strong> — download a copy of your profile, trading accounts,
-            trades, rulebooks and prop-firm data as a JSON file from
+            trades, rulebooks, prop-firm data and weekly reviews as a JSON file from
             Settings → Data &amp; privacy. (Derived records the app computes for
             you — alerts, rule evaluations, score history and import logs — are
             not included, and broker connections are never exported because

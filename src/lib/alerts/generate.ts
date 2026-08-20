@@ -28,6 +28,16 @@ interface AlertSpec {
 const DAY_MS = 86_400_000;
 const OVERTRADING_DEFAULT = 10;
 
+// Stepped risk warnings, used for BOTH the prop drawdown limit and the daily
+// loss limit. A trader gets a quiet heads-up at half the limit, a real warning
+// at 80%, and a breach at 100% — only the highest step reached is raised.
+//   50% used  → severity "low"    (informational)
+//   80% used  → severity "medium" (warning)
+//  100% used  → severity "high"   (breach)
+const STEP_HEADS_UP = 0.5;
+const STEP_WARNING = 0.8;
+const STEP_BREACH = 1;
+
 /**
  * Regenerates the user's auto-flagged open alerts. Manually created or seeded
  * alerts (without meta.auto) are left untouched. Deterministic given the data.
@@ -81,49 +91,79 @@ export async function generateAlerts(userId: string): Promise<number> {
     const currentDrawdown = Math.max(0, peak - equity);
     const label = `${p.account.name}`;
 
-    if (p.maxDrawdown != null) {
-      const buffer = p.maxDrawdown - currentDrawdown;
-      if (buffer <= 0) {
+    // Stepped drawdown warnings — one alert per account, at the highest step
+    // reached (see STEP_* above).
+    if (p.maxDrawdown != null && p.maxDrawdown > 0) {
+      const used = currentDrawdown / p.maxDrawdown;
+      const buffer = Math.max(0, p.maxDrawdown - currentDrawdown);
+      const usedPct = Math.min(100, Math.round(used * 100));
+      const amounts = `$${currentDrawdown.toFixed(0)} of the $${p.maxDrawdown.toFixed(0)} limit (${usedPct}% used)`;
+
+      if (used >= STEP_BREACH) {
         specs.push({
           key: `prop_dd_breach_${p.id}`,
           type: "drawdown",
           severity: "high",
           accountId: p.accountId,
           title: `${label}: trailing drawdown breached`,
-          message: `Drawdown $${currentDrawdown.toFixed(0)} exceeded the $${p.maxDrawdown.toFixed(0)} limit. This account is failed.`,
+          message: `Drawdown ${amounts}. This account is failed.`,
         });
-      } else if (buffer < p.maxDrawdown * 0.25) {
+      } else if (used >= STEP_WARNING) {
         specs.push({
-          key: `prop_dd_risk_${p.id}`,
+          key: `prop_dd_80_${p.id}`,
           type: "drawdown",
           severity: "medium",
           accountId: p.accountId,
-          title: `${label}: approaching drawdown limit`,
-          message: `Only $${buffer.toFixed(0)} of drawdown buffer left before breach. Size down.`,
+          title: `${label}: 80% of your drawdown is gone`,
+          message: `Drawdown ${amounts}. Only $${buffer.toFixed(0)} of buffer left — size down or stop for the day.`,
+        });
+      } else if (used >= STEP_HEADS_UP) {
+        specs.push({
+          key: `prop_dd_50_${p.id}`,
+          type: "drawdown",
+          severity: "low",
+          accountId: p.accountId,
+          title: `${label}: halfway to your drawdown limit`,
+          message: `Drawdown ${amounts}, $${buffer.toFixed(0)} of buffer left. Nothing is broken — just worth knowing.`,
         });
       }
     }
 
-    if (p.maxDailyLoss != null) {
+    // Stepped daily-loss warnings — same three steps, today's ET session only.
+    if (p.maxDailyLoss != null && p.maxDailyLoss > 0) {
       const todayPnl = dayPnl.get(todayKey) ?? 0;
       const todayLoss = Math.max(0, -todayPnl);
-      if (todayLoss >= p.maxDailyLoss) {
+      const used = todayLoss / p.maxDailyLoss;
+      const buffer = Math.max(0, p.maxDailyLoss - todayLoss);
+      const usedPct = Math.min(100, Math.round(used * 100));
+      const amounts = `$${todayLoss.toFixed(0)} of a $${p.maxDailyLoss.toFixed(0)} daily limit (${usedPct}% used)`;
+
+      if (used >= STEP_BREACH) {
         specs.push({
           key: `prop_dl_breach_${p.id}`,
           type: "daily_loss_limit",
           severity: "high",
           accountId: p.accountId,
           title: `${label}: daily loss limit hit`,
-          message: `Today's loss $${todayLoss.toFixed(0)} reached the $${p.maxDailyLoss.toFixed(0)} limit. Stop trading this account today.`,
+          message: `Today's loss is ${amounts}. Stop trading this account today.`,
         });
-      } else if (todayLoss >= p.maxDailyLoss * 0.75) {
+      } else if (used >= STEP_WARNING) {
         specs.push({
-          key: `prop_dl_risk_${p.id}`,
+          key: `prop_dl_80_${p.id}`,
           type: "daily_loss_limit",
           severity: "medium",
           accountId: p.accountId,
-          title: `${label}: nearing daily loss limit`,
-          message: `Down $${todayLoss.toFixed(0)} of a $${p.maxDailyLoss.toFixed(0)} daily limit. $${(p.maxDailyLoss - todayLoss).toFixed(0)} buffer left.`,
+          title: `${label}: 80% of today's loss limit used`,
+          message: `Down ${amounts}. One more average loser ends your day — $${buffer.toFixed(0)} left.`,
+        });
+      } else if (used >= STEP_HEADS_UP) {
+        specs.push({
+          key: `prop_dl_50_${p.id}`,
+          type: "daily_loss_limit",
+          severity: "low",
+          accountId: p.accountId,
+          title: `${label}: halfway to today's loss limit`,
+          message: `Down ${amounts}, $${buffer.toFixed(0)} left. Nothing is broken — just worth knowing.`,
         });
       }
     }

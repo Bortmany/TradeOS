@@ -1,6 +1,7 @@
 // TradeOS — data export. Returns everything the signed-in user has stored, as
 // one downloadable JSON file: profile (minus the password hash), trading
-// accounts, trades, rulebooks + rules, and prop-firm trackers. Broker
+// accounts, trades, rulebooks + rules, prop-firm trackers, and weekly
+// reviews. Broker
 // connections are deliberately NOT included — they hold the encrypted API key,
 // and broker credentials never leave the server in any form.
 
@@ -19,7 +20,7 @@ export const GET = withUser(async (user) => {
     );
   }
 
-  const [profile, accounts, trades, ruleBooks, propAccounts] = await Promise.all([
+  const [profile, accounts, trades, ruleBooks, propAccounts, weeklyReviews] = await Promise.all([
     prisma.user.findUnique({
       where: { id: user.id },
       // Everything except passwordHash (never leaves the server).
@@ -44,6 +45,9 @@ export const GET = withUser(async (user) => {
       orderBy: { createdAt: "asc" },
     }),
     prisma.propAccount.findMany({ where: { userId: user.id }, orderBy: { createdAt: "asc" } }),
+    // The trader's own words from the guided weekly review — their writing, so
+    // it belongs in their export.
+    prisma.weeklyReview.findMany({ where: { userId: user.id }, orderBy: { weekStart: "asc" } }),
   ]);
 
   const filename = `tradeos-export-${new Date().toISOString().slice(0, 10)}.json`;
@@ -55,6 +59,7 @@ export const GET = withUser(async (user) => {
       trades,
       ruleBooks,
       propAccounts,
+      weeklyReviews,
     },
     { headers: { "Content-Disposition": `attachment; filename="${filename}"` } }
   );
