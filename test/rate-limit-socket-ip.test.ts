@@ -7,11 +7,11 @@
 // collapsed into ONE shared "anon:unknown" bucket — a small cookie-less burst
 // locked login/register for every visitor site-wide.
 //
-// The fix mirrors InvestIQ: src/instrumentation-node.ts subscribes to Node's
-// diagnostics_channel and stamps the true socket address onto an internal,
-// non-spoofable header (SOCKET_IP_HEADER) before any handler runs; socketAddress()
-// reads THAT header. These tests exercise that header path (which works in the
-// real runtime) rather than an attached `.socket` object (which does not).
+// The fix follows the standard pattern for this problem: src/instrumentation-node.ts
+// subscribes to Node's diagnostics_channel and stamps the true socket address onto
+// an internal, non-spoofable header (SOCKET_IP_HEADER) before any handler runs;
+// socketAddress() reads THAT header. These tests exercise that header path (which
+// works in the real runtime) rather than an attached `.socket` object (which does not).
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 

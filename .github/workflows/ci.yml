@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: tradeos
+          POSTGRES_PASSWORD: tradeos
+          POSTGRES_DB: tradeos_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      # Placeholder for `prisma generate` / `next build` (schema needs
+      # DATABASE_URL present). The test suite overrides this with its own
+      # TEST_DATABASE_URL below (see vitest.config.ts / test/global-setup.ts).
+      DATABASE_URL: postgresql://tradeos:tradeos@localhost:5432/tradeos_test
+      TEST_DATABASE_URL: postgresql://tradeos:tradeos@localhost:5432/tradeos_test
+      # Obviously-fake, CI-only value — must be >=32 chars (see src/lib/auth.ts).
+      AUTH_SECRET: ci-only-dummy-secret-32-characters!!
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npm run build
+
+      # test/global-setup.ts force-resets TEST_DATABASE_URL (a database whose
+      # name must contain "test") before the suite runs — it refuses to touch
+      # anything else.
+      - name: Run tests
+        run: npm test

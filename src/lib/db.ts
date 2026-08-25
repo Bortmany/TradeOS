@@ -11,8 +11,9 @@ const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 //      (limit × instances) stays comfortably under the DB's max_connections.
 //   2. Prefer a POOLED url (PgBouncer / the provider's pooler, e.g. Supabase/Neon
 //      pooled endpoint) and add `?pgbouncer=true` so Prisma disables prepared
-//      statements that a transaction pooler can't keep. SQLite (dev) ignores all
-//      of this. Set these on Railway when horizontally scaled — nothing here changes.
+//      statements that a transaction pooler can't keep. A single local Postgres
+//      instance in dev doesn't need any of this. Set these on Railway when
+//      horizontally scaled — nothing here changes.
 
 export const prisma =
   globalForPrisma.prisma ??

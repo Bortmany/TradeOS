@@ -39,7 +39,7 @@ Stripe later (optional, enables paid checkout): `STRIPE_SECRET_KEY`,
 Stripe-side setup (webhook endpoint: `https://<your-domain>/api/billing/webhook`).
 
 > Build & start are already configured in `railway.json` (committed in the
-> repo): the build switches Prisma to Postgres, provisions the schema with
+> repo): the build generates the Prisma client, provisions the schema with
 > `prisma db push`, and builds Next.js; the healthcheck uses `/api/health`.
 
 ## 4. Get a public URL
@@ -72,11 +72,12 @@ configured) and redeploy.
   fallback (`npx tsx scripts/sync-all.ts`) and the `/api/cron/sync` endpoint
   still work if you ever want an external scheduler.
 - **Demo data**: to load the demo dataset into production Postgres, run
-  locally: `npm run db:use-postgres`, set `DATABASE_URL` to the **public**
-  Postgres URL from Railway (Postgres service → Variables →
-  `DATABASE_PUBLIC_URL`), run `npm run db:seed`, then restore with
-  `npm run db:use-sqlite`. For a clean launch, skip this.
-- **Local dev is unchanged**: SQLite + `npm run dev`; the committed Prisma
-  schema stays on `sqlite` — only the Railway build flips it to Postgres.
+  locally with `DATABASE_URL` temporarily set to the **public** Postgres URL
+  from Railway (Postgres service → Variables → `DATABASE_PUBLIC_URL`), run
+  `npm run db:seed`, then restore your local `DATABASE_URL`. For a clean
+  launch, skip this.
+- **Local dev**: local Postgres (via `docker-compose.yml`) + `npm run dev` —
+  see the root `README.md`. The schema is Postgres everywhere, so nothing
+  changes between local dev and the Railway build.
 - **Scaling**: Railway supports vertical resize and replicas from the service
   settings; Postgres backups are on the database service page.

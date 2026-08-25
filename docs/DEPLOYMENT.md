@@ -1,17 +1,17 @@
 # Deploying TradeOS (Vercel + Supabase + Stripe)
 
-This is a step-by-step runbook to take TradeOS from local SQLite dev to a live
-production deployment on **Vercel**, backed by a **Supabase/Postgres** database
-and **Stripe** billing.
+> **Superseded.** Railway is the platform TradeOS actually deploys to — see
+> `docs/DEPLOYMENT-RAILWAY.md` for the current, real deployment path. This
+> Vercel + Supabase runbook is kept for reference only; it is not the
+> supported route and may drift out of date.
 
-> Why the extra step? Prisma does not allow the datasource `provider` to be an
-> environment variable — it must be the literal `sqlite` (local) or
-> `postgresql` (production). We handle this with `scripts/switch-db.mjs`, which
-> rewrites `prisma/schema.prisma`. The Vercel build runs it automatically; you
-> only run it by hand if you want to point your *local* machine at Postgres.
+This is a step-by-step runbook to take TradeOS from local Postgres dev to a
+live production deployment on **Vercel**, backed by a **Supabase/Postgres**
+database and **Stripe** billing.
 
-**Local dev stays zero-setup.** None of this changes the default
-`npm run setup` SQLite workflow — see the root `README.md`.
+The schema is Postgres-only (local dev, tests, and production all use
+Postgres) — no provider-switching step is needed. See the root `README.md`
+for local setup.
 
 ---
 
@@ -33,36 +33,26 @@ and **Stripe** billing.
 
 ---
 
-## B. Local -> Postgres switch (optional, for testing against Supabase)
+## B. Testing your local machine against Supabase (optional)
 
-You do **not** need to do this to deploy (Vercel handles it). Do it only if you
-want your local machine to talk to Supabase.
+You do **not** need to do this to deploy (Vercel talks to Supabase directly).
+Do it only if you want your local machine to talk to your Supabase database
+instead of your local Postgres:
 
 ```bash
-# 1. Flip the Prisma provider to Postgres
-node scripts/switch-db.mjs postgres
+# 1. Point DATABASE_URL at Supabase in your .env (see section A) instead of
+#    your local docker-compose Postgres
 
-# 2. Point DATABASE_URL at Supabase in your .env (see section A)
-
-# 3. Create the schema in Supabase
+# 2. Push the schema to Supabase
 npx prisma db push
 
-# 4. (Optional) load the demo dataset
+# 3. (Optional) load the demo dataset
 npm run db:seed
 ```
 
-**Switch back to local SQLite dev when you're done:**
-
-```bash
-node scripts/switch-db.mjs sqlite
-# restore DATABASE_URL="file:./dev.db" in .env, then:
-npx prisma db push
-```
-
-The switch script is idempotent and only edits the `datasource db { ... }`
-block — safe to run repeatedly. **Do not commit `schema.prisma` while it's set
-to `postgresql`** — keep the committed default as `sqlite` so local dev and CI
-stay zero-setup. The Vercel build re-applies the Postgres switch every deploy.
+**Switch back to local dev when you're done** — restore
+`DATABASE_URL="postgresql://tradeos:tradeos@localhost:5432/tradeos"` (or your
+own local Postgres URL) in `.env`, then `npx prisma db push` again.
 
 ---
 
@@ -107,10 +97,10 @@ with feature gating still enforced and checkout shows a "not configured" notice.
 3. Framework preset auto-detects **Next.js**. Leave the build/install commands
    as-is — `vercel.json` already sets them:
    - Install: `npm install`
-   - Build: `node scripts/switch-db.mjs postgres && prisma generate && prisma db push --accept-data-loss && next build`
-   The build **switches the schema to Postgres, generates the client, pushes the
-   schema to Supabase, then builds Next.js** — so the database schema is
-   provisioned on the first deploy automatically.
+   - Build: `prisma generate && prisma db push --accept-data-loss && next build`
+   The build **generates the client, pushes the schema to Supabase, then builds
+   Next.js** — so the database schema is provisioned on the first deploy
+   automatically.
 4. Under **Environment Variables**, add every variable from
    `.env.production.example` (at minimum: `DATABASE_URL`, `AUTH_SECRET`,
    `NEXT_PUBLIC_APP_URL`; plus the `STRIPE_*` / price vars to enable billing).

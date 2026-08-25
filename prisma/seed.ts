@@ -253,8 +253,8 @@ function generateTrades(
 // default on purpose. A hardcoded default (the old "demo1234") is a public
 // constant that a first-guess brute force walks straight into, so we refuse to
 // seed the demo account unless a strong, non-default password is supplied. This
-// mirrors the InvestIQ / Oman / Dukkani seeds, which already reject weak seed
-// passwords. Known-weak values are rejected outright even if long enough.
+// follows the same weak-password rejection pattern used across our other apps'
+// seed scripts. Known-weak values are rejected outright even if long enough.
 const WEAK_DEMO_PASSWORDS = new Set([
   "demo1234",
   "demo",

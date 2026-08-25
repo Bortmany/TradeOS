@@ -12,7 +12,7 @@ TradeOS's core guarantee: FIFO trade pairing and the rule/discipline-score engin
 
 ## Non-negotiable rules
 
-- **Database portability**: the schema runs on SQLite (dev) AND Postgres (prod). No native enums, no scalar lists, no Postgres-only column types — status/type fields are plain `String` with the allowed values in a comment, exactly as the existing schema does.
+- **Database**: Postgres everywhere — local dev (via `docker-compose.yml` or any local Postgres 16), tests, and production (Railway). No native enums, no scalar lists — status/type fields are plain `String` with the allowed values in a comment, exactly as the existing schema does; this keeps the schema simple and keeps JSON-ish config columns as plain strings parsed at the app boundary, not because of any portability requirement.
 - **Deterministic core**: the rule engine, discipline score and analytics are deterministic and explainable. AI is an optional, swappable layer behind the interface in `src/lib/ai/` — never wire AI into core scoring.
 - **Validation & auth**: zod on every API input; auth checks the session (jose JWT) before touching data; every query scoped to the signed-in user's data.
 - **Secrets**: broker API keys are AES-256-GCM encrypted at rest (see `BrokerConnection`) — never log or return them.
@@ -23,17 +23,17 @@ TradeOS's core guarantee: FIFO trade pairing and the rule/discipline-score engin
 
 1. Real bugs: broken logic, wrong FIFO pairing or score math, race conditions in the auto-sync path.
 2. Security: broker keys near a log/response; missing auth or user-scoping; zod gaps; secrets in client components.
-3. Portability drift (the SQLite+Postgres rule above).
+3. Convention drift on the enum-like `String` fields / JSON-as-string columns (the rule above).
 4. Contract drift vs `docs/CONTRACTS.md`; AI leaking into the deterministic core.
 5. Convention drift: UI ignoring `docs/UI_GUIDE.md`, new float money-handling, missing error states.
 
 ## Verify recipe (run from the repo root, in order)
 
 1. `npm install` if `node_modules` is missing or `package.json` changed.
-2. Dev database is the SQLite one (`npm run db:use-sqlite` if the env isn't already SQLite — never point at a production Postgres URL).
+2. Dev database is Postgres — `docker compose up -d db` (or `npm run docker:up`) starts the bundled Postgres 16 container, matching the `DATABASE_URL` in `.env.example`. Using your own local Postgres is fine too. **Never point `DATABASE_URL` at a production Postgres URL.**
 3. `npx prisma generate`, then schema sync per this repo's own scripts (see `package.json` — don't invent commands).
 4. `npm run db:seed` if a seed script exists.
 5. `npm run lint` if defined.
 6. `npm run typecheck` if defined, else `npx tsc --noEmit`.
 7. `npm run build`.
-8. `npm test` — the vitest core-guarantee suite (`test/`: FIFO pairing, rule engine, discipline score, cross-user isolation). It creates and deletes its own throwaway SQLite database and never touches `prisma/dev.db`.
+8. `npm test` — the vitest core-guarantee suite (`test/`: FIFO pairing, rule engine, discipline score, cross-user isolation). It force-resets its own dedicated Postgres test database (see `vitest.config.ts` / `test/global-setup.ts`) and never touches your dev database.

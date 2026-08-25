@@ -1,12 +1,11 @@
 // TradeOS — Prisma schema
 // ---------------------------------------------------------------------------
-// Provider is SQLite for zero-setup local dev. To migrate to Supabase/Postgres:
-//   1. change provider to "postgresql"
-//   2. point DATABASE_URL at your Postgres/Supabase connection string
-//   3. run `npm run db:push`
-// The schema deliberately avoids native enums and scalar lists so it is
-// portable across SQLite and Postgres without edits. "Enum-like" fields are
-// typed String and validated at the application boundary (see src/lib/types.ts).
+// Provider is Postgres everywhere — local dev (via docker-compose.yml or any
+// local Postgres 16), tests, and production (Railway). Point DATABASE_URL at
+// your Postgres instance and run `npm run db:push`.
+// The schema deliberately avoids native enums and scalar lists so "enum-like"
+// fields stay simple and portable; they are typed String and validated at the
+// application boundary (see src/lib/types.ts).
 // ---------------------------------------------------------------------------
 
 generator client {
@@ -14,7 +13,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -188,7 +187,8 @@ model Rule {
   // severity: low | medium | high
   severity    String   @default("medium")
   // config is a JSON string whose shape depends on `type` (see rules/schema.ts).
-  // Stored as String for SQLite portability; parse/serialize at the app layer.
+  // Stored as a JSON string (kept simple/portable, not a native jsonb column);
+  // parse/serialize at the app layer.
   config      String
   weight      Int      @default(1)
   isActive    Boolean  @default(true)

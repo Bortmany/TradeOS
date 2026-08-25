@@ -1,0 +1,28 @@
+# TradeOS — local Postgres for development.
+#
+# Start it:   docker compose up -d db   (or: npm run docker:up)
+# Stop it:    docker compose down
+# Wipe it:    docker compose down -v    (deletes the data volume)
+#
+# Then set in your .env:
+#   DATABASE_URL="postgresql://tradeos:tradeos@localhost:5432/tradeos"
+#
+# Don't have Docker? Any local Postgres 16 works just as well — create a
+# database + user matching the values above (or your own) and point
+# DATABASE_URL at it instead. See README.md's "Local dev" section.
+
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: tradeos
+      POSTGRES_USER: tradeos
+      POSTGRES_PASSWORD: tradeos
+    ports:
+      - "5432:5432"
+    volumes:
+      - tradeos_pgdata:/var/lib/postgresql/data
+
+volumes:
+  tradeos_pgdata:

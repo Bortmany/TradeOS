@@ -3,7 +3,7 @@
 Plain-English list of what to set up before launch. Full context: `Agents/docs/go-live-and-security-audit.md`.
 
 ## Host
-- **Railway** (`railway.json` is present and complete). The build switches the database from SQLite to Postgres automatically. Alternative Vercel path is in `docs/DEPLOYMENT.md`.
+- **Railway** (`railway.json` is present and complete). The schema is Postgres-only, so the build just generates the client and pushes the schema — no provider switching. Superseded alternative Vercel path is in `docs/DEPLOYMENT.md` (kept for reference only).
 
 ## Must do before launch
 - [ ] **Postgres database** → set `DATABASE_URL` (on Railway: attach a Postgres plugin and use `${{Postgres.DATABASE_URL}}`).

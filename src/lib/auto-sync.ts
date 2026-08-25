@@ -34,9 +34,8 @@ function intervalMinutes(): number {
 // lock needs zero configuration (the owner isn't a developer, so per-instance
 // env flags are easy to get wrong) and self-corrects if an instance dies. Each
 // sweep tries to grab one shared lock; whichever instance gets it runs the
-// sweep, the rest skip this tick. It only applies on Postgres (prod) — SQLite
-// (dev) has no such function and is single-instance by design, so we skip the
-// lock there entirely. Result: no behavior change on a single instance.
+// sweep, the rest skip this tick. Result: no behavior change on a single
+// instance, and safe by default when scaled to several.
 //
 // Note on connection pooling: pg advisory locks are held by the DB session that
 // took them. Prisma pools connections, so the unlock may land on a different
@@ -46,25 +45,19 @@ function intervalMinutes(): number {
 // an optimization, not a correctness dependency.
 const AUTO_SYNC_LOCK_KEY = 4927001; // arbitrary but stable 32-bit key for our one lock
 
-function isPostgres(): boolean {
-  return (process.env.DATABASE_URL ?? "").startsWith("postgres");
-}
-
 async function runSweep(): Promise<void> {
-  // Try to become the single runner for this tick (Postgres/prod only).
+  // Try to become the single runner for this tick.
   let holdsLock = false;
-  if (isPostgres()) {
-    try {
-      const rows = await prisma.$queryRaw<Array<{ locked: boolean }>>`
-        SELECT pg_try_advisory_lock(${AUTO_SYNC_LOCK_KEY}) AS locked
-      `;
-      holdsLock = rows[0]?.locked === true;
-      if (!holdsLock) return; // another instance owns this sweep — skip quietly
-    } catch (err) {
-      // If the lock call itself fails, don't silently stop syncing — fall
-      // through and run (worst case a duplicate sweep, which is idempotent).
-      console.error("[auto-sync] advisory lock check failed:", (err as Error).message);
-    }
+  try {
+    const rows = await prisma.$queryRaw<Array<{ locked: boolean }>>`
+      SELECT pg_try_advisory_lock(${AUTO_SYNC_LOCK_KEY}) AS locked
+    `;
+    holdsLock = rows[0]?.locked === true;
+    if (!holdsLock) return; // another instance owns this sweep — skip quietly
+  } catch (err) {
+    // If the lock call itself fails, don't silently stop syncing — fall
+    // through and run (worst case a duplicate sweep, which is idempotent).
+    console.error("[auto-sync] advisory lock check failed:", (err as Error).message);
   }
 
   try {

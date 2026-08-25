@@ -11,25 +11,32 @@ where consistency breaks down — before it costs a payout.
 
 ---
 
-## Quick start (local, zero external accounts)
+## Quick start (local)
 
-The app runs fully locally out of the box: **SQLite** for the database and a
+The app runs fully locally with a **local Postgres** database and a
 **built-in email/password auth** layer. No Supabase or Stripe account needed to
-try it.
+try it — just Postgres.
 
 ```bash
 # 1. Install
 npm install
 
-# 2. Configure env (defaults are already local-friendly)
+# 2. Start a local Postgres (Docker) — or point DATABASE_URL at your own
+docker compose up -d db     # = npm run docker:up
+
+# 3. Configure env (the default DATABASE_URL matches docker-compose.yml)
 cp .env.example .env
 
-# 3. Create the database, generate the client, and load demo data
+# 4. Create the database, generate the client, and load demo data
 npm run setup        # = prisma generate + db push + seed
 
-# 4. Run
+# 5. Run
 npm run dev          # http://localhost:3000
 ```
+
+No Docker? Any local Postgres 16 works — create a database (and, matching
+`.env.example`, a `tradeos` user/password or your own) and point
+`DATABASE_URL` at it instead of starting the container.
 
 **Demo account:** `demo@tradeos.app` / `demo1234` (250 seeded trades across 3
 accounts, 2 rulebooks, a Topstep prop account, and live discipline scoring).
@@ -47,10 +54,49 @@ accounts, 2 rulebooks, a Topstep prop account, and live discipline scoring).
 | --- | --- |
 | `npm run dev` | Start the dev server |
 | `npm run build` | Production build (runs `prisma generate` first) |
+| `npm run docker:up` | Start the local Postgres container (`docker-compose.yml`) |
 | `npm run setup` | Generate client + push schema + seed demo data |
 | `npm run db:seed` | (Re)seed demo data (idempotent) |
 | `npm run db:reset` | Wipe + recreate + reseed |
 | `npm run typecheck` | `tsc --noEmit` |
+| `npm test` | Run the test suite (Vitest) |
+
+---
+
+## Environment variables
+
+Copy `.env.example` to `.env` and adjust — every variable is documented inline
+there. The short version:
+
+| Variable | Required? | Purpose |
+| --- | --- | --- |
+| `DATABASE_URL` | **Required** | Postgres connection string. The default matches `docker-compose.yml`. |
+| `AUTH_SECRET` | **Required** | Signs session JWTs (and the anonymous rate-limit cookie). 32+ chars, no built-in fallback. Generate with `openssl rand -base64 32`. |
+| `NEXT_PUBLIC_APP_URL` | Recommended | Base URL used for links in reports/emails. |
+| `ENCRYPTION_SECRET` | Optional | Dedicated key for encrypting stored broker API keys; derived from `AUTH_SECRET` if unset. |
+| `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` / `NEXT_PUBLIC_STRIPE_PRICE_PRO` / `NEXT_PUBLIC_STRIPE_PRICE_ELITE` | Optional | Enables Stripe billing; the app runs in trial/dev billing mode with gating still enforced when unset. |
+| `AI_COACHING_ENABLED` / `ANTHROPIC_API_KEY` | Optional | Enables the (currently stubbed) AI coaching layer. |
+| `SENTRY_DSN` | Optional | Error tracking; off when unset. |
+| `REDIS_URL` | Optional | Shared rate-limit store for multi-instance deployments; an in-memory limiter is used when unset. |
+| `TRUST_PROXY` / `PROXY_HOPS` | Recommended in production | Whether to trust `x-forwarded-for` for per-IP rate limiting. Turn on when deployed behind a proxy/load balancer (e.g. Railway). |
+| `CRON_SECRET` | **Required for `/api/cron/sync`** | Bearer secret the scheduler must send to trigger broker sync on serverless platforms. |
+| `SEED_DEMO` / `SEED_DEMO_PASSWORD` | Optional | Opt in to seeding the demo account in production, with a mandatory strong password. |
+| `AUTO_SYNC_INTERVAL_MIN` | Optional | Minutes between in-process broker auto-sync sweeps on persistent-server deployments (default 30 in production, 0/off in dev). See "Background jobs" below. |
+
+---
+
+## Tests
+
+```bash
+TEST_DATABASE_URL=postgresql://tradeos:tradeos@localhost:5432/tradeos_test npm test
+```
+
+Tests run against a dedicated, throwaway Postgres database — never your dev
+database. `TEST_DATABASE_URL` defaults to `postgresql://tradeos:tradeos@localhost:5432/tradeos_test`
+if unset; a global setup step force-resets that database's schema before each
+run, and refuses to run at all if the configured URL doesn't look like a test
+database (its name must contain `test`). Postgres must already be running
+(`npm run docker:up` if you're using the bundled container).
 
 ---
 
@@ -82,7 +128,7 @@ src/
     data.ts            server data-access layer
     auth.ts            built-in auth (swappable for Supabase Auth)
 prisma/
-  schema.prisma        normalized schema (SQLite-portable, Postgres-ready)
+  schema.prisma        normalized Postgres schema
   seed.ts              deterministic demo dataset
 ```
 
@@ -128,16 +174,35 @@ enforces gating today and lights up checkout when keys are added.
 
 ## Deploying
 
-- **Railway (recommended):** persistent server + Postgres in one project,
-  in-process broker auto-sync, no cron setup — see `docs/DEPLOYMENT-RAILWAY.md`.
-- **Vercel + Supabase:** serverless alternative with Vercel Cron for auto-sync —
-  see `docs/DEPLOYMENT.md`.
+- **Railway (the platform):** persistent server + Postgres in one project,
+  in-process broker auto-sync, no cron setup — see `docs/DEPLOYMENT-RAILWAY.md`
+  for the full walkthrough. In short, `railway.json` drives the deploy:
+  - **Build:** `npx prisma generate && npm run build:next` (Nixpacks).
+  - **Pre-deploy:** `npx prisma db push --skip-generate` — applies the schema
+    to Railway's Postgres before the new instance takes traffic.
+  - **Start:** `npm run start`, health-checked at `/api/health` (120s
+    timeout), restarting on failure up to 5 times.
+- **Vercel + Supabase:** an older, superseded serverless path — see
+  `docs/DEPLOYMENT.md` (kept for reference only; Railway is what's live).
+
+### Background jobs
+
+On persistent-server deployments (Railway, a VPS, Docker) the app starts an
+**in-process auto-sync scheduler** when the Next.js server boots
+(`src/lib/auto-sync.ts`): every `AUTO_SYNC_INTERVAL_MIN` minutes (default 30
+in production), it sweeps every connected broker account and pulls new
+fills. If you run multiple instances, each one boots the same scheduler, so
+a Postgres **advisory lock** ensures only one instance actually runs a given
+sweep — the rest skip that tick quietly, with no per-instance config needed.
+On serverless platforms (Vercel) this scheduler is skipped instead; a
+platform cron job hits `/api/cron/sync` (authenticated with `CRON_SECRET`)
+on a schedule to do the same work.
 
 ## Swapping in production services
 
-- **Postgres / Supabase:** change the `provider` in `prisma/schema.prisma` to
-  `postgresql`, set `DATABASE_URL` to your Supabase connection string, run
-  `npm run db:push`. All `Json`-as-string fields are already Postgres-safe.
+- **Postgres provider:** the schema is Postgres-only already — just point
+  `DATABASE_URL` at your target Postgres (Railway, Supabase, etc.) and run
+  `npm run db:push`. All `Json`-as-string fields are Postgres-safe.
 - **Supabase Auth:** `src/lib/auth.ts` is a thin, swappable layer — keep the
   `getCurrentUser()` contract and replace token issue/verify.
 - **Stripe:** set `STRIPE_*` env vars; wire `api/billing/checkout`.
