@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { isBillingConfigured } from "@/lib/billing/paddle";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +17,7 @@ export async function GET() {
     ok = false;
   }
 
-  checks.billing = process.env.STRIPE_SECRET_KEY ? "configured" : "dev-mode";
+  checks.billing = isBillingConfigured() ? "configured" : "dev-mode";
   checks.aiCoaching = process.env.AI_COACHING_ENABLED === "true" ? "enabled" : "disabled";
   checks.errorTracking = process.env.SENTRY_DSN ? "configured" : "dormant";
 

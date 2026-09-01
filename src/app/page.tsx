@@ -354,6 +354,7 @@ function SiteFooter() {
         <nav className="flex items-center gap-4 text-xs">
           <Link href="/terms" className="hover:text-foreground">Terms of Service</Link>
           <Link href="/privacy" className="hover:text-foreground">Privacy Policy</Link>
+          <Link href="/refunds" className="hover:text-foreground">Refund Policy</Link>
         </nav>
         <p className="text-xs">
           For educational analytics only. Not financial advice.

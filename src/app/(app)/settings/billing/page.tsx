@@ -65,7 +65,12 @@ export default async function BillingPage() {
       <PlanCards currentPlan={plan} />
 
       <p className="pt-2 text-center text-2xs text-muted-foreground">
-        Payments are processed securely by Stripe. Cancel anytime.
+        Payments are processed securely by Paddle, our reseller and merchant of record.
+        Cancel anytime — see our{" "}
+        <Link href="/refunds" className="text-primary underline-offset-2 hover:underline">
+          refund policy
+        </Link>
+        .
       </p>
     </div>
   );

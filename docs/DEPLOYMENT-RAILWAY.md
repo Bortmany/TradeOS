@@ -12,13 +12,13 @@ comfortably runs the app + Postgres at launch scale.
 ## 1. Create your Railway account
 
 1. Go to **https://railway.com** → **Login** → **Sign up with GitHub**
-   (use the GitHub account that owns `Bortmany/TradeOS`).
+   (use the GitHub account that owns `<your-github-account>/TradeOS`).
 2. Pick the **Hobby** plan when prompted.
 
 ## 2. Create the project + Postgres
 
 1. Dashboard → **New Project** → **Deploy from GitHub repo** →
-   select **Bortmany/TradeOS** (grant repo access if asked). The first build
+   select **<your-github-account>/TradeOS** (grant repo access if asked). The first build
    will start — it may fail until the database is attached; that's fine.
 2. In the project canvas: **+ New** → **Database** → **Add PostgreSQL**.
 
@@ -33,10 +33,12 @@ Click the **TradeOS service → Variables** and add:
 | `NEXT_PUBLIC_APP_URL` | your public URL (see step 4 — set after generating the domain, then redeploy) |
 | `AUTO_SYNC_INTERVAL_MIN` | `30` (optional — this is the default) |
 
-Stripe later (optional, enables paid checkout): `STRIPE_SECRET_KEY`,
-`STRIPE_WEBHOOK_SECRET`, `NEXT_PUBLIC_STRIPE_PRICE_PRO`,
-`NEXT_PUBLIC_STRIPE_PRICE_ELITE` — see `docs/DEPLOYMENT.md` section C for the
-Stripe-side setup (webhook endpoint: `https://<your-domain>/api/billing/webhook`).
+Paddle later (optional, enables paid checkout): `PADDLE_ENV`, `PADDLE_API_KEY`,
+`PADDLE_WEBHOOK_SECRET`, `PADDLE_PRICE_ID_PRO`, `PADDLE_PRICE_ID_ELITE`.
+**Deploy first without them** — Paddle only approves a seller account once it can
+see your live site (with its terms, privacy and refund pages). The full sequence
+is in `GO-LIVE.md`; the Paddle-side clicks are in `docs/DEPLOYMENT.md` section C
+(webhook endpoint: `https://<your-domain>/api/billing/webhook`).
 
 > Build & start are already configured in `railway.json` (committed in the
 > repo): the build switches Prisma to Postgres, provisions the schema with
@@ -59,8 +61,8 @@ Service → **Settings → Networking → Generate Domain**. Copy the
 ## 6. Custom domain (optional)
 
 Service → **Settings → Networking → Custom Domain**, add the CNAME Railway
-shows you, then update `NEXT_PUBLIC_APP_URL` (and your Stripe webhook URL if
-configured) and redeploy.
+shows you, then update `NEXT_PUBLIC_APP_URL` (and your Paddle notification
+destination URL if billing is configured) and redeploy.
 
 ---
 

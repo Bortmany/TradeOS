@@ -13,8 +13,12 @@ export interface PlanDefinition {
   features: PlanFeatures;
   // Marketing bullet list shown on the pricing page.
   bullets: string[];
-  stripePriceEnv?: string; // env var holding the Stripe price id
 }
+
+// NOTE: nothing about the payment provider lives in this file — which price id
+// belongs to which plan is decided in `src/lib/billing/paddle.ts`, the one
+// module that knows the provider exists. This file is safe to import from
+// client components; that one is not.
 
 export const PLAN_DEFINITIONS: Record<Plan, PlanDefinition> = {
   free: {
@@ -62,7 +66,6 @@ export const PLAN_DEFINITIONS: Record<Plan, PlanDefinition> = {
       "Unlimited history",
       "Daily / weekly / monthly reports",
     ],
-    stripePriceEnv: "NEXT_PUBLIC_STRIPE_PRICE_PRO",
   },
   elite: {
     id: "elite",
@@ -86,7 +89,6 @@ export const PLAN_DEFINITIONS: Record<Plan, PlanDefinition> = {
       "Consistency & profit-target monitoring",
       "Priority support + early access to AI coaching",
     ],
-    stripePriceEnv: "NEXT_PUBLIC_STRIPE_PRICE_ELITE",
   },
 };
 

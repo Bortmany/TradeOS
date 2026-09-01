@@ -14,7 +14,7 @@ where consistency breaks down — before it costs a payout.
 ## Quick start (local, zero external accounts)
 
 The app runs fully locally out of the box: **SQLite** for the database and a
-**built-in email/password auth** layer. No Supabase or Stripe account needed to
+**built-in email/password auth** layer. No Supabase or Paddle account needed to
 try it.
 
 ```bash
@@ -121,8 +121,9 @@ Feature gating lives in `src/lib/billing/plans.ts`:
 | **Elite** | $79/mo | Prop-firm guardrails, reports, priority |
 
 New users get a 14-day full-access trial. Path to $10k MRR ≈ **345 Pro** or
-**~130 Elite** subscribers. Stripe is architecture-ready (env-gated) — the app
-enforces gating today and lights up checkout when keys are added.
+**~130 Elite** subscribers. Paddle billing is built and env-gated — the app
+enforces gating today and lights up checkout when the keys are added. Paddle is
+the merchant of record, so it handles worldwide sales tax/VAT.
 
 ---
 
@@ -140,7 +141,7 @@ enforces gating today and lights up checkout when keys are added.
   `npm run db:push`. All `Json`-as-string fields are already Postgres-safe.
 - **Supabase Auth:** `src/lib/auth.ts` is a thin, swappable layer — keep the
   `getCurrentUser()` contract and replace token issue/verify.
-- **Stripe:** set `STRIPE_*` env vars; wire `api/billing/checkout`.
+- **Paddle:** set the `PADDLE_*` env vars — checkout, portal and webhook are already wired.
 - **AI coaching (Phase 4):** interfaces are stubbed and disabled; no core logic
   depends on AI.
 
@@ -154,15 +155,17 @@ enforces gating today and lights up checkout when keys are added.
   *Remaining: more live connectors (Tradovate, Rithmic).*
 - **Phase 3:** trade replay (schematic playback ✅), reports → PDF (print
   pipeline ✅). *Remaining: screenshot analysis, Monte-Carlo risk-of-ruin.*
-- **Phase 4:** Stripe billing (env-gated: checkout, webhook, customer portal ✅),
+- **Phase 4:** Paddle billing (env-gated: checkout, webhook, customer portal ✅),
   AI coaching layer (provider interface + disabled default ✅ — no AI dependency
   in core). *Remaining: real AI provider, native iOS/Android (web is PWA-ready).*
 
 ### Enabling the env-gated pieces
-- **Stripe:** set `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and the
-  `NEXT_PUBLIC_STRIPE_PRICE_PRO/ELITE` price ids. Checkout, the customer portal,
-  and subscription-sync webhooks activate automatically; until then the UI shows
-  a graceful "not configured" notice and gating still works.
+- **Paddle:** set `PADDLE_ENV`, `PADDLE_API_KEY`, `PADDLE_WEBHOOK_SECRET` and
+  the `PADDLE_PRICE_ID_PRO` / `PADDLE_PRICE_ID_ELITE` price ids. Checkout, the
+  customer portal and subscription-sync webhooks activate automatically; until
+  then the UI shows a graceful "not switched on" notice and gating still works.
+  The whole integration is one file (`src/lib/billing/paddle.ts`); the account
+  sign-up sequence is in `GO-LIVE.md`.
 - **AI coaching:** implement a `CoachingProvider` (see `src/lib/ai/types.ts`),
   register it in `src/lib/ai/index.ts`, and set `AI_COACHING_ENABLED=true`.
 

@@ -1,8 +1,8 @@
-# Deploying TradeOS (Vercel + Supabase + Stripe)
+# Deploying TradeOS (Vercel + Supabase + Paddle)
 
 This is a step-by-step runbook to take TradeOS from local SQLite dev to a live
 production deployment on **Vercel**, backed by a **Supabase/Postgres** database
-and **Stripe** billing.
+and **Paddle** billing.
 
 > Why the extra step? Prisma does not allow the datasource `provider` to be an
 > environment variable — it must be the literal `sqlite` (local) or
@@ -66,37 +66,46 @@ stay zero-setup. The Vercel build re-applies the Postgres switch every deploy.
 
 ---
 
-## C. Stripe
+## C. Paddle
 
-1. Create/sign in at <https://dashboard.stripe.com>. Start in **Test mode**
-   (toggle top-right) until you're ready for real charges.
-2. **Products -> Add product**, create two:
-   - **Pro** — recurring, **$29 / month**
-   - **Elite** — recurring, **$79 / month**
-3. For each product, copy the **Price ID** (starts with `price_...`, *not* the
-   product `prod_...`) into:
-   - `NEXT_PUBLIC_STRIPE_PRICE_PRO`
-   - `NEXT_PUBLIC_STRIPE_PRICE_ELITE`
-4. **Developers -> API keys**: copy the **Secret key** into `STRIPE_SECRET_KEY`.
-5. **Developers -> Webhooks -> Add endpoint**:
-   - Endpoint URL: `https://<your-domain>/api/billing/webhook`
-   - Select these events:
-     - `checkout.session.completed`
-     - `customer.subscription.created`
-     - `customer.subscription.updated`
-     - `customer.subscription.deleted`
-   - Save, then copy the **Signing secret** (`whsec_...`) into
-     `STRIPE_WEBHOOK_SECRET`.
+**Do this after the site is deployed and reachable.** Paddle approves seller
+accounts by human review and looks at your live website — including the terms,
+privacy and refund pages, which are already built (`/terms`, `/privacy`,
+`/refunds`) and linked in the footer. Until the variables below are set, the app
+runs with feature gating enforced and checkout shows a "not switched on" notice,
+so launching with billing dormant is a supported state, not a broken one.
 
-**Local webhook testing** with the Stripe CLI:
+1. **Apply** at <https://paddle.com> with your live URL, and create a free
+   **sandbox** account at <https://sandbox-vendors.paddle.com> to build against
+   in the meantime. Everything below can be done in the sandbox first.
+2. **Catalog -> Products -> New product**, create two, each with a recurring
+   price:
+   - **Pro** — **$29 / month**
+   - **Elite** — **$79 / month**
+3. For each, copy the **price id** (starts with `pri_...`, *not* the product
+   `prd_...`) into:
+   - `PADDLE_PRICE_ID_PRO`
+   - `PADDLE_PRICE_ID_ELITE`
+4. **Developer tools -> Authentication -> API keys**: create a server-side key
+   and copy it into `PADDLE_API_KEY`. Set `PADDLE_ENV` to `sandbox` while
+   testing, `production` when live (any unrecognised value is treated as
+   sandbox, deliberately).
+5. **Developer tools -> Notifications -> New destination**:
+   - Type: **Webhook**, URL: `https://<your-domain>/api/billing/webhook`
+   - Subscribe to: `subscription.created`, `subscription.activated`,
+     `subscription.updated`, `subscription.canceled`, `transaction.completed`,
+     `transaction.payment_failed`
+   - Save, then copy the destination's **secret key** (`pdl_ntfset_...`) into
+     `PADDLE_WEBHOOK_SECRET`.
+6. **Test in the sandbox**: run one upgrade with a Paddle test card, confirm the
+   account's `plan` / `billingStatus` flip, then cancel from **Manage
+   subscription**. Swap in production values and redeploy only after that works.
 
-```bash
-stripe listen --forward-to localhost:3000/api/billing/webhook
-```
-
-This prints a temporary `whsec_...` — put it in your local `.env` as
-`STRIPE_WEBHOOK_SECRET` while testing. Until Stripe keys are set the app runs
-with feature gating still enforced and checkout shows a "not configured" notice.
+**Local webhook testing:** point a tunnel (e.g. `ngrok http 3000`) at your
+machine, use the tunnel URL as a sandbox notification destination, and put that
+destination's secret in your local `.env` as `PADDLE_WEBHOOK_SECRET`. Signatures
+are verified against the raw request body, so the webhook cannot be exercised by
+hand-written requests — that is the point of it.
 
 ---
 
@@ -113,7 +122,7 @@ with feature gating still enforced and checkout shows a "not configured" notice.
    provisioned on the first deploy automatically.
 4. Under **Environment Variables**, add every variable from
    `.env.production.example` (at minimum: `DATABASE_URL`, `AUTH_SECRET`,
-   `NEXT_PUBLIC_APP_URL`; plus the `STRIPE_*` / price vars to enable billing).
+   `NEXT_PUBLIC_APP_URL`; plus the `PADDLE_*` vars to enable billing).
    Set them for the **Production** environment.
 5. Click **Deploy**.
 
@@ -135,10 +144,12 @@ with feature gating still enforced and checkout shows a "not configured" notice.
    against Postgres if you deliberately want demo data (see section B).
 3. **Create the first account:** open the app, register a real email/password,
    and confirm you land in the authenticated dashboard.
-4. **Stripe test checkout:** in Stripe **Test mode**, start a Pro/Elite checkout
-   and use card `4242 4242 4242 4242` (any future expiry / any CVC). Confirm the
-   webhook fires and your user's `plan` / `billingStatus` update. Then switch
-   Stripe to **Live mode**, swap in live keys + a live webhook, and redeploy.
+4. **Paddle sandbox checkout:** with the sandbox variables set, start a
+   Pro/Elite checkout and pay with a Paddle test card. Confirm the webhook
+   fires and your user's `plan` / `billingStatus` update, then cancel from
+   **Manage subscription**. Once that works end to end, swap in the production
+   API key, price ids and notification-destination secret, set
+   `PADDLE_ENV=production`, and redeploy.
 
 ---
 
@@ -169,6 +180,6 @@ Connected broker accounts can sync automatically on a schedule:
 
 - **Custom domain:** Vercel project -> **Settings -> Domains -> Add**, then
   follow the DNS instructions. After it's live, update `NEXT_PUBLIC_APP_URL`,
-  your Stripe webhook endpoint URL, and redeploy.
+  your Paddle notification destination URL, and redeploy.
 - **PWA:** TradeOS is installable — on mobile, open the site and choose
   "Add to Home Screen" to run it as an app. No native build required.

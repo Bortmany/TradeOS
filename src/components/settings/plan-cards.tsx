@@ -13,6 +13,7 @@ const ORDER: Plan[] = ["free", "pro", "elite"];
 
 export function PlanCards({ currentPlan }: { currentPlan: Plan }) {
   const [busy, setBusy] = React.useState<Plan | null>(null);
+  const [managing, setManaging] = React.useState(false);
   const [notice, setNotice] = React.useState<string | null>(null);
 
   async function onUpgrade(plan: Plan) {
@@ -25,8 +26,8 @@ export function PlanCards({ currentPlan }: { currentPlan: Plan }) {
         body: JSON.stringify({ plan }),
       });
       const json = await res.json();
-      // When Stripe is configured the API returns a checkout URL to redirect to;
-      // otherwise it returns a graceful "not configured" message we surface.
+      // When billing is configured the API returns a checkout URL to redirect
+      // to; otherwise it returns a graceful "not configured" message we surface.
       if (json.ok && json.url) {
         window.location.href = json.url as string;
         return;
@@ -41,6 +42,7 @@ export function PlanCards({ currentPlan }: { currentPlan: Plan }) {
 
   async function onManage() {
     setNotice(null);
+    setManaging(true);
     try {
       const res = await fetch("/api/billing/portal", { method: "POST" });
       const json = await res.json();
@@ -51,6 +53,8 @@ export function PlanCards({ currentPlan }: { currentPlan: Plan }) {
       setNotice(json.message ?? "Subscription management isn't available yet.");
     } catch {
       setNotice("Network error. Please try again.");
+    } finally {
+      setManaging(false);
     }
   }
 
@@ -114,8 +118,13 @@ export function PlanCards({ currentPlan }: { currentPlan: Plan }) {
                         Current plan
                       </Button>
                     ) : (
-                      <Button variant="outline" className="w-full" onClick={onManage}>
-                        Manage subscription
+                      <Button
+                        variant="outline"
+                        className="w-full"
+                        disabled={managing}
+                        onClick={onManage}
+                      >
+                        {managing ? "Opening…" : "Manage subscription"}
                       </Button>
                     )
                   ) : (
