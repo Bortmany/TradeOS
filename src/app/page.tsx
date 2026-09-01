@@ -11,7 +11,7 @@ import {
   Check,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { PLAN_DEFINITIONS } from "@/lib/billing/plans";
+import { PLAN_DEFINITIONS, annualSavings } from "@/lib/billing/plans";
 import { cn } from "@/lib/utils";
 
 export default function LandingPage() {
@@ -296,6 +296,11 @@ function Pricing() {
                 <span className="text-4xl font-semibold tabular">${plan.priceMonthly}</span>
                 <span className="text-sm text-muted-foreground">/mo</span>
               </div>
+              {plan.priceAnnual > 0 && (
+                <p className="mt-1 text-2xs text-muted-foreground">
+                  or ${plan.priceAnnual}/yr — {annualSavings(plan.id).months} months free
+                </p>
+              )}
               <ul className="mt-6 flex-1 space-y-2.5 text-sm">
                 {plan.bullets.map((b) => (
                   <li key={b} className="flex gap-2.5">
@@ -354,6 +359,7 @@ function SiteFooter() {
         <nav className="flex items-center gap-4 text-xs">
           <Link href="/terms" className="hover:text-foreground">Terms of Service</Link>
           <Link href="/privacy" className="hover:text-foreground">Privacy Policy</Link>
+          <Link href="/refunds" className="hover:text-foreground">Refund Policy</Link>
         </nav>
         <p className="text-xs">
           For educational analytics only. Not financial advice.

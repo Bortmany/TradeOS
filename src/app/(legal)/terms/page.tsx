@@ -61,10 +61,16 @@ export default function TermsPage() {
       <Section title="3. Plans, trials and billing">
         <p>
           New accounts start on a free trial with full access; after it ends the account
-          falls back to the free plan's limits unless you subscribe. Paid subscriptions,
-          when available, are billed through Stripe. You can cancel any time and keep
-          access until the end of the period you paid for. Card details are handled by
-          Stripe and never stored by TradeOS.
+          falls back to the free plan&apos;s limits unless you subscribe. Paid subscriptions,
+          when available, are sold through Paddle, which acts as the reseller and merchant
+          of record for TradeOS and appears on your statement. You can cancel any time and
+          keep access until the end of the period you paid for. Card details are handled by
+          Paddle and never stored by TradeOS. Cancellations and refunds are described in
+          the{" "}
+          <a href="/refunds" className="text-primary underline-offset-2 hover:underline">
+            Refund &amp; Cancellation Policy
+          </a>
+          .
         </p>
       </Section>
 

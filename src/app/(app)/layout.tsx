@@ -44,6 +44,7 @@ export default async function AppLayout({
           <nav className="flex items-center gap-4">
             <Link href="/terms" className="hover:text-foreground">Terms</Link>
             <Link href="/privacy" className="hover:text-foreground">Privacy</Link>
+            <Link href="/refunds" className="hover:text-foreground">Refunds</Link>
           </nav>
         </footer>
         <MobileNav />

@@ -84,7 +84,15 @@ async function mutate(
 // New rulebook
 // --------------------------------------------------------------------------
 
-export function NewRuleBookButton() {
+// `disabled` + `limitLabel` mirror AccountDialog: when the plan's cap is
+// reached the button explains why instead of letting the server refuse.
+export function NewRuleBookButton({
+  disabled = false,
+  limitLabel,
+}: {
+  disabled?: boolean;
+  limitLabel?: string;
+} = {}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -127,14 +135,14 @@ export function NewRuleBookButton() {
         if (!o) reset();
       }}
     >
-      <Button size="sm" onClick={() => setOpen(true)}>
+      <Button size="sm" disabled={disabled} onClick={() => setOpen(true)}>
         <Plus className="h-4 w-4" /> New Rulebook
       </Button>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>New rulebook</DialogTitle>
           <DialogDescription>
-            Group related rules. Scope decides which trades it applies to.
+            {limitLabel ?? "Group related rules. Scope decides which trades it applies to."}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} className="space-y-4">
@@ -761,11 +769,23 @@ function FormError({ message }: { message: string }) {
 // Per-book "Add rule" button
 // --------------------------------------------------------------------------
 
-export function AddRuleButton({ bookId }: { bookId: string }) {
+export function AddRuleButton({
+  bookId,
+  disabled = false,
+  limitLabel,
+}: {
+  bookId: string;
+  disabled?: boolean;
+  /** Shown beside the button when the plan's rule cap is reached. */
+  limitLabel?: string;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
+      {disabled && limitLabel && (
+        <p className="mr-3 text-2xs text-muted-foreground">{limitLabel}</p>
+      )}
+      <Button variant="outline" size="sm" disabled={disabled} onClick={() => setOpen(true)}>
         <Plus className="h-4 w-4" /> Add rule
       </Button>
       {open && <RuleFormDialog bookId={bookId} open={open} onOpenChange={setOpen} />}

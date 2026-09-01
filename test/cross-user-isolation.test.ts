@@ -1,6 +1,6 @@
 // Cross-user data isolation — the data-layer half of TradeOS's core guarantee.
 //
-// Mirrors Cut's (Health-Tracker) two-user pattern in consumerPolish.test.js:
+// Mirrors the two-user isolation pattern used in the owner's other apps:
 // build two synthetic traders with their own accounts, trades, rulebooks/rules
 // and alerts in the THROWAWAY test database, then call the very functions the
 // real pages use and assert each trader only ever sees their own rows. Positive

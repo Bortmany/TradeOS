@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ShieldCheck, Lock, ScrollText, Layers } from "lucide-react";
+import { ShieldCheck, ScrollText, Layers, AlertTriangle } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth";
-import { hasFeature } from "@/lib/billing/plans";
+import { effectivePlan, getFeatures, withinLimit } from "@/lib/billing/plans";
 import type { Plan } from "@/lib/types";
 import {
   getRuleBooksWithStats,
@@ -12,7 +12,6 @@ import {
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ScoreMeter } from "@/components/charts/score-ring";
 import {
@@ -38,29 +37,27 @@ export default async function RulesPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  const gated = !hasFeature(user.plan as Plan, user.billingStatus, "ruleEngine");
-  if (gated) {
-    return (
-      <div className="container max-w-7xl py-6">
-        <PageHeader title="Rule Engine" description="No-code discipline rules for every trade." />
-        <div className="mt-10">
-          <EmptyState
-            icon={<Lock className="h-8 w-8" />}
-            title="The rule engine is a Pro feature"
-            description="Upgrade to build no-code rulebooks, auto-evaluate every trade, and turn discipline into a measurable score."
-            action={
-              <Button asChild>
-                <Link href="/settings/billing">Upgrade to Pro</Link>
-              </Button>
-            }
-          />
-        </div>
-      </div>
-    );
-  }
-
   const { books, adherence, ruleCount } = await getRuleBooksWithStats(user.id);
   const activeBooks = books.filter((b) => b.isActive).length;
+
+  // Every plan has the rule engine; the free one is capped. Infinity means the
+  // cap is off, and nothing about limits is shown at all.
+  const plan = user.plan as Plan;
+  const features = getFeatures(effectivePlan(plan, user.billingStatus));
+  const ruleLimit = features.maxRules;
+  const bookLimit = features.maxRuleBooks;
+  const capped = Number.isFinite(ruleLimit);
+  const atRuleLimit = !withinLimit(plan, user.billingStatus, "maxRules", ruleCount);
+  const atBookLimit = !withinLimit(plan, user.billingStatus, "maxRuleBooks", books.length);
+  // Someone whose trial or subscription lapsed can legitimately own MORE rules
+  // than the free plan includes. Their rules keep working; we just never say
+  // something nonsensical like "9 of 3 used".
+  const overRuleLimit = capped && ruleCount > ruleLimit;
+
+  const bookLimitLabel = atBookLimit
+    ? `Your plan includes ${bookLimit} rulebook${bookLimit === 1 ? "" : "s"}. Upgrade to Pro for unlimited.`
+    : undefined;
+  const ruleLimitLabel = `All ${ruleLimit} free rules used.`;
 
   return (
     <div className="container max-w-7xl space-y-6 py-6">
@@ -68,8 +65,32 @@ export default async function RulesPage() {
         title="Rule Engine"
         description="No-code rulebooks evaluated deterministically against every trade."
       >
-        <NewRuleBookButton />
+        <NewRuleBookButton disabled={atBookLimit} limitLabel={bookLimitLabel} />
       </PageHeader>
+
+      {/* Quiet usage line — only for a plan that actually has a cap. */}
+      {capped &&
+        (overRuleLimit ? (
+          <div className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning-muted px-4 py-2.5 text-sm text-warning">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>
+              Your free plan includes {ruleLimit} rules — you have {ruleCount}. Your existing rules
+              keep working; <UpgradeLink /> to add more.
+            </span>
+          </div>
+        ) : atRuleLimit ? (
+          <div className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning-muted px-4 py-2.5 text-sm text-warning">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>
+              You've used all {ruleLimit} free rules. <UpgradeLink /> for unlimited rules and
+              rulebooks.
+            </span>
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            You're using {ruleCount} of {ruleLimit} free rules — Pro is unlimited. <UpgradeLink />
+          </p>
+        ))}
 
       {books.length === 0 ? (
         <div className="mt-6">
@@ -100,7 +121,11 @@ export default async function RulesPage() {
               value={`${activeBooks}/${books.length} active`}
               icon={Layers}
             />
-            <SummaryStat label="Rules" value={`${ruleCount}`} icon={ScrollText} />
+            <SummaryStat
+              label="Rules"
+              value={capped ? `${ruleCount} of ${ruleLimit}` : `${ruleCount}`}
+              icon={ScrollText}
+            />
           </div>
 
           <div className="space-y-4">
@@ -148,8 +173,12 @@ export default async function RulesPage() {
                     </div>
                   )}
 
-                  <div className="flex justify-end pt-1">
-                    <AddRuleButton bookId={book.id} />
+                  <div className="flex items-center justify-end pt-1">
+                    <AddRuleButton
+                      bookId={book.id}
+                      disabled={atRuleLimit}
+                      limitLabel={atRuleLimit ? ruleLimitLabel : undefined}
+                    />
                   </div>
                 </CardContent>
               </Card>
@@ -158,6 +187,14 @@ export default async function RulesPage() {
         </>
       )}
     </div>
+  );
+}
+
+function UpgradeLink() {
+  return (
+    <Link href="/settings/billing" className="font-medium underline underline-offset-2">
+      Upgrade to Pro
+    </Link>
   );
 }
 

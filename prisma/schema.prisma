@@ -36,7 +36,15 @@ model User {
   // status: trialing | active | past_due | canceled
   billingStatus   String    @default("trialing")
   trialEndsAt     DateTime?
-  stripeCustomerId String?  @unique
+  // Identifiers at the payment provider (Paddle). Not keys, tokens or card
+  // details — none of those are ever stored. Written only by the billing
+  // webhook; used to open the customer portal and to recognise a returning
+  // customer. See src/lib/billing/paddle.ts.
+  paddleCustomerId     String?   @unique
+  paddleSubscriptionId String?
+  // When the provider says the last billing event we acted on happened. Used to
+  // ignore a delivery that overtook a newer one.
+  billingEventAt       DateTime?
 
   accounts        TradingAccount[]
   trades          Trade[]
@@ -50,6 +58,7 @@ model User {
   brokerConnections BrokerConnection[]
 
   @@index([email])
+  @@index([paddleSubscriptionId])
 }
 
 model Session {
