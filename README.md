@@ -161,7 +161,10 @@ the merchant of record, so it handles worldwide sales tax/VAT.
 
 ### Enabling the env-gated pieces
 - **Paddle:** set `PADDLE_ENV`, `PADDLE_API_KEY`, `PADDLE_WEBHOOK_SECRET` and
-  the `PADDLE_PRICE_ID_PRO` / `PADDLE_PRICE_ID_ELITE` price ids. Checkout, the
+  the `PADDLE_PRICE_ID_PRO` / `PADDLE_PRICE_ID_ELITE` price ids. Optionally add
+  `PADDLE_PRICE_ID_PRO_ANNUAL` / `PADDLE_PRICE_ID_ELITE_ANNUAL` to also sell a
+  year up front ($290 / $790 — two months free); without them no yearly option
+  is shown and monthly billing is unchanged. Checkout, the
   customer portal and subscription-sync webhooks activate automatically; until
   then the UI shows a graceful "not switched on" notice and gating still works.
   The whole integration is one file (`src/lib/billing/paddle.ts`); the account

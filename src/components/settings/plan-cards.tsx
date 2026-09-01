@@ -2,19 +2,30 @@
 
 import * as React from "react";
 import { Check, AlertTriangle } from "lucide-react";
-import { PLAN_DEFINITIONS, TRIAL_DAYS } from "@/lib/billing/plans";
-import type { Plan } from "@/lib/types";
+import { PLAN_DEFINITIONS, TRIAL_DAYS, annualSavings } from "@/lib/billing/plans";
+import type { BillingInterval, Plan } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 
 const ORDER: Plan[] = ["free", "pro", "elite"];
 
-export function PlanCards({ currentPlan }: { currentPlan: Plan }) {
+// `annualAvailable` is a plain yes/no worked out on the server — the price ids
+// themselves stay server-side and never reach the browser.
+export function PlanCards({
+  currentPlan,
+  annualAvailable = false,
+}: {
+  currentPlan: Plan;
+  annualAvailable?: boolean;
+}) {
   const [busy, setBusy] = React.useState<Plan | null>(null);
   const [managing, setManaging] = React.useState(false);
   const [notice, setNotice] = React.useState<string | null>(null);
+  // Named billingInterval, not interval — `setInterval` is a browser global.
+  const [billingInterval, setBillingInterval] = React.useState<BillingInterval>("monthly");
 
   async function onUpgrade(plan: Plan) {
     setNotice(null);
@@ -23,7 +34,7 @@ export function PlanCards({ currentPlan }: { currentPlan: Plan }) {
       const res = await fetch("/api/billing/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plan }),
+        body: JSON.stringify({ plan, interval: billingInterval }),
       });
       const json = await res.json();
       // When billing is configured the API returns a checkout URL to redirect
@@ -73,10 +84,33 @@ export function PlanCards({ currentPlan }: { currentPlan: Plan }) {
         · no card required · cancel anytime
       </p>
 
+      {/* Monthly / yearly switch. Only shown when yearly is actually on sale —
+          otherwise the page looks and behaves exactly as it always has. */}
+      {annualAvailable && (
+        <div className="flex flex-col items-center gap-1.5">
+          <Tabs
+            value={billingInterval}
+            onValueChange={(v) => setBillingInterval(v as BillingInterval)}
+          >
+            <TabsList>
+              <TabsTrigger value="monthly">Monthly</TabsTrigger>
+              <TabsTrigger value="annual">Yearly</TabsTrigger>
+            </TabsList>
+          </Tabs>
+          <p className="text-2xs text-muted-foreground">
+            Pay for the year and get {annualSavings("pro").months} months free.
+          </p>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-4 pt-2 lg:grid-cols-3">
         {ORDER.map((id) => {
           const plan = PLAN_DEFINITIONS[id];
           const isCurrent = id === currentPlan;
+          // A plan is shown yearly only if it has a yearly price at all — the
+          // free tier keeps showing $0/mo whichever tab is selected.
+          const showAnnual = billingInterval === "annual" && plan.priceAnnual > 0;
+          const savedMonths = annualSavings(id).months;
           return (
             <Card
               key={id}
@@ -98,9 +132,19 @@ export function PlanCards({ currentPlan }: { currentPlan: Plan }) {
                 </CardTitle>
                 <p className="text-sm text-muted-foreground">{plan.tagline}</p>
                 <p className="pt-1">
-                  <span className="tabular text-3xl font-semibold">${plan.priceMonthly}</span>
-                  <span className="text-sm text-muted-foreground">/mo</span>
+                  <span className="tabular text-3xl font-semibold">
+                    ${showAnnual ? plan.priceAnnual : plan.priceMonthly}
+                  </span>
+                  <span className="text-sm text-muted-foreground">
+                    {showAnnual ? "/yr" : "/mo"}
+                  </span>
                 </p>
+                {showAnnual && (
+                  <p className="text-2xs text-muted-foreground">
+                    {savedMonths} months free · ${Math.round(plan.priceAnnual / 12)}/mo billed
+                    yearly
+                  </p>
+                )}
               </CardHeader>
               <CardContent className="flex flex-1 flex-col">
                 <ul className="flex-1 space-y-2">

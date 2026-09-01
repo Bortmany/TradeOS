@@ -34,7 +34,9 @@ Click the **TradeOS service → Variables** and add:
 | `AUTO_SYNC_INTERVAL_MIN` | `30` (optional — this is the default) |
 
 Paddle later (optional, enables paid checkout): `PADDLE_ENV`, `PADDLE_API_KEY`,
-`PADDLE_WEBHOOK_SECRET`, `PADDLE_PRICE_ID_PRO`, `PADDLE_PRICE_ID_ELITE`.
+`PADDLE_WEBHOOK_SECRET`, `PADDLE_PRICE_ID_PRO`, `PADDLE_PRICE_ID_ELITE`, and
+optionally `PADDLE_PRICE_ID_PRO_ANNUAL` / `PADDLE_PRICE_ID_ELITE_ANNUAL` to also
+offer a year up front.
 **Deploy first without them** — Paddle only approves a seller account once it can
 see your live site (with its terms, privacy and refund pages). The full sequence
 is in `GO-LIVE.md`; the Paddle-side clicks are in `docs/DEPLOYMENT.md` section C

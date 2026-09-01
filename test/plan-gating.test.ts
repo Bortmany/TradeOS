@@ -5,23 +5,48 @@
 // feature to free users fails here.
 
 import { describe, it, expect } from "vitest";
-import { hasFeature, effectivePlan } from "@/lib/billing/plans";
+import { hasFeature, effectivePlan, getFeatures, withinLimit } from "@/lib/billing/plans";
 
-describe("rule engine gate (rulebooks + rules create)", () => {
-  it("is CLOSED for a free plan with no active trial", () => {
-    expect(hasFeature("free", "active", "ruleEngine")).toBe(false);
-    expect(hasFeature("free", "canceled", "ruleEngine")).toBe(false);
-    expect(hasFeature("free", "past_due", "ruleEngine")).toBe(false);
-  });
-
-  it("is OPEN during a trial (trial gets Pro-level access)", () => {
-    expect(effectivePlan("free", "trialing")).toBe("pro");
-    expect(hasFeature("free", "trialing", "ruleEngine")).toBe(true);
-  });
-
-  it("is OPEN for paid Pro and Elite", () => {
+describe("rule engine caps (rulebooks + rules create)", () => {
+  it("is OPEN on every tier — the rule engine is no longer a paid gate", () => {
+    // Deliberate: a free trader grades their trades against real rules of their
+    // own, so their discipline score means something. What Pro sells is the cap
+    // coming off, pinned below.
+    expect(hasFeature("free", "active", "ruleEngine")).toBe(true);
+    expect(hasFeature("free", "canceled", "ruleEngine")).toBe(true);
     expect(hasFeature("pro", "active", "ruleEngine")).toBe(true);
     expect(hasFeature("elite", "active", "ruleEngine")).toBe(true);
+  });
+
+  it("free gets exactly 1 rulebook and 3 rules; paid plans are unlimited", () => {
+    expect(getFeatures("free").maxRuleBooks).toBe(1);
+    expect(getFeatures("free").maxRules).toBe(3);
+    expect(getFeatures("pro").maxRuleBooks).toBe(Infinity);
+    expect(getFeatures("pro").maxRules).toBe(Infinity);
+    expect(getFeatures("elite").maxRules).toBe(Infinity);
+  });
+
+  it("a free trader may create up to the cap and not one past it", () => {
+    for (const used of [0, 1, 2]) {
+      expect(withinLimit("free", "active", "maxRules", used)).toBe(true);
+    }
+    expect(withinLimit("free", "active", "maxRules", 3)).toBe(false);
+    expect(withinLimit("free", "active", "maxRules", 4)).toBe(false);
+
+    expect(withinLimit("free", "active", "maxRuleBooks", 0)).toBe(true);
+    expect(withinLimit("free", "active", "maxRuleBooks", 1)).toBe(false);
+  });
+
+  it("a trial gets Pro's uncapped allowance", () => {
+    expect(effectivePlan("free", "trialing")).toBe("pro");
+    expect(withinLimit("free", "trialing", "maxRules", 50)).toBe(true);
+    expect(withinLimit("free", "trialing", "maxRuleBooks", 9)).toBe(true);
+  });
+
+  it("a lapsed Pro subscription falls back to the free caps", () => {
+    expect(effectivePlan("pro", "canceled")).toBe("free");
+    expect(withinLimit("pro", "canceled", "maxRules", 3)).toBe(false);
+    expect(withinLimit("pro", "active", "maxRules", 3)).toBe(true);
   });
 });
 

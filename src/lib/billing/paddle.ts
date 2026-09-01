@@ -29,7 +29,7 @@
 // plain-English refusal rather than a guess or a crash.
 
 import { createHmac, timingSafeEqual } from "node:crypto";
-import type { Plan } from "@/lib/types";
+import type { BillingInterval, Plan } from "@/lib/types";
 
 /**
  * Just the environment variables this module reads. Deliberately looser than
@@ -109,6 +109,10 @@ function appUrl(env: BillingEnv): string {
  * A key with no price to sell, or a price with no key, is not half-configured —
  * it is dormant, which is a state that behaves rather than a state that breaks.
  * (The Elite price is optional: a deployment may sell Pro only.)
+ *
+ * The ANNUAL price ids are deliberately NOT part of this check. Selling by the
+ * year is an extra a deployment may or may not offer; a site with only the
+ * monthly Pro price is fully configured and behaves exactly as it always has.
  */
 export function paddleConfig(env: BillingEnv = process.env): PaddleConfig | null {
   const apiKey = env.PADDLE_API_KEY?.trim() ?? "";
@@ -131,23 +135,82 @@ export function isBillingConfigured(env: BillingEnv = process.env): boolean {
   return paddleConfig(env) !== null;
 }
 
-/** The configured Paddle price id for a plan, if any. Free needs no price. */
-export function priceIdForPlan(plan: Plan, env: BillingEnv = process.env): string | null {
-  const raw =
-    plan === "pro" ? env.PADDLE_PRICE_ID_PRO : plan === "elite" ? env.PADDLE_PRICE_ID_ELITE : "";
-  const value = raw?.trim() ?? "";
+/**
+ * Every price this app can sell, and the variable that holds each one. One
+ * table, read in both directions — so a price id can never mean one plan when
+ * checkout mints it and a different plan when the webhook reads it back.
+ * The annual variables are OPTIONAL: unset simply means "we don't sell a year".
+ */
+const PRICE_VARIABLES: ReadonlyArray<{
+  plan: Plan;
+  interval: BillingInterval;
+  variable: string;
+}> = [
+  { plan: "pro", interval: "monthly", variable: "PADDLE_PRICE_ID_PRO" },
+  { plan: "elite", interval: "monthly", variable: "PADDLE_PRICE_ID_ELITE" },
+  { plan: "pro", interval: "annual", variable: "PADDLE_PRICE_ID_PRO_ANNUAL" },
+  { plan: "elite", interval: "annual", variable: "PADDLE_PRICE_ID_ELITE_ANNUAL" },
+];
+
+/** A variable's value with the blanks and stray spaces treated as "not set". */
+function configuredValue(env: BillingEnv, variable: string): string | null {
+  const value = env[variable]?.trim() ?? "";
   return value.length > 0 ? value : null;
 }
 
-/** Map a Paddle price id back to our own plan name (used by the webhook). */
+/**
+ * The configured Paddle price id for a plan, if any. Free needs no price, and a
+ * plan with no price for the interval asked for simply isn't sold that way.
+ * `interval` comes last and defaults to monthly, so every existing caller keeps
+ * behaving exactly as before.
+ */
+export function priceIdForPlan(
+  plan: Plan,
+  env: BillingEnv = process.env,
+  interval: BillingInterval = "monthly"
+): string | null {
+  const row = PRICE_VARIABLES.find((r) => r.plan === plan && r.interval === interval);
+  return row ? configuredValue(env, row.variable) : null;
+}
+
+/** True when a whole year of Pro can actually be bought right now. */
+export function annualPricingAvailable(env: BillingEnv = process.env): boolean {
+  if (paddleConfig(env) === null) return false;
+  return priceIdForPlan("pro", env, "annual") !== null;
+}
+
+/**
+ * Map a Paddle price id back to our own plan name (used by the webhook).
+ *
+ * Read over the whole table so an ANNUAL price grants exactly the same plan its
+ * monthly twin does. If the same id has been pasted into two different plans'
+ * variables — a real copy-paste mistake — the answer is ambiguous, and an
+ * ambiguous answer here would hand somebody the wrong tier. So it refuses,
+ * loudly in the server log, and the webhook falls back to the plan named at
+ * checkout instead of guessing.
+ */
 export function planForPriceId(
   priceId: string | null | undefined,
   env: BillingEnv = process.env
 ): Plan | null {
-  if (!priceId) return null;
-  if (priceId === env.PADDLE_PRICE_ID_PRO?.trim()) return "pro";
-  if (priceId === env.PADDLE_PRICE_ID_ELITE?.trim()) return "elite";
-  return null;
+  const wanted = priceId?.trim() ?? "";
+  if (!wanted) return null;
+
+  const matched = new Set<Plan>();
+  for (const row of PRICE_VARIABLES) {
+    if (configuredValue(env, row.variable) === wanted) matched.add(row.plan);
+  }
+
+  if (matched.size === 0) return null;
+  if (matched.size > 1) {
+    // The id itself is the owner's own configuration, not a secret, but there is
+    // nothing to gain from printing it — the variable names say enough.
+    console.warn(
+      "[paddle] the same price id is configured for more than one plan — refusing to guess which"
+    );
+    return null;
+  }
+  return [...matched][0];
 }
 
 /* ------------------------------------------------------------------------ */
@@ -311,13 +374,24 @@ function firstHttpsString(value: unknown, depth = 0): string | null {
  */
 export async function createCheckoutUrl(
   config: PaddleConfig,
-  input: { userId: string; plan: Plan; priceId: string; successUrl: string }
+  input: {
+    userId: string;
+    plan: Plan;
+    priceId: string;
+    successUrl: string;
+    /** Only ever a note for support — the price id is what actually bills. */
+    interval?: BillingInterval;
+  }
 ): Promise<string> {
   const answer = await paddleFetch(config, "/transactions", {
     method: "POST",
     body: {
       items: [{ price_id: input.priceId, quantity: 1 }],
-      custom_data: { user_id: input.userId, plan: input.plan },
+      custom_data: {
+        user_id: input.userId,
+        plan: input.plan,
+        interval: input.interval ?? "monthly",
+      },
       checkout: { url: null },
     },
   });

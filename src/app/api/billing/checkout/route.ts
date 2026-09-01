@@ -8,10 +8,15 @@ import {
   paddleConfig,
   priceIdForPlan,
 } from "@/lib/billing/paddle";
-import { PLANS } from "@/lib/types";
+import { BILLING_INTERVALS, PLANS } from "@/lib/types";
 import { enforceUserRateLimit, USER_EXTERNAL_LIMIT } from "@/lib/rate-limit";
 
-const schema = z.object({ plan: z.enum(PLANS) });
+// `interval` is optional and defaults to monthly, so an older client that sends
+// only a plan keeps working unchanged.
+const schema = z.object({
+  plan: z.enum(PLANS),
+  interval: z.enum(BILLING_INTERVALS).optional().default("monthly"),
+});
 
 // Starts a Paddle checkout when billing is configured; otherwise returns a
 // graceful "not configured" response the client surfaces as a friendly notice.
@@ -35,7 +40,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const { plan } = schema.parse(await req.json());
+    const { plan, interval } = schema.parse(await req.json());
     if (plan === "free") {
       return NextResponse.json({
         ok: false,
@@ -43,11 +48,16 @@ export async function POST(req: Request) {
       });
     }
 
-    const priceId = priceIdForPlan(plan);
+    const priceId = priceIdForPlan(plan, process.env, interval);
     if (!priceId) {
+      // Same graceful, plain-English refusal the dormant path already uses: an
+      // interval nobody has set a price for is simply not on sale yet.
       return NextResponse.json({
         ok: false,
-        message: `No price is configured for the ${plan} plan yet.`,
+        message:
+          interval === "annual"
+            ? `Yearly billing isn't switched on for the ${plan} plan yet.`
+            : `No price is configured for the ${plan} plan yet.`,
       });
     }
 
@@ -55,6 +65,7 @@ export async function POST(req: Request) {
       userId: user.id,
       plan,
       priceId,
+      interval,
       successUrl: `${config.appUrl}/settings/billing?upgraded=1`,
     });
 

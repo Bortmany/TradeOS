@@ -86,6 +86,11 @@ so launching with billing dormant is a supported state, not a broken one.
    `prd_...`) into:
    - `PADDLE_PRICE_ID_PRO`
    - `PADDLE_PRICE_ID_ELITE`
+
+   *Optional:* to also sell a year up front, add a second recurring price on the
+   same two products — **$290 / year** (Pro) and **$790 / year** (Elite) — and
+   copy those price ids into `PADDLE_PRICE_ID_PRO_ANNUAL` and
+   `PADDLE_PRICE_ID_ELITE_ANNUAL`. Leave them unset and no yearly option appears.
 4. **Developer tools -> Authentication -> API keys**: create a server-side key
    and copy it into `PADDLE_API_KEY`. Set `PADDLE_ENV` to `sandbox` while
    testing, `production` when live (any unrecognised value is treated as

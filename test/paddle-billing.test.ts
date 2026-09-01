@@ -14,8 +14,10 @@
 import { describe, it, expect } from "vitest";
 import { createHmac } from "node:crypto";
 import type { BillingEnv } from "@/lib/billing/paddle";
+import { PLAN_DEFINITIONS, annualSavings } from "@/lib/billing/plans";
 import {
   SIGNATURE_MAX_AGE_MS,
+  annualPricingAvailable,
   billingUpdateFor,
   checkWebhookSignature,
   isBillingConfigured,
@@ -30,8 +32,19 @@ import {
 
 const SECRET = "pdl_ntfset_test_secret_value";
 
-/** A configured deployment, as the owner would set it up on the host. */
+/** A configured deployment selling both monthly and yearly. */
 const CONFIGURED: BillingEnv = {
+  PADDLE_API_KEY: "pdl_test_apikey",
+  PADDLE_WEBHOOK_SECRET: SECRET,
+  PADDLE_PRICE_ID_PRO: "pri_pro_123",
+  PADDLE_PRICE_ID_ELITE: "pri_elite_456",
+  PADDLE_PRICE_ID_PRO_ANNUAL: "pri_pro_annual_789",
+  PADDLE_PRICE_ID_ELITE_ANNUAL: "pri_elite_annual_012",
+  NEXT_PUBLIC_APP_URL: "https://tradeos.example.com/",
+};
+
+/** The same deployment before anybody added the optional yearly prices. */
+const MONTHLY_ONLY: BillingEnv = {
   PADDLE_API_KEY: "pdl_test_apikey",
   PADDLE_WEBHOOK_SECRET: SECRET,
   PADDLE_PRICE_ID_PRO: "pri_pro_123",
@@ -87,6 +100,18 @@ describe("dormant until configured", () => {
     expect(isBillingConfigured(CONFIGURED)).toBe(true);
   });
 
+  it("stays configured with no yearly prices, and yearly ids alone never wake it", () => {
+    // The dormancy rule is unchanged by the yearly option: the monthly Pro price
+    // is still the whole test, and yearly ids on their own configure nothing.
+    expect(isBillingConfigured(MONTHLY_ONLY)).toBe(true);
+    expect(
+      isBillingConfigured({
+        PADDLE_PRICE_ID_PRO_ANNUAL: "pri_pro_annual_789",
+        PADDLE_PRICE_ID_ELITE_ANNUAL: "pri_elite_annual_012",
+      })
+    ).toBe(false);
+  });
+
   it("defaults to the sandbox, and only plainly-production values switch to live", () => {
     expect(paddleEnvironment({})).toBe("sandbox");
     expect(paddleEnvironment({ PADDLE_ENV: "sandbox" })).toBe("sandbox");
@@ -120,6 +145,64 @@ describe("prices map to plans", () => {
     expect(planForPriceId("pri_elite_456", CONFIGURED)).toBe("elite");
     expect(planForPriceId("pri_someone_elses", CONFIGURED)).toBeNull();
     expect(planForPriceId(null, CONFIGURED)).toBeNull();
+  });
+
+  it("asking for nothing in particular still means monthly", () => {
+    expect(priceIdForPlan("pro", CONFIGURED)).toBe(priceIdForPlan("pro", CONFIGURED, "monthly"));
+  });
+
+  it("resolves the yearly price for each paid plan when it is set", () => {
+    expect(priceIdForPlan("pro", CONFIGURED, "annual")).toBe("pri_pro_annual_789");
+    expect(priceIdForPlan("elite", CONFIGURED, "annual")).toBe("pri_elite_annual_012");
+    expect(priceIdForPlan("free", CONFIGURED, "annual")).toBeNull();
+  });
+
+  it("with no yearly ids set, yearly is simply unavailable and monthly is untouched", () => {
+    expect(priceIdForPlan("pro", MONTHLY_ONLY, "annual")).toBeNull();
+    expect(priceIdForPlan("elite", MONTHLY_ONLY, "annual")).toBeNull();
+    expect(priceIdForPlan("pro", MONTHLY_ONLY)).toBe("pri_pro_123");
+    expect(priceIdForPlan("elite", MONTHLY_ONLY)).toBe("pri_elite_456");
+    expect(annualPricingAvailable(MONTHLY_ONLY)).toBe(false);
+    expect(annualPricingAvailable(CONFIGURED)).toBe(true);
+    // A yearly price with billing switched off is still not on sale.
+    expect(annualPricingAvailable({ PADDLE_PRICE_ID_PRO_ANNUAL: "pri_x" })).toBe(false);
+  });
+
+  it("a YEARLY price id maps back to the SAME plan its monthly twin does", () => {
+    expect(planForPriceId("pri_pro_annual_789", CONFIGURED)).toBe("pro");
+    expect(planForPriceId("pri_elite_annual_012", CONFIGURED)).toBe("elite");
+    // and never leaks across tiers
+    expect(planForPriceId("pri_pro_annual_789", CONFIGURED)).not.toBe("elite");
+  });
+
+  it("treats a blank or whitespace-only variable as not set", () => {
+    const blank: BillingEnv = { ...MONTHLY_ONLY, PADDLE_PRICE_ID_PRO_ANNUAL: "   " };
+    expect(priceIdForPlan("pro", blank, "annual")).toBeNull();
+    // ...and a blank variable must never be "matched" by a blank price id.
+    expect(planForPriceId("   ", blank)).toBeNull();
+  });
+
+  it("REFUSES to guess when one price id is pasted into two plans", () => {
+    const duplicated: BillingEnv = { ...CONFIGURED, PADDLE_PRICE_ID_ELITE_ANNUAL: "pri_pro_123" };
+    expect(planForPriceId("pri_pro_123", duplicated)).toBeNull();
+  });
+});
+
+describe("what a year costs", () => {
+  it("is ten months of the monthly price on every paid plan", () => {
+    expect(PLAN_DEFINITIONS.free.priceAnnual).toBe(0);
+    expect(PLAN_DEFINITIONS.pro.priceAnnual).toBe(290);
+    expect(PLAN_DEFINITIONS.elite.priceAnnual).toBe(790);
+    expect(annualSavings("pro").months).toBe(2);
+    expect(annualSavings("elite").months).toBe(2);
+    expect(annualSavings("free")).toEqual({ amount: 0, months: 0 });
+  });
+
+  it("a year is never more expensive than twelve months", () => {
+    for (const plan of ["pro", "elite"] as const) {
+      const def = PLAN_DEFINITIONS[plan];
+      expect(def.priceAnnual).toBeLessThan(def.priceMonthly * 12);
+    }
   });
 });
 
@@ -271,6 +354,25 @@ describe("what an event means for an account", () => {
       data: { id: "ctm_01" },
     });
     expect(update(other)).toBeNull();
+  });
+
+  it("a YEARLY subscription activates exactly the plan that price belongs to", () => {
+    expect(update(subscriptionPayload({ priceId: "pri_pro_annual_789" }))).toEqual({
+      plan: "pro",
+      billingStatus: "active",
+    });
+    // custom_data on this fixture says "pro" — the ELITE yearly price must still
+    // win, because the price is the truth and the note at checkout is only a
+    // fallback. Getting this backwards would sell Elite and grant Pro.
+    expect(update(subscriptionPayload({ priceId: "pri_elite_annual_012" }))).toEqual({
+      plan: "elite",
+      billingStatus: "active",
+    });
+  });
+
+  it("a yearly price on a deployment that never set one falls back to the checkout note", () => {
+    const event = readWebhookEvent(subscriptionPayload({ priceId: "pri_pro_annual_789" }))!;
+    expect(billingUpdateFor(event, MONTHLY_ONLY)).toEqual({ plan: "pro", billingStatus: "active" });
   });
 
   it("a price we don't recognise never grants a plan on its own", () => {

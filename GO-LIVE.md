@@ -21,6 +21,7 @@ The code is finished and asleep. **Deploy first, sell later** — that order is 
 2. **Apply for a Paddle account** at <https://paddle.com> using your live URL. Approval is a manual human review (typically a few working days) and they will look at the site.
 3. **The pages Paddle checks are already on the site** — make sure they stay linked in the footer: `/terms`, `/privacy`, and `/refunds` (the refund & cancellation policy Paddle requires). Have your own legal review of these done before launch; each carries a "template notice" until you do.
 4. **Create the products and prices** in Paddle → Catalog: a **Pro** product with a recurring **$29/month** price, and an **Elite** product with a recurring **$79/month** price. Copy each **price id** (`pri_…`, *not* the product `prd_…`).
+   - *Optional, can be done later:* add a **second recurring price on the same product** for paying a year up front — **$290/year** on Pro and **$790/year** on Elite (ten months' money for twelve months' access). Copy those price ids too. Until they are set the yearly option is simply not shown.
 5. **Create a notification destination** (Paddle → Developer tools → Notifications) pointed at `https://<your-domain>/api/billing/webhook`, subscribed to: `subscription.created`, `subscription.activated`, `subscription.updated`, `subscription.canceled`, `transaction.completed`, `transaction.payment_failed`. Copy its **secret key**.
 6. **Set the five variables** on the host and redeploy:
    - [ ] `PADDLE_ENV` — `sandbox` while testing, `production` when live. Anything unrecognised reads as sandbox, on purpose.
@@ -28,6 +29,8 @@ The code is finished and asleep. **Deploy first, sell later** — that order is 
    - [ ] `PADDLE_WEBHOOK_SECRET` — from step 5.
    - [ ] `PADDLE_PRICE_ID_PRO`
    - [ ] `PADDLE_PRICE_ID_ELITE`
+   - [ ] `PADDLE_PRICE_ID_PRO_ANNUAL` — *optional*, the $290/year price. Leave it unset and no yearly option is offered.
+   - [ ] `PADDLE_PRICE_ID_ELITE_ANNUAL` — *optional*, the $790/year price.
 7. **Test in the sandbox first** (a separate sandbox account at <https://sandbox-vendors.paddle.com>): run one upgrade end to end with a Paddle test card, confirm the account's plan flips to Pro, then open **Manage subscription** and cancel. Only then swap in the production values.
 
 Notes:

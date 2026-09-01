@@ -73,7 +73,7 @@ export function Sidebar() {
         >
           <p className="text-xs font-medium">Upgrade your edge</p>
           <p className="mt-0.5 text-2xs text-muted-foreground">
-            Unlock the full rule engine & prop tracking.
+            Unlock unlimited rules & prop tracking.
           </p>
         </Link>
       </div>
