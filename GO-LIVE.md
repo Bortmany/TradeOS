@@ -44,6 +44,7 @@ Notes:
 - Broker connection (TopstepX/ProjectX): users enter their own username + API key in-app; stored encrypted. No env var. The server only calls firms listed in `src/lib/connectors/firms.ts` (see `docs/connectors.md`).
 - `AUTO_SYNC_INTERVAL_MIN` (default 30) — in-process auto-sync; no separate cron needed on Railway.
 - AI coaching (`AI_COACHING_ENABLED`, `ANTHROPIC_API_KEY`) — hard-disabled in code (future phase). Nothing to do.
+- `PRIVACY_CONTACT_EMAIL` — the contact address shown on the Terms, Privacy and Refunds pages. Optional: leave it unset and the pages show the owner's address (`naeljam@hotmail.com`); set it if you ever want a different mailbox.
 - No email provider is wired.
 
 ## Security note

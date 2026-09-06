@@ -177,5 +177,9 @@ the merchant of record, so it handles worldwide sales tax/VAT.
   sign-up sequence is in `GO-LIVE.md`.
 - **AI coaching:** implement a `CoachingProvider` (see `src/lib/ai/types.ts`),
   register it in `src/lib/ai/index.ts`, and set `AI_COACHING_ENABLED=true`.
+- **Legal-page contact address:** `PRIVACY_CONTACT_EMAIL` (optional) is the
+  address shown as the "Contact" line on `/terms`, `/privacy` and `/refunds`.
+  Unset, it defaults to the owner's address (`naeljam@hotmail.com`). Read
+  server-side only: `src/lib/legal-contact.ts`.
 
 *For educational analytics only. Not financial advice.*
