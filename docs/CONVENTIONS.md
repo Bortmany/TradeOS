@@ -16,6 +16,7 @@ TradeOS's core guarantee: FIFO trade pairing and the rule/discipline-score engin
 - **Deterministic core**: the rule engine, discipline score and analytics are deterministic and explainable. AI is an optional, swappable layer behind the interface in `src/lib/ai/` — never wire AI into core scoring.
 - **Validation & auth**: zod on every API input; auth checks the session (jose JWT) before touching data; every query scoped to the signed-in user's data.
 - **Secrets**: broker API keys are AES-256-GCM encrypted at rest (see `BrokerConnection`) — never log or return them.
+- **Outbound calls only to the firm registry**: the server contacts broker gateways listed in `src/lib/connectors/firms.ts` and nothing else — never a user-supplied URL. Adding a firm is one registry entry (`docs/connectors.md`).
 - **Numbers**: follow the existing numeric conventions in the schema and `src/lib/` — don't introduce new float handling.
 - Contract changes (the normalized Trade shape, rule-engine inputs/outputs, discipline-score semantics) require updating `docs/CONTRACTS.md` in the same change — silent drift is a review-blocking finding.
 

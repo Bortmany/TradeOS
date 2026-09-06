@@ -10,6 +10,7 @@ Plain-English list of what to set up before launch. Full context: `Agents/docs/g
 - [ ] **Strong `AUTH_SECRET`** (≥32 characters). This signs logins, so it must be strong — the app refuses to start in production with a weak/short one. (Without `ENCRYPTION_SECRET` below, it also encrypts users' stored broker keys.)
 - [ ] **Set `ENCRYPTION_SECRET` on the FIRST deploy** (generate with `openssl rand -base64 32`). It becomes the dedicated key that encrypts users' stored broker API keys, kept separate from the login secret. **Set it before any user connects a broker — changing it later (or setting it for the first time after launch) invalidates every stored broker key**, and users would have to reconnect their broker accounts. If it is never set, the app falls back to deriving the key from `AUTH_SECRET`, exactly as before.
 - [ ] **Set `NEXT_PUBLIC_APP_URL`** to the deployed web address (used for the return link after paying and for report links).
+- [ ] **Set `TRUST_PROXY=true` and `PROXY_HOPS=1`.** Railway sits in front of the app as one proxy, and without these the login/register rate limits cannot see each visitor's real address, so one attacker could spend everyone's allowance.
 
 ## Payments — Paddle (fully built, just needs an account and five variables)
 
@@ -39,7 +40,7 @@ Notes:
 - **One thing to re-check on activation day:** hosted-checkout links require an approved live account. If a checkout press returns "checkout isn't ready yet", the account setup is unfinished at Paddle's end, not a bug here. The whole integration is one file — `src/lib/billing/paddle.ts`.
 
 ## Optional / not needed now
-- Broker connection (TopstepX/ProjectX): users enter their own username + API key in-app; stored encrypted. No env var.
+- Broker connection (TopstepX/ProjectX): users enter their own username + API key in-app; stored encrypted. No env var. The server only calls firms listed in `src/lib/connectors/firms.ts` (see `docs/connectors.md`).
 - `AUTO_SYNC_INTERVAL_MIN` (default 30) — in-process auto-sync; no separate cron needed on Railway.
 - AI coaching (`AI_COACHING_ENABLED`, `ANTHROPIC_API_KEY`) — hard-disabled in code (future phase). Nothing to do.
 - No email provider is wired.

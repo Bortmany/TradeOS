@@ -11,9 +11,11 @@ import { apiErrorResponse } from "@/lib/api-error";
 import type { Broker } from "@/lib/types";
 import { BROKERS } from "@/lib/types";
 
+import { MAX_CSV_CHARS, importRowLimit } from "@/lib/import-limits";
+
 const schema = z.object({
   accountId: z.string().min(1),
-  csvText: z.string().min(1),
+  csvText: z.string().min(1).max(MAX_CSV_CHARS, "That file is too large to import in one go (2 MB limit). Split it and try again."),
   broker: z.enum(BROKERS).optional(),
 });
 
@@ -39,8 +41,10 @@ export const POST = withUser(async (user, req: Request) => {
 
     const result = ingestCsv(csvText, broker as Broker | undefined);
 
-    // Feature gate: cap the import size by plan.
-    const limit = getFeatures(effectivePlan(user.plan as never, user.billingStatus)).maxTradesPerImport;
+    // Feature gate: cap the number of parsed rows BEFORE any insert. The plan's
+    // own limit applies when it has one; otherwise a fixed ceiling.
+    const planLimit = getFeatures(effectivePlan(user.plan as never, user.billingStatus)).maxTradesPerImport;
+    const limit = importRowLimit(planLimit);
     if (result.trades.length > limit) {
       return NextResponse.json(
         {

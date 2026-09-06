@@ -31,6 +31,8 @@ Click the **TradeOS service → Variables** and add:
 | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}`  ← reference, autocompletes |
 | `AUTH_SECRET` | output of `openssl rand -base64 32` |
 | `NEXT_PUBLIC_APP_URL` | your public URL (see step 4 — set after generating the domain, then redeploy) |
+| `TRUST_PROXY` | `true` — Railway is a proxy in front of the app; this lets rate limits see each visitor's real address instead of Railway's |
+| `PROXY_HOPS` | `1` — one proxy (Railway) between the visitor and the app |
 | `AUTO_SYNC_INTERVAL_MIN` | `30` (optional — this is the default) |
 
 Paddle later (optional, enables paid checkout): `PADDLE_ENV`, `PADDLE_API_KEY`,

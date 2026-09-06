@@ -29,6 +29,14 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { FIRMS } from "@/lib/connectors/firms";
 
 // ---------------------------------------------------------------------------
 // Types — mirror the /api/connectors contracts exactly.
@@ -54,8 +62,6 @@ interface DiscoveredAccount {
   balance?: number;
   canTrade?: boolean;
 }
-
-const DEFAULT_BASE_URL = "https://api.topstepx.com";
 
 function relativeTime(iso: string): string {
   const then = new Date(iso).getTime();
@@ -327,7 +333,8 @@ function ConnectionRow({
 function ConnectFlow({ onConnected }: { onConnected: () => Promise<void> }) {
   const [username, setUsername] = React.useState("");
   const [apiKey, setApiKey] = React.useState("");
-  const [baseUrl, setBaseUrl] = React.useState("");
+  // The firm picks the gateway address server-side — users never type a URL.
+  const [firm, setFirm] = React.useState<string>(FIRMS[0].id);
   const [accounts, setAccounts] = React.useState<DiscoveredAccount[] | null>(null);
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [discovering, setDiscovering] = React.useState(false);
@@ -352,9 +359,9 @@ function ConnectFlow({ onConnected }: { onConnected: () => Promise<void> }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "discover",
+          firm,
           username: username.trim(),
           apiKey,
-          ...(baseUrl.trim() ? { baseUrl: baseUrl.trim() } : {}),
         }),
       });
       const json = await res.json();
@@ -382,9 +389,9 @@ function ConnectFlow({ onConnected }: { onConnected: () => Promise<void> }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "connect",
+          firm,
           username: username.trim(),
           apiKey,
-          ...(baseUrl.trim() ? { baseUrl: baseUrl.trim() } : {}),
           externalAccountId: picked.id,
           externalAccountName: picked.name,
         }),
@@ -417,6 +424,21 @@ function ConnectFlow({ onConnected }: { onConnected: () => Promise<void> }) {
       <form onSubmit={onDiscover} className="space-y-3">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div className="space-y-1.5">
+            <Label htmlFor="bc-firm">Firm</Label>
+            <Select value={firm} onValueChange={setFirm} disabled={discovering}>
+              <SelectTrigger id="bc-firm" aria-label="Firm">
+                <SelectValue placeholder="Choose a firm" />
+              </SelectTrigger>
+              <SelectContent>
+                {FIRMS.map((f) => (
+                  <SelectItem key={f.id} value={f.id}>
+                    {f.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
             <Label htmlFor="bc-username">Username</Label>
             <Input
               id="bc-username"
@@ -434,18 +456,6 @@ function ConnectFlow({ onConnected }: { onConnected: () => Promise<void> }) {
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
               placeholder="••••••••••••"
-              autoComplete="off"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="bc-baseurl">
-              Base URL <span className="normal-case text-muted-foreground">(optional)</span>
-            </Label>
-            <Input
-              id="bc-baseurl"
-              value={baseUrl}
-              onChange={(e) => setBaseUrl(e.target.value)}
-              placeholder={DEFAULT_BASE_URL}
               autoComplete="off"
             />
           </div>

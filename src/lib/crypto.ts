@@ -3,6 +3,8 @@
 // login-signing secret and the at-rest encryption key can be managed (and
 // rotated) independently. When ENCRYPTION_SECRET is unset the key falls back to
 // the original AUTH_SECRET derivation, so existing stored keys keep working.
+// There is NO built-in fallback beyond that: with neither secret set the app
+// refuses to encrypt or decrypt, rather than silently using a public constant.
 // Rotating whichever secret is in use invalidates stored credentials (users
 // just reconnect their broker) — set ENCRYPTION_SECRET on FIRST deploy, not
 // after keys have been stored.
@@ -18,10 +20,12 @@ function key(): Buffer {
       "ENCRYPTION_SECRET must be at least 32 characters in production. Generate one with: openssl rand -base64 32"
     );
   }
-  const secret =
-    dedicated ??
-    process.env.AUTH_SECRET ??
-    "dev-secret-change-me-in-production-please-0000000000";
+  const secret = dedicated ?? process.env.AUTH_SECRET;
+  if (!secret) {
+    throw new Error(
+      "Broker keys cannot be encrypted: set ENCRYPTION_SECRET (or AUTH_SECRET) in the environment. Generate one with: openssl rand -base64 32"
+    );
+  }
   return createHash("sha256").update(`${secret}:connector-secrets`).digest();
 }
 
