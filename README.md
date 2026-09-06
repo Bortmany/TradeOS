@@ -160,6 +160,12 @@ the merchant of record, so it handles worldwide sales tax/VAT.
   in core). *Remaining: real AI provider, native iOS/Android (web is PWA-ready).*
 
 ### Enabling the env-gated pieces
+- **Sign-up access:** `SIGNUP_INVITE_CODES` (comma-separated codes, 8+
+  characters each) makes sign-up invitation-only — the register page asks for
+  a code and wrong guesses are rate-limited. `SIGNUPS_OPEN=true` opens sign-up
+  to everyone. In production with neither set, sign-up is closed; locally it
+  stays open unless codes are set. Logic: `src/lib/signup-mode.ts`;
+  `/api/health` reports `signups: open | invite | closed`.
 - **Paddle:** set `PADDLE_ENV`, `PADDLE_API_KEY`, `PADDLE_WEBHOOK_SECRET` and
   the `PADDLE_PRICE_ID_PRO` / `PADDLE_PRICE_ID_ELITE` price ids. Optionally add
   `PADDLE_PRICE_ID_PRO_ANNUAL` / `PADDLE_PRICE_ID_ELITE_ANNUAL` to also sell a
