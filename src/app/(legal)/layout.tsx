@@ -1,13 +1,17 @@
 import Link from "next/link";
 import { Activity } from "lucide-react";
+import { legalContactEmail } from "@/lib/legal-contact";
 
-// Shared frame for the legal pages (/terms, /privacy). Public, readable from
-// both the marketing site and inside the app, so it follows the user's theme.
+// Shared frame for the legal pages (/terms, /privacy, /refunds). Public,
+// readable from both the marketing site and inside the app, so it follows the
+// user's theme. The contact line is rendered here once so every legal page
+// shows the same address (PRIVACY_CONTACT_EMAIL, read server-side).
 export default function LegalLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const contactEmail = legalContactEmail();
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="border-b border-border">
@@ -26,7 +30,20 @@ export default function LegalLayout({
           </nav>
         </div>
       </header>
-      <main className="container max-w-3xl py-12">{children}</main>
+      <main className="container max-w-3xl py-12">
+        {children}
+        <p className="mt-12 border-t border-border pt-6 text-sm text-muted-foreground">
+          <span className="font-medium text-foreground">Contact:</span>{" "}
+          questions about this page, your data, or a refund go to{" "}
+          <a
+            href={`mailto:${contactEmail}`}
+            className="underline underline-offset-4 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+          >
+            {contactEmail}
+          </a>
+          .
+        </p>
+      </main>
       <footer className="border-t border-border">
         <div className="container flex flex-col items-center justify-between gap-2 py-8 text-xs text-muted-foreground sm:flex-row">
           <span>TradeOS © {new Date().getFullYear()}</span>
