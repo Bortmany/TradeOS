@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" fill="none">
+  <!-- Score Ring: centre 256,256 radius 192 stroke 56. Track = remaining 20 percent. -->
+  <path d="M73.4 196.7 A192 192 0 0 1 256 64" stroke="#23262f" stroke-width="56" stroke-linecap="butt"/>
+  <!-- 80 percent arc, clockwise from 12 o'clock (0 degrees) to 288 degrees -->
+  <path d="M256 64 A192 192 0 1 1 73.4 196.7" stroke="#5593f7" stroke-width="56" stroke-linecap="butt"/>
+  <!-- Green end cap, radius 28 = half the stroke -->
+  <circle cx="73.4" cy="196.7" r="28" fill="#2dbe7a"/>
+</svg>

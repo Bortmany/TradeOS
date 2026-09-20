@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" fill="none">
+  <!-- Light-background version: same geometry, track recoloured to off-white #eaedf0 so it reads as a faint remainder on white. -->
+  <path d="M73.4 196.7 A192 192 0 0 1 256 64" stroke="#eaedf0" stroke-width="56" stroke-linecap="butt"/>
+  <path d="M256 64 A192 192 0 1 1 73.4 196.7" stroke="#5593f7" stroke-width="56" stroke-linecap="butt"/>
+  <circle cx="73.4" cy="196.7" r="28" fill="#2dbe7a"/>
+</svg>
