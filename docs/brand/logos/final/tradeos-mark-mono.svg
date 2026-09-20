@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" fill="none">
+  <!-- Single colour off-white #eaedf0. Round end cap replaces the green dot; the track is dropped. -->
+  <path d="M256 64 A192 192 0 1 1 73.4 196.7" stroke="#eaedf0" stroke-width="56" stroke-linecap="butt"/>
+  <circle cx="73.4" cy="196.7" r="28" fill="#eaedf0"/>
+</svg>
