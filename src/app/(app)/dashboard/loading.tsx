@@ -1,7 +1,8 @@
 import { Skeleton } from "@/components/ui/skeleton";
 
 // Loading shimmer for the Dashboard — mirrors the real page: header, the
-// discipline-score hero (ring + meters), KPI row, equity + violations, charts.
+// discipline-score hero (ring on its own row, four
+// meters underneath), KPI row, equity + violations, charts.
 export default function DashboardLoading() {
   return (
     <div className="container max-w-7xl space-y-6 py-6">
@@ -14,24 +15,26 @@ export default function DashboardLoading() {
         <Skeleton className="shimmer h-9 w-44" />
       </div>
 
-      {/* Discipline hero — score ring on the left, meters on the right */}
+      {/* Discipline hero — the score ring on its own row, four meters underneath */}
       <div className="rounded-lg border border-border bg-card p-6 shadow-sm">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-3">
           <div className="space-y-2">
             <Skeleton className="shimmer h-5 w-36" />
             <Skeleton className="shimmer h-4 w-72" />
           </div>
-          <Skeleton className="shimmer h-8 w-24" />
+          <Skeleton className="shimmer h-10 w-28" />
         </div>
-        <div className="mt-6 flex flex-col gap-6 md:flex-row md:items-center">
-          <div className="flex shrink-0 justify-center md:px-8">
-            <Skeleton className="shimmer h-40 w-40 rounded-full" />
+        <div className="mt-6 space-y-5">
+          <div className="flex flex-col items-center gap-1.5 py-2">
+            <Skeleton className="shimmer h-[208px] w-[208px] rounded-full" />
+            <Skeleton className="shimmer h-3 w-40" />
           </div>
-          <div className="grid flex-1 gap-x-8 gap-y-4 sm:grid-cols-2">
+          <div className="grid grid-cols-2 gap-x-6 gap-y-4 border-t border-border pt-4 sm:grid-cols-4">
             {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="space-y-2">
+              <div key={i} className="space-y-1.5">
+                <Skeleton className="shimmer h-3 w-20" />
+                <Skeleton className="shimmer h-1 w-full rounded-full" />
                 <Skeleton className="shimmer h-3 w-24" />
-                <Skeleton className="shimmer h-2 w-full rounded-full" />
               </div>
             ))}
           </div>

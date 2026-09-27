@@ -209,7 +209,9 @@ export default async function TradeDetailPage({
               <div>
                 <CardTitle>Rule Evaluations</CardTitle>
                 <p className="mt-0.5 text-sm text-muted-foreground">
-                  This trade, graded against your rulebook.
+                  {failCount > 0
+                    ? `What went wrong here — ${failCount} of ${applicable} rules broken on this trade.`
+                    : "This trade, graded against your rulebook."}
                 </p>
               </div>
               {applicable > 0 && (
@@ -327,12 +329,24 @@ function EvalRow({
     : fail
       ? "bg-loss-muted text-loss"
       : "bg-surface-overlay text-muted-foreground";
-  const chipLabel = pass ? "Pass" : fail ? "Fail" : "N/A";
+  const chipLabel = pass ? "Pass" : fail ? "Broke it" : "N/A";
   const sevDot =
     severity === "high" ? "bg-loss" : severity === "medium" ? "bg-warning" : "bg-muted-foreground";
+  // A broken rule is the part of this page a trader has to actually read, so it
+  // gets the loss framing, a full-size sentence, and how much it matters.
+  const sevWords =
+    severity === "high"
+      ? "One of your high-severity rules"
+      : severity === "medium"
+        ? "A medium-severity rule"
+        : "A low-severity rule";
 
   return (
-    <div className="rounded-lg border border-border bg-surface-raised px-3 py-2.5">
+    <div
+      className={`rounded-lg border px-3 py-2.5 ${
+        fail ? "border-loss/30 bg-loss-muted/40" : "border-border bg-surface-raised"
+      }`}
+    >
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
           <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${sevDot}`} title={`${severity} severity`} />
@@ -344,7 +358,16 @@ function EvalRow({
           {chipLabel}
         </span>
       </div>
-      <p className="mt-1 text-2xs text-muted-foreground">{explanation}</p>
+      {fail ? (
+        <>
+          <p className="mt-1.5 text-sm leading-relaxed text-foreground">{explanation}</p>
+          <p className="mt-1 text-2xs uppercase tracking-wide text-muted-foreground">
+            {sevWords} — it pulled this trade&apos;s compliance score down.
+          </p>
+        </>
+      ) : (
+        <p className="mt-1 text-2xs text-muted-foreground">{explanation}</p>
+      )}
     </div>
   );
 }

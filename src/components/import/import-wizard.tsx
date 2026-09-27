@@ -149,6 +149,10 @@ function CsvImport({
       <Card className="lg:col-span-2">
         <CardHeader>
           <CardTitle>Upload a broker CSV</CardTitle>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            Your file is read in your browser. Nothing leaves this device until you press
+            Import, and we never ask for your broker password.
+          </p>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -198,7 +202,7 @@ function CsvImport({
                   {fileName ?? "Choose a .csv file"}
                 </p>
                 <p className="text-2xs text-muted-foreground">
-                  Read locally in your browser — nothing uploads until you hit Import.
+                  Read locally — nothing uploads until you press Import.
                 </p>
               </div>
               <input
