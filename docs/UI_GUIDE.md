@@ -42,8 +42,8 @@ override (`next-themes`, class strategy, wired in `src/app/layout.tsx` via
   follow the user's theme by design. This executes the approved redesign brief
   (`docs/redesign/DESIGN_BRIEF.md`): dark for tools you operate, light for pages
   you read. The landing sections live in `src/components/marketing/` (one file
-  per section); the page also loads Inter via `next/font` scoped to its own
-  subtree through the `--font-sans` variable — the app keeps the system stack.
+  per section); it uses the same system font stack as the app (no web-font
+  download, so builds need no internet).
 - New decorative elements (gradients, textures) get `print:hidden`.
 
 ### Token vocabulary

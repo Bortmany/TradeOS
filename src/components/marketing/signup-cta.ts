@@ -24,6 +24,9 @@ export interface SignupCtas {
   paidPlan: string;
   /** One plain sentence under the pricing heading, or null. */
   notice: string | null;
+  /** Show the free-trial / refund line under the pricing heading. Off when
+   *  sign-ups are closed, since nobody can start a trial then. */
+  showTrialTerms: boolean;
 }
 
 export function signupCtas(mode: SignupMode): SignupCtas {
@@ -36,6 +39,7 @@ export function signupCtas(mode: SignupMode): SignupCtas {
       freePlan: "Start free",
       paidPlan: "Start trial",
       notice: null,
+      showTrialTerms: true,
     };
   }
   if (mode === "invite") {
@@ -47,6 +51,7 @@ export function signupCtas(mode: SignupMode): SignupCtas {
       freePlan: "Join with invite",
       paidPlan: "Join with invite",
       notice: "TradeOS is invitation-only for now. Have a code? Use any button to join.",
+      showTrialTerms: true,
     };
   }
   return {
@@ -57,5 +62,6 @@ export function signupCtas(mode: SignupMode): SignupCtas {
     freePlan: "Sign-ups closed",
     paidPlan: "Sign-ups closed",
     notice: "We are not taking new accounts at the moment. Please check back later.",
+    showTrialTerms: false,
   };
 }

@@ -2,8 +2,9 @@
 
 // Interactive "grade this trade" demo for the landing hero. Pure client-side —
 // no network, no fake charts. The math is deliberately simple and visible:
-// the score starts at 100 and every broken rule subtracts its printed weight,
-// mirroring how the real (deterministic) discipline score behaves.
+// the score starts at 100 and every broken rule subtracts its printed weight.
+// It illustrates the idea only — the real discipline score blends four parts
+// (src/lib/discipline/score.ts), so the copy must not claim it is the same math.
 
 import { useEffect, useRef, useState } from "react";
 import { Check } from "lucide-react";
@@ -160,7 +161,8 @@ export function GradeDemo() {
 
       <p className="mt-4 text-2xs text-muted-foreground">
         Tick what you did. The score starts at 100 and each broken rule subtracts
-        its weight — the same deterministic, no-black-box math the app uses. A
+        its weight. It&apos;s a simplified version of the same idea the app uses — no
+        black box, every point explained. A
         green P&amp;L doesn&apos;t mean a green process.
       </p>
     </div>
