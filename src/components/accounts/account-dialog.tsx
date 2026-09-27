@@ -187,7 +187,7 @@ export function AccountDialog({
                       <button
                         type="button"
                         onClick={() => setColor(c)}
-                        aria-label={`Select color ${c}`}
+                        aria-label={`Select color ${COLOR_NAMES[c] ?? c}`}
                         className={`h-7 w-7 rounded-full ring-offset-2 ring-offset-background transition-all ${
                           color === c ? "ring-2 ring-ring" : "hover:scale-110"
                         }`}
