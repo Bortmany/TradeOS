@@ -16,12 +16,14 @@ export function Pricing({ ctas }: { ctas: SignupCtas }) {
             <h2 className="text-3xl font-semibold tracking-tight md:text-4xl">
               Priced like one good trade a month.
             </h2>
-            <p className="mt-3 text-muted-foreground">
-              14-day full-access free trial · no card required · cancel anytime.
-              Refunds, plainly: if it is not for you in the first 14 days, you pay nothing.
-            </p>
+            {ctas.showTrialTerms && (
+              <p className="mt-3 text-muted-foreground">
+                14-day full-access free trial · no card required · cancel anytime.
+                Refunds, plainly: if it is not for you in the first 14 days, you pay nothing.
+              </p>
+            )}
             {ctas.notice && (
-              <p className="mt-2 text-sm font-medium text-foreground">{ctas.notice}</p>
+              <p className="mt-3 text-sm font-medium text-foreground">{ctas.notice}</p>
             )}
           </div>
           <div className="mx-auto mt-12 grid max-w-5xl gap-5 md:grid-cols-3">

@@ -11,6 +11,7 @@ describe("home page sign-up buttons", () => {
     expect(c.freePlan).toBe("Start free");
     expect(c.paidPlan).toBe("Start trial");
     expect(c.notice).toBeNull();
+    expect(c.showTrialTerms).toBe(true);
   });
 
   it("invitation-only says an invite is needed and never says 'Start free'", () => {
@@ -21,12 +22,15 @@ describe("home page sign-up buttons", () => {
       expect(label).not.toMatch(/start free|free trial/i);
     }
     expect(c.notice).toMatch(/invitation-only/i);
+    expect(c.showTrialTerms).toBe(true);
   });
 
   it("closed sign-up never links to the register page", () => {
     const c = signupCtas("closed");
     expect(c.href).not.toBe("/register");
     expect(c.notice).toBeTruthy();
+    // Nobody can start a trial, so the free-trial line is hidden.
+    expect(c.showTrialTerms).toBe(false);
   });
 
   it("production with invite codes set shows invite wording", () => {
