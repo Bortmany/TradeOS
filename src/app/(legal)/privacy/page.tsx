@@ -13,7 +13,7 @@ export default function PrivacyPage() {
     <article className="space-y-8">
       <header>
         <h1 className="text-3xl font-semibold tracking-tight">Privacy Policy</h1>
-        <p className="mt-2 text-sm text-muted-foreground">Last updated: July 18, 2026</p>
+        <p className="mt-2 text-sm text-muted-foreground">Last updated: September 28, 2026</p>
       </header>
 
       <div className="rounded-lg border border-warning/40 bg-warning-muted p-4 text-sm">
@@ -39,10 +39,13 @@ export default function PrivacyPage() {
             quantities, times, fees, profit/loss), your trading accounts, CSV import
             history, your rulebooks and rules, prop-firm tracker settings, and the
             compliance scores, discipline snapshots and alerts computed from them.
+            If you use the Testing Portal: the price-data files you upload and the
+            strategy tests you save (their settings and results).
           </li>
           <li>
             <strong>Journal content</strong> — the notes, emotion tags and labels you attach
-            to trades, and the written answers you save in a weekly review.
+            to trades, the written answers you save in a weekly review, and any notes
+            you add to a saved strategy test.
           </li>
           <li>
             <strong>Broker connection (optional)</strong> — if you link a TopstepX account:
@@ -87,7 +90,9 @@ export default function PrivacyPage() {
         <ul className="list-disc space-y-1.5 pl-5">
           <li>
             <strong>Export</strong> — download a copy of your profile, trading accounts,
-            trades, rulebooks, prop-firm data and weekly reviews as a JSON file from
+            trades, rulebooks, prop-firm data, weekly reviews and saved strategy tests
+            (plus the name and date range of each uploaded price-data file) as a JSON
+            file from
             Settings → Data &amp; privacy. (Derived records the app computes for
             you — alerts, rule evaluations, score history and import logs — are
             not included, and broker connections are never exported because

@@ -1,8 +1,8 @@
 // TradeOS — data export. Returns everything the signed-in user has stored, as
 // one downloadable JSON file: profile (minus the password hash), trading
-// accounts, trades, rulebooks + rules, prop-firm trackers, and weekly
-// reviews. Broker
-// connections are deliberately NOT included — they hold the encrypted API key,
+// accounts, trades, rulebooks + rules, prop-firm trackers, weekly reviews,
+// backtest runs, and market datasets (details only, not the raw price bars).
+// Broker connections are deliberately NOT included — they hold the encrypted API key,
 // and broker credentials never leave the server in any form.
 
 import { NextResponse } from "next/server";
@@ -20,7 +20,16 @@ export const GET = withUser(async (user) => {
     );
   }
 
-  const [profile, accounts, trades, ruleBooks, propAccounts, weeklyReviews] = await Promise.all([
+  const [
+    profile,
+    accounts,
+    trades,
+    ruleBooks,
+    propAccounts,
+    weeklyReviews,
+    backtestRuns,
+    marketDatasets,
+  ] = await Promise.all([
     prisma.user.findUnique({
       where: { id: user.id },
       // Everything except passwordHash (never leaves the server).
@@ -49,6 +58,26 @@ export const GET = withUser(async (user) => {
     // The trader's own words from the guided weekly review — their writing, so
     // it belongs in their export.
     prisma.weeklyReview.findMany({ where: { userId: user.id }, orderBy: { weekStart: "asc" } }),
+    // Saved Testing Portal runs (settings, results and notes).
+    prisma.backtestRun.findMany({ where: { userId: user.id }, orderBy: { createdAt: "asc" } }),
+    // Details only — the candles column can be megabytes per dataset, and
+    // serializing every blob into one JSON response would exhaust memory.
+    // Candles are market prices the user uploaded, not personal data.
+    prisma.marketDataset.findMany({
+      where: { userId: user.id },
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        name: true,
+        symbol: true,
+        timeframe: true,
+        candleCount: true,
+        firstTime: true,
+        lastTime: true,
+        source: true,
+        createdAt: true,
+      },
+    }),
   ]);
 
   const filename = `tradeos-export-${new Date().toISOString().slice(0, 10)}.json`;
@@ -61,6 +90,8 @@ export const GET = withUser(async (user) => {
       ruleBooks,
       propAccounts,
       weeklyReviews,
+      backtestRuns,
+      marketDatasets,
     },
     { headers: { "Content-Disposition": `attachment; filename="${filename}"` } }
   );
