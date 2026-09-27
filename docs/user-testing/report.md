@@ -1,5 +1,7 @@
 # TradeOS — user-testing report (2026-09-07)
 
+> The screenshots referenced below are not stored in this repo (app screenshots stay out of git). They can be viewed on the original pull request, #18, on GitHub.
+
 **Verdict: Not ready** — six separate problems were found by one tester and then proved again by a second, independent tester. All six are serious (P1), and at least three of them sit right on the main path a customer walks every day: importing trades, reading the times on those trades, and pulling a report. The rule we apply is mechanical: three or more confirmed serious bugs on the core path means "Not ready". There were no catastrophic (P0) bugs, and nothing was lost or corrupted — the app is close, not broken.
 
 A first-time user today **can** sign up, add a trading account, drop in a broker CSV, watch every trade get graded against a rule they wrote themselves, and see a discipline score that shows its own working — that whole loop works on a desktop and every number in it adds up. What they **cannot** do is trust the clock (every trade time is shown four hours out, and the timezone setting in Settings does nothing), reach a report of the history they just imported (the reports page is stuck on today with no way to move the date), or reliably press the Import button on a phone (it is drawn underneath the bottom menu bar, so the tap lands on "Journal" instead and the chosen file is lost).
