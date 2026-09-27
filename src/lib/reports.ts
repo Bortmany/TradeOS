@@ -11,16 +11,16 @@ import "server-only";
 import { getTrades, getActiveRules } from "@/lib/data";
 import { computeMetrics, byStrategy, bySession } from "@/lib/analytics";
 import { evaluateTrades, etDayKey } from "@/lib/rules/engine";
+import type { RuleLike } from "@/lib/rules/engine";
+import { weekEndKey } from "@/lib/reviews";
+import { dailyPnlSeries, type DailyPnlPoint } from "@/lib/analytics/daily";
 import type { TradeRecord, PerformanceMetrics, BucketPerformance } from "@/lib/types";
 import { parseTags } from "@/lib/utils";
 
-export type ReportPeriod = "day" | "week" | "month";
+// Re-exported so existing imports from "@/lib/reports" keep working.
+export { dailyPnlSeries, type DailyPnlPoint };
 
-export interface DailyPnlPoint {
-  date: string; // ET calendar day, "YYYY-MM-DD"
-  pnl: number; // realized net P&L booked that day
-  trades: number; // closed trades that day
-}
+export type ReportPeriod = "day" | "week" | "month";
 
 export interface ComplianceSummary {
   adherencePct: number; // 0-100, pass / (pass + fail)
@@ -47,26 +47,6 @@ export interface ReportData {
   dailyPnl: DailyPnlPoint[];
   compliance: ComplianceSummary;
   emotions: EmotionSummary[];
-}
-
-/**
- * Buckets closed trades into ET calendar-day realized P&L points, sorted by
- * date ascending. Open trades (no exitTime) are ignored. Exported for reuse by
- * the analytics P&L calendar.
- */
-export function dailyPnlSeries(trades: TradeRecord[]): DailyPnlPoint[] {
-  const map = new Map<string, { pnl: number; trades: number }>();
-  for (const t of trades) {
-    if (t.exitTime === null) continue;
-    const date = etDayKey(t.entryTime);
-    const acc = map.get(date) ?? { pnl: 0, trades: 0 };
-    acc.pnl += t.pnl;
-    acc.trades += 1;
-    map.set(date, acc);
-  }
-  return Array.from(map.entries())
-    .map(([date, v]) => ({ date, pnl: v.pnl, trades: v.trades }))
-    .sort((a, b) => a.date.localeCompare(b.date));
 }
 
 /** Lower bound of the fetch window for a period (with a small buffer for `day`). */
@@ -101,6 +81,58 @@ export async function buildReport(
   const trades =
     period === "day" ? loaded.filter((t) => etDayKey(t.entryTime) === todayKey) : loaded;
 
+  return summarizeTrades(period, from, now, trades, rules);
+}
+
+/**
+ * The trades whose ET calendar day falls inside the Monday–Sunday week that
+ * starts at `weekKey` ("YYYY-MM-DD", a Monday). Pure — exported for tests.
+ */
+export function tradesInWeek(trades: TradeRecord[], weekKey: string): TradeRecord[] {
+  const endKey = weekEndKey(weekKey);
+  return trades.filter((t) => {
+    const day = etDayKey(t.entryTime);
+    return day >= weekKey && day <= endKey;
+  });
+}
+
+/**
+ * The report for one calendar week — Monday to Sunday in New York time — for
+ * any week, past or present. Used by the Weekly Review so the numbers always
+ * match the week named on the page, whatever the server clock says.
+ */
+export async function buildWeekReport(
+  userId: string,
+  weekKey: string,
+  accountId?: string
+): Promise<ReportData> {
+  const endKey = weekEndKey(weekKey);
+  // Fetch with a day of slack on each side (ET is 4–5h behind UTC), then keep
+  // exactly the trades whose ET calendar day is inside the week.
+  const fetchFrom = new Date(`${weekKey}T00:00:00.000Z`);
+  fetchFrom.setUTCDate(fetchFrom.getUTCDate() - 1);
+  const fetchTo = new Date(`${endKey}T00:00:00.000Z`);
+  fetchTo.setUTCDate(fetchTo.getUTCDate() + 2);
+
+  const [loaded, rules] = await Promise.all([
+    getTrades(userId, { from: fetchFrom, to: fetchTo, ...(accountId ? { accountId } : {}) }),
+    getActiveRules(userId),
+  ]);
+
+  // Midday UTC of the Monday / Sunday — reads as the right calendar date anywhere.
+  const from = new Date(`${weekKey}T12:00:00.000Z`);
+  const to = new Date(`${endKey}T12:00:00.000Z`);
+  return summarizeTrades("week", from, to, tradesInWeek(loaded, weekKey), rules);
+}
+
+/** Aggregates an already-filtered set of trades into the report payload. */
+function summarizeTrades(
+  period: ReportPeriod,
+  from: Date,
+  to: Date,
+  trades: TradeRecord[],
+  rules: RuleLike[]
+): ReportData {
   const closed = trades.filter((t) => t.exitTime !== null);
 
   // Best / worst by realized P&L (closed only).
@@ -149,7 +181,7 @@ export async function buildReport(
   return {
     period,
     from,
-    to: now,
+    to,
     tradeCount: trades.length,
     metrics: computeMetrics(closed),
     byStrategy: byStrategy(closed),

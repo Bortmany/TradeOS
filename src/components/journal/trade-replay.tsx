@@ -3,6 +3,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Play, Pause, RotateCcw, Gauge } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { pointMultiplier } from "@/lib/ingestion/symbols";
 import { clamp, formatCurrency, formatNumber, pnlColor } from "@/lib/utils";
 import type { Side } from "@/lib/types";
@@ -453,28 +459,50 @@ export function TradeReplay({
         </Readout>
       </div>
 
-      {/* Controls */}
-      <div className="mt-4 flex flex-wrap items-center gap-3">
-        <Button size="icon" variant="secondary" onClick={onPlayPause} aria-label={playing ? "Pause" : "Play"}>
-          {playing ? <Pause /> : <Play />}
-        </Button>
-        <Button size="icon" variant="outline" onClick={onRestart} aria-label="Restart">
-          <RotateCcw />
-        </Button>
-        <input
-          type="range"
-          min={0}
-          max={1000}
-          value={Math.round(progress * 1000)}
-          onChange={(e) => onSeek(Number(e.target.value))}
-          aria-label="Seek"
-          className="h-1.5 flex-1 cursor-pointer appearance-none rounded-full bg-surface-overlay accent-primary"
-        />
-        <Button size="sm" variant="outline" onClick={cycleSpeed} className="tabular" aria-label="Playback speed">
-          <Gauge />
-          {speed}x
-        </Button>
-      </div>
+      {/* Controls — each icon-only control gets a hover hint. */}
+      <TooltipProvider delayDuration={300}>
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button size="icon" variant="secondary" onClick={onPlayPause} aria-label={playing ? "Pause" : "Play"}>
+                {playing ? <Pause /> : <Play />}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{playing ? "Pause" : "Play"}</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button size="icon" variant="outline" onClick={onRestart} aria-label="Restart">
+                <RotateCcw />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Restart</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <input
+                type="range"
+                min={0}
+                max={1000}
+                value={Math.round(progress * 1000)}
+                onChange={(e) => onSeek(Number(e.target.value))}
+                aria-label="Seek"
+                className="h-1.5 flex-1 cursor-pointer appearance-none rounded-full bg-surface-overlay accent-primary"
+              />
+            </TooltipTrigger>
+            <TooltipContent>Seek</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button size="sm" variant="outline" onClick={cycleSpeed} className="tabular" aria-label="Playback speed">
+                <Gauge />
+                {speed}x
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Playback speed</TooltipContent>
+          </Tooltip>
+        </div>
+      </TooltipProvider>
 
       {/* Legend / disclaimer */}
       <div className="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-2xs text-muted-foreground">

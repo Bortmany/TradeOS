@@ -1,8 +1,7 @@
 import { redirect } from "next/navigation";
 import { BarChart3, TrendingDown } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth";
-import { getAccounts, getDashboardData, getTrades } from "@/lib/data";
-import { dailyPnlSeries } from "@/lib/reports";
+import { getAccounts, getDashboardData } from "@/lib/data";
 import { PageHeader } from "@/components/page-header";
 import { AccountSwitcher } from "@/components/account-switcher";
 import { BucketBar } from "@/components/charts/bucket-bar";
@@ -37,15 +36,15 @@ export default async function AnalyticsPage({
   if (!user) redirect("/login");
   const { account } = await searchParams;
 
-  const [accounts, data, trades] = await Promise.all([
+  // getDashboardData loads the trades once and hands back everything this page
+  // needs (including the daily P&L calendar) — no second trade load.
+  const [accounts, data] = await Promise.all([
     getAccounts(user.id),
     getDashboardData(user.id, account),
-    getTrades(user.id, account ? { accountId: account } : {}),
   ]);
 
   const activeAccount = account ? accounts.find((a) => a.id === account) : null;
   const m = data.metrics;
-  const dailyPnl = dailyPnlSeries(trades);
 
   if (data.tradeCount === 0) {
     return (
@@ -172,7 +171,7 @@ export default async function AnalyticsPage({
       </Card>
 
       {/* Time-based edge */}
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <Card>
           <CardHeader>
             <CardTitle>By Hour</CardTitle>
@@ -210,7 +209,7 @@ export default async function AnalyticsPage({
             Which playbooks actually pay
           </p>
         </CardHeader>
-        <CardContent className="grid gap-6 lg:grid-cols-2">
+        <CardContent className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <BucketBar data={data.byStrategy} layout="vertical" height={220} />
           <BreakdownTable rows={data.byStrategy} label="Strategy" />
         </CardContent>
@@ -238,7 +237,7 @@ export default async function AnalyticsPage({
           </p>
         </CardHeader>
         <CardContent>
-          <PnlCalendar data={dailyPnl} />
+          <PnlCalendar data={data.dailyPnl} />
         </CardContent>
       </Card>
     </div>
@@ -261,31 +260,57 @@ function BreakdownTable({
     );
   }
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>{label}</TableHead>
-          <TableHead className="text-right">Trades</TableHead>
-          <TableHead className="text-right">Win %</TableHead>
-          <TableHead className="text-right">Net P&L</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
+    <>
+      {/* Phone layout: stacked rows instead of a sideways-scrolling table. */}
+      <div className="sm:hidden">
         {sorted.map((r) => (
-          <TableRow key={r.key}>
-            <TableCell className="font-medium">{r.key}</TableCell>
-            <TableCell className="text-right tabular text-muted-foreground">
-              {r.tradeCount}
-            </TableCell>
-            <TableCell className="text-right tabular">
-              {formatPercent(r.winRate)}
-            </TableCell>
-            <TableCell className={`text-right font-semibold tabular ${pnlColor(r.netPnl)}`}>
+          <div
+            key={r.key}
+            className="flex items-baseline justify-between gap-3 border-b border-border py-3 last:border-0"
+          >
+            <div className="min-w-0">
+              <p className="truncate font-medium">{r.key}</p>
+              <p className="text-xs tabular text-muted-foreground">
+                {r.tradeCount} {r.tradeCount === 1 ? "trade" : "trades"}
+                <span className="mx-1.5 text-muted-foreground/50">·</span>
+                {formatPercent(r.winRate)} win
+              </p>
+            </div>
+            <span className={`shrink-0 font-semibold tabular ${pnlColor(r.netPnl)}`}>
               {formatCurrency(r.netPnl, { sign: true })}
-            </TableCell>
-          </TableRow>
+            </span>
+          </div>
         ))}
-      </TableBody>
-    </Table>
+      </div>
+      {/* sm and up: the full table, unchanged. */}
+      <div className="hidden sm:block">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>{label}</TableHead>
+              <TableHead className="text-right">Trades</TableHead>
+              <TableHead className="text-right">Win %</TableHead>
+              <TableHead className="text-right">Net P&L</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {sorted.map((r) => (
+              <TableRow key={r.key}>
+                <TableCell className="font-medium">{r.key}</TableCell>
+                <TableCell className="text-right tabular text-muted-foreground">
+                  {r.tradeCount}
+                </TableCell>
+                <TableCell className="text-right tabular">
+                  {formatPercent(r.winRate)}
+                </TableCell>
+                <TableCell className={`text-right font-semibold tabular ${pnlColor(r.netPnl)}`}>
+                  {formatCurrency(r.netPnl, { sign: true })}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </>
   );
 }

@@ -15,6 +15,7 @@ import {
   byStrategy,
   bySymbol,
 } from "@/lib/analytics";
+import { dailyPnlSeries } from "@/lib/analytics/daily";
 import { evaluateTrades, type RuleLike, type EvalResult } from "@/lib/rules/engine";
 import { parseRuleConfig } from "@/lib/rules/config";
 import { computeDisciplineScore } from "@/lib/discipline/score";
@@ -127,6 +128,46 @@ export interface DashboardData {
   tradeCount: number;
   openCount: number;
   evaluations: Record<string, EvalResult[]>;
+  /** Realized P&L per ET calendar day, oldest first (the analytics P&L calendar). */
+  dailyPnl: ReturnType<typeof dailyPnlSeries>;
+  /** Up to 5 failed rule checks, newest trade first, with the trade they belong to. */
+  recentViolations: RecentViolation[];
+}
+
+/** One failed rule check plus enough of its trade to read like a journal entry. */
+export interface RecentViolation extends EvalResult {
+  tradeId: string;
+  symbol: string;
+  entryTime: Date;
+  pnl: number;
+  isOpen: boolean;
+}
+
+/**
+ * The newest failed rule checks across `trades` (which must already be sorted
+ * newest first, as getTrades returns them), capped at `limit`. Pure.
+ */
+export function recentViolationsOf(
+  trades: TradeRecord[],
+  evaluations: Record<string, EvalResult[]>,
+  limit = 5
+): RecentViolation[] {
+  const out: RecentViolation[] = [];
+  for (const t of trades) {
+    for (const e of evaluations[t.id] ?? []) {
+      if (e.status !== "fail") continue;
+      out.push({
+        tradeId: t.id,
+        symbol: t.symbol,
+        entryTime: t.entryTime,
+        pnl: t.pnl,
+        isOpen: t.exitTime === null,
+        ...e,
+      });
+      if (out.length >= limit) return out;
+    }
+  }
+  return out;
 }
 
 export async function getDashboardData(
@@ -157,6 +198,8 @@ export async function getDashboardData(
     tradeCount: trades.length,
     openCount: trades.length - closed.length,
     evaluations,
+    dailyPnl: dailyPnlSeries(trades),
+    recentViolations: recentViolationsOf(trades, evaluations),
   };
 }
 

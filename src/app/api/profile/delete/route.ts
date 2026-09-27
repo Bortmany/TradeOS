@@ -9,6 +9,7 @@ import { z } from "zod";
 import { withUser, verifyPassword, clearSessionCookie } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { rateLimit } from "@/lib/rate-limit";
+import { apiErrorResponse } from "@/lib/api-error";
 
 const schema = z.object({ password: z.string().min(1) });
 
@@ -39,12 +40,10 @@ export const POST = withUser(async (user, req: Request) => {
 
     return NextResponse.json({ ok: true });
   } catch (err) {
-    const message =
-      err instanceof z.ZodError
-        ? "Please enter your password to confirm."
-        : err instanceof Error
-          ? err.message
-          : "Failed.";
-    return NextResponse.json({ ok: false, error: message }, { status: 400 });
+    // Shared helper keeps raw error text off the client and turns a bad-JSON
+    // body into a clean 400.
+    return apiErrorResponse(err, {
+      validationMessage: "Please enter your password to confirm.",
+    });
   }
 });

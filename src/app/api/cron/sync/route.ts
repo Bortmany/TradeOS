@@ -1,29 +1,38 @@
 import { NextResponse } from "next/server";
+import { timingSafeEqual } from "node:crypto";
 import { prisma } from "@/lib/db";
 import { syncConnection } from "@/lib/connectors/sync";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60; // Vercel function budget for larger batches
 
-// Scheduled auto-sync for all broker connections. Invoked by Vercel Cron (see
-// vercel.json) or any external scheduler:
+// Constant-time string comparison — avoids leaking how much of the secret
+// matched through response timing. Returns false on any length mismatch.
+function safeEqual(a: string, b: string): boolean {
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  if (ab.length !== bb.length) return false;
+  return timingSafeEqual(ab, bb);
+}
+
+// Scheduled auto-sync for all broker connections. This endpoint iterates EVERY
+// user's connections, so it must never be open. Invoked by the platform cron or
+// any external scheduler:
 //   curl -H "Authorization: Bearer $CRON_SECRET" https://<domain>/api/cron/sync
 //
-// Auth: requires CRON_SECRET in production (Vercel Cron sends it automatically
-// when the env var is set). Without the secret configured, the endpoint only
-// works in development so local testing stays frictionless.
+// Auth: CRON_SECRET is REQUIRED in every environment. If it isn't configured we
+// refuse (503) and never touch the database — there is no "open in dev" path.
 export async function GET(req: Request) {
   const secret = process.env.CRON_SECRET;
-  const auth = req.headers.get("authorization");
-  if (secret) {
-    if (auth !== `Bearer ${secret}`) {
-      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-    }
-  } else if (process.env.NODE_ENV === "production") {
+  if (!secret) {
     return NextResponse.json(
       { ok: false, error: "CRON_SECRET is not configured." },
       { status: 503 }
     );
+  }
+  const auth = req.headers.get("authorization") ?? "";
+  if (!safeEqual(auth, `Bearer ${secret}`)) {
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   const connections = await prisma.brokerConnection.findMany({

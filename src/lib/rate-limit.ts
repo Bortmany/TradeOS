@@ -1,5 +1,8 @@
 import "server-only";
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
+import { createHmac, randomUUID } from "node:crypto";
+import { authSecret } from "@/lib/auth";
 
 // A tiny in-memory rate limiter — no Redis or outside service needed.
 //
@@ -37,6 +40,19 @@ if (process.env.NODE_ENV !== "production") {
   globalForRateLimit.rateLimitStore = store;
 }
 
+// Loud one-time startup warning: if we're running in production WITHOUT a
+// trusted proxy configured, anonymous rate limiting leans entirely on the
+// signed per-browser cookie (a determined bot that drops cookies lands in the
+// shared "unknown" bucket). On a real deployment behind Railway you almost
+// always want TRUST_PROXY="true" so limits key off the real visitor IP.
+if (process.env.NODE_ENV === "production" && !isProxyTrusted()) {
+  console.warn(
+    "[rate-limit] TRUST_PROXY is OFF in production. Anonymous limits fall back to " +
+      "a signed per-browser cookie. Set TRUST_PROXY=\"true\" (and PROXY_HOPS) so " +
+      "per-IP limits use the real visitor address. See .env.example."
+  );
+}
+
 export interface RateLimitResult {
   ok: boolean; // false means the caller has gone over the limit
   retryAfter: number; // seconds until they can try again
@@ -69,19 +85,196 @@ export function rateLimit(
   return { ok: true, retryAfter: 0 };
 }
 
-// Best-effort visitor IP. Behind Railway's proxy the real IP is the first
-// entry of the x-forwarded-for header; fall back sensibly otherwise.
+// Best-effort visitor IP used to key anonymous rate limits.
+//
+// SECURITY: `x-forwarded-for` is set by the CLIENT unless a trusted proxy sits
+// in front of the app and overwrites/appends it. Trusting the first hop blindly
+// let an attacker rotate that header to get a fresh limit bucket every request
+// and walk straight past the login/register limits. So we only read forwarded
+// headers when the deployment explicitly says a trusted proxy is in front:
+//
+//   TRUST_PROXY=true        — turn on forwarded-header trust (set this on Railway)
+//   PROXY_HOPS=1            — how many proxies you run; we take the address the
+//                            outermost trusted proxy saw (the Nth entry from the
+//                            right of x-forwarded-for). Defaults to 1.
+//
+// With trust OFF (the default, and how local dev runs) forwarded headers are
+// ignored entirely — a spoofed X-Forwarded-For can no longer mint new buckets.
 export function clientIp(req: Request): string {
-  const forwarded = req.headers.get("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0]!.trim();
-  return req.headers.get("x-real-ip")?.trim() || "unknown";
+  if (isProxyTrusted()) {
+    const forwarded = req.headers.get("x-forwarded-for");
+    if (forwarded) {
+      const hops = forwarded
+        .split(",")
+        .map((h) => h.trim())
+        .filter(Boolean);
+      if (hops.length > 0) {
+        const n = proxyHops();
+        // Take the Nth hop from the right — the IP the outermost trusted proxy
+        // actually observed. Anything further left is client-controlled.
+        const idx = Math.max(0, hops.length - n);
+        return hops[idx]!;
+      }
+    }
+    const real = req.headers.get("x-real-ip")?.trim();
+    if (real) return real;
+  }
+  // Untrusted: never key off a header the caller can forge. Route handlers don't
+  // get the raw socket address, so this pure helper can't tell callers apart —
+  // use `anonymousRateKey()` below, which gives each browser its own bucket via
+  // a signed cookie. Kept for the trusted-proxy path and its unit tests.
+  return "direct";
+}
+
+// ── Per-browser key for ANONYMOUS traffic (login/register) ───────────────────
+//
+// The problem: with TRUST_PROXY off (the default), `clientIp()` can't tell one
+// anonymous visitor from another, so every logged-out request would share a
+// SINGLE bucket. That turns the login/register limiter into a self-inflicted
+// denial of service — one bot could exhaust the shared bucket and lock every
+// real visitor out.
+//
+// The fix: when the proxy is NOT trusted, give each browser a stable id in a
+// signed, httpOnly cookie (HMAC'd with AUTH_SECRET so a client can't forge or
+// borrow another browser's id) and key the anonymous limiter on that. The cookie
+// is minted on first contact; only that very first, pre-cookie request falls
+// back to the shared "unknown" bucket — every request after it carries the id.
+// When TRUST_PROXY/PROXY_HOPS is set we key on the real IP instead (via
+// `clientIp`). The separate per-EMAIL login limiter still protects individual
+// accounts no matter what an attacker does with cookies.
+const RL_COOKIE = "tradeos_rl";
+
+function signBrowserId(id: string): string {
+  const mac = createHmac("sha256", authSecret()).update(id).digest("base64url");
+  return `${id}.${mac}`;
+}
+
+// Returns the embedded id only if the signature matches — otherwise null.
+function verifyBrowserId(value: string): string | null {
+  const dot = value.lastIndexOf(".");
+  if (dot <= 0) return null;
+  const id = value.slice(0, dot);
+  const mac = value.slice(dot + 1);
+  const expected = createHmac("sha256", authSecret()).update(id).digest("base64url");
+  // Constant-time compare so a bad signature can't be probed byte by byte.
+  if (mac.length !== expected.length) return null;
+  let diff = 0;
+  for (let i = 0; i < mac.length; i++) diff |= mac.charCodeAt(i) ^ expected.charCodeAt(i);
+  return diff === 0 ? id : null;
+}
+
+// ── Real socket IP (server-stamped, never client-set) ────────────────────────
+//
+// The name of an INTERNAL header that carries the caller's true TCP peer address.
+// src/instrumentation-node.ts subscribes to Node's `diagnostics_channel` and
+// stamps the real `socket.remoteAddress` onto this header on EVERY incoming
+// request, BEFORE Next.js — or any client-controlled code — reads it. That stamp
+// unconditionally OVERWRITES whatever a caller tried to send under this name, so
+// unlike `x-forwarded-for` it can't be spoofed. It is a server-to-server signal;
+// never treat it as trusted in a context that didn't go through that subscriber.
+export const SOCKET_IP_HEADER = "x-tradeos-internal-socket-ip";
+
+// Best-effort real TCP peer address of the caller, used to key anonymous limits
+// for a client that never keeps our cookie. Unlike `x-forwarded-for` the socket
+// address can't be forged by the client, and unlike a freshly minted id it's
+// STABLE for the life of the connection — so a cookie-dropping flood can't mint a
+// brand-new limit bucket on every request.
+//
+// The reliable source is SOCKET_IP_HEADER, stamped by the diagnostics-channel
+// subscriber in src/instrumentation-node.ts. Next.js's web `Request` never
+// exposes the raw socket in `next start`, so the old `req.socket.remoteAddress`
+// read returned nothing in production and every cookie-less caller collapsed into
+// one shared "anon:unknown" bucket (a site-wide login/register DoS). We now read
+// the stamped header first; the socket-object read is kept only as a fallback for
+// an exotic custom Node server. Returns `undefined` when neither is present (e.g.
+// a bare Request built in a unit test that never hit the real HTTP server).
+export function socketAddress(req: Request): string | undefined {
+  const stamped = req.headers.get(SOCKET_IP_HEADER)?.trim();
+  if (stamped) return stamped;
+
+  const holder = req as unknown as {
+    socket?: { remoteAddress?: unknown };
+    ip?: unknown;
+  };
+  const candidate =
+    (typeof holder.socket?.remoteAddress === "string" && holder.socket.remoteAddress) ||
+    (typeof holder.ip === "string" && holder.ip) ||
+    "";
+  const trimmed = candidate.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+export async function anonymousRateKey(
+  req: Request,
+  socketIp?: string
+): Promise<string> {
+  // Behind a trusted proxy we know the real visitor IP — use it directly.
+  if (isProxyTrusted()) return clientIp(req);
+
+  // The stable per-connection fallback for a cookie-less caller: the real TCP
+  // socket address. NOT a freshly minted per-request id (that gave a cookie-less
+  // client a brand-new bucket every request, so register/login were effectively
+  // unlimited) and NOT a single shared "unknown" literal (that let one bot DoS
+  // every cookie-less visitor). Only when no socket address is available at all
+  // do we share one bucket as a last resort.
+  const sock = (socketIp ?? "").trim();
+  const socketKey = sock ? `anon:sock:${sock}` : "anon:unknown";
+
+  // Untrusted: prefer the signed per-browser cookie so real browsers each get
+  // their own (finer-grained) bucket.
+  try {
+    const jar = await cookies();
+    const existing = jar.get(RL_COOKIE)?.value;
+    if (existing) {
+      const id = verifyBrowserId(existing);
+      if (id) return `anon:${id}`;
+    }
+    // Cookie-less (or a tampered/absent cookie): set the cookie so a browser that
+    // DOES persist it upgrades to its own bucket next time — but key THIS request
+    // on the stable socket address, never on the fresh id we just minted.
+    const id = randomUUID();
+    jar.set(RL_COOKIE, signBrowserId(id), {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 365, // one year
+    });
+    return socketKey;
+  } catch {
+    // No request/cookie context (or cookie writes unavailable) — the socket key
+    // still bounds the caller; only when neither is available do we share.
+    return socketKey;
+  }
+}
+
+// Forget a key's bucket entirely — used to clear a per-account failure counter
+// after a SUCCESSFUL login so a few earlier wrong guesses don't linger against a
+// legitimate user.
+export function resetRateLimit(key: string): void {
+  store.delete(key);
+}
+
+function isProxyTrusted(): boolean {
+  return process.env.TRUST_PROXY === "true" || proxyHopsRaw() > 0;
+}
+
+function proxyHopsRaw(): number {
+  const n = Number(process.env.PROXY_HOPS);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function proxyHops(): number {
+  const n = proxyHopsRaw();
+  return n > 0 ? Math.floor(n) : 1;
 }
 
 // ── Per-user limiting for authed mutation endpoints ──────────────────────────
 //
 // Sensible presets. Most write endpoints are cheap, so they get a generous
 // per-minute allowance; the ones that reach out to a broker's API (connect /
-// sync) or to Stripe are tighter, because each call is slow and/or costs money.
+// sync) or to the payment provider are tighter, because each call is slow
+// and/or costs money.
 export const USER_WRITE_LIMIT = { limit: 60, windowMs: 60_000 } as const; // 60/min
 export const USER_EXTERNAL_LIMIT = { limit: 10, windowMs: 60_000 } as const; // 10/min
 

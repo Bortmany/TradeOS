@@ -7,24 +7,87 @@ import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  EMAIL_ERROR,
+  EMAIL_EXAMPLE,
+  NAME_EXAMPLE,
+  isPossibleEmail,
+} from "@/lib/validation";
 
-export function AuthForm({ mode }: { mode: "login" | "register" }) {
+/** Which box to outline in red, when the message says so. */
+type ErrorField = "email" | "password" | "inviteCode" | "both" | null;
+
+function fieldForError(message: string): ErrorField {
+  const m = message.toLowerCase();
+  if (m.includes("already exists")) return "email";
+  if (m.includes("invalid email or password")) return "both";
+  if (m.includes("invite code")) return "inviteCode";
+  if (m.includes("password")) return "password";
+  if (m.includes("email")) return "email";
+  // Rate limits, network trouble and the like aren't any one field's fault.
+  return null;
+}
+
+export function AuthForm({
+  mode,
+  inviteRequired = false,
+}: {
+  mode: "login" | "register";
+  /** Sign-up is invitation-only: show the invite code box and send it along. */
+  inviteRequired?: boolean;
+}) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorField, setErrorField] = useState<ErrorField>(null);
   const isRegister = mode === "register";
+
+  // The moment the user starts fixing things, drop the red state — but an
+  // email complaint only clears when the EMAIL box is edited, so typing a
+  // password doesn't wipe the message the user still needs.
+  function clearError(field?: "email" | "password" | "inviteCode") {
+    if (!error) return;
+    if (errorField === "email" && field === "password") return;
+    setError(null);
+    setErrorField(null);
+  }
+
+  // Catch an impossible address while the user is still looking at the box.
+  function checkEmail(value: string) {
+    if (value && !isPossibleEmail(value)) {
+      setError(EMAIL_ERROR);
+      setErrorField("email");
+    }
+  }
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
-    setLoading(true);
+    setErrorField(null);
     const form = new FormData(e.currentTarget);
     const payload = {
       email: String(form.get("email") ?? ""),
       password: String(form.get("password") ?? ""),
       ...(isRegister ? { displayName: String(form.get("displayName") ?? "") } : {}),
+      ...(isRegister && inviteRequired
+        ? { inviteCode: String(form.get("inviteCode") ?? "").trim() }
+        : {}),
     };
 
+    if (isRegister && inviteRequired && !payload.inviteCode) {
+      setError("Enter your invite code to continue.");
+      setErrorField("inviteCode");
+      return;
+    }
+
+    // Never send an address that can't exist — same rule the server applies.
+    if (!isPossibleEmail(payload.email)) {
+      setError(EMAIL_ERROR);
+      setErrorField("email");
+      return;
+    }
+
+    setLoading(true);
     try {
       const res = await fetch(`/api/auth/${mode}`, {
         method: "POST",
@@ -36,7 +99,9 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
       router.push("/dashboard");
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      const message = err instanceof Error ? err.message : "Something went wrong.";
+      setError(message);
+      setErrorField(fieldForError(message));
       setLoading(false);
     }
   }
@@ -53,11 +118,18 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
             : "Sign in to your trading desk."}
         </p>
 
-        <form onSubmit={onSubmit} className="mt-6 space-y-4">
+        {/* noValidate: our own plain-English messages do the talking —
+            without it the browser's built-in bubble pre-empts them. */}
+        <form onSubmit={onSubmit} noValidate className="mt-6 space-y-4">
           {isRegister && (
             <div className="space-y-1.5">
               <Label htmlFor="displayName">Name</Label>
-              <Input id="displayName" name="displayName" placeholder="Your name" autoComplete="name" />
+              <Input
+                id="displayName"
+                name="displayName"
+                placeholder={NAME_EXAMPLE}
+                autoComplete="name"
+              />
             </div>
           )}
           <div className="space-y-1.5">
@@ -67,9 +139,27 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
               name="email"
               type="email"
               required
-              placeholder="you@email.com"
+              placeholder={EMAIL_EXAMPLE}
               autoComplete="email"
+              onChange={() => clearError("email")}
+              onBlur={(e) => checkEmail(e.currentTarget.value)}
+              aria-invalid={errorField === "email" || errorField === "both" || undefined}
+              aria-describedby={
+                errorField === "email" || errorField === "both" ? "auth-form-error" : undefined
+              }
+              className={
+                errorField === "email" || errorField === "both" ? "border-loss" : undefined
+              }
             />
+            {error && errorField === "email" && (
+              <p
+                id="auth-form-error"
+                role="alert"
+                className="rounded-md border border-loss/30 bg-loss-muted px-3 py-2 text-sm text-loss"
+              >
+                {error}
+              </p>
+            )}
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="password">Password</Label>
@@ -81,16 +171,49 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
               minLength={isRegister ? 8 : undefined}
               placeholder={isRegister ? "At least 8 characters" : "••••••••"}
               autoComplete={isRegister ? "new-password" : "current-password"}
+              onChange={() => clearError("password")}
+              aria-invalid={errorField === "password" || errorField === "both" || undefined}
+              aria-describedby={
+                errorField === "password" || errorField === "both" ? "auth-form-error" : undefined
+              }
+              className={
+                errorField === "password" || errorField === "both" ? "border-loss" : undefined
+              }
             />
           </div>
+          {isRegister && inviteRequired && (
+            <div className="space-y-1.5">
+              <Label htmlFor="inviteCode">Invite code</Label>
+              <Input
+                id="inviteCode"
+                name="inviteCode"
+                required
+                placeholder="e.g. TRADE-2026-ABCD"
+                autoComplete="off"
+                autoCapitalize="off"
+                spellCheck={false}
+                onChange={() => clearError("inviteCode")}
+                aria-invalid={errorField === "inviteCode" || undefined}
+                aria-describedby={errorField === "inviteCode" ? "auth-form-error" : "invite-code-note"}
+                className={errorField === "inviteCode" ? "border-loss" : undefined}
+              />
+              <p id="invite-code-note" className="text-xs text-muted-foreground">
+                Sign-up is by invitation for now — enter the code you were given.
+              </p>
+            </div>
+          )}
 
-          {error && (
-            <p className="rounded-md border border-loss/30 bg-loss-muted px-3 py-2 text-sm text-loss">
+          {error && errorField !== "email" && (
+            <p
+              id="auth-form-error"
+              role="alert"
+              className="rounded-md border border-loss/30 bg-loss-muted px-3 py-2 text-sm text-loss"
+            >
               {error}
             </p>
           )}
 
-          <Button type="submit" className="w-full" disabled={loading}>
+          <Button type="submit" size="lg" className="w-full" disabled={loading}>
             {loading && <Loader2 className="h-4 w-4 animate-spin" />}
             {isRegister ? "Create account" : "Sign in"}
           </Button>

@@ -2,8 +2,9 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GradeDemo } from "@/components/marketing/grade-demo";
+import type { SignupCtas } from "@/components/marketing/signup-cta";
 
-export function Hero() {
+export function Hero({ ctas }: { ctas: SignupCtas }) {
   return (
     <section className="relative overflow-hidden border-b border-border">
       <div className="absolute inset-0 grid-texture opacity-50 print:hidden" />
@@ -24,16 +25,19 @@ export function Hero() {
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <Button asChild size="lg" className="gap-2">
-                <Link href="/register">
-                  Start 14-day free trial <ArrowRight className="h-4 w-4" />
+                <Link href={ctas.href}>
+                  {ctas.primary} <ArrowRight className="h-4 w-4" />
                 </Link>
               </Button>
-              <Button asChild size="lg" variant="secondary">
-                <Link href="/login">Explore the demo desk</Link>
-              </Button>
+              {ctas.mode !== "closed" && (
+                <Button asChild size="lg" variant="secondary">
+                  <Link href="/login">Explore the demo desk</Link>
+                </Button>
+              )}
             </div>
             <p className="mt-3 text-xs text-muted-foreground">
-              No card required · Import from Topstep, Tradovate, NinjaTrader, Rithmic &amp; IBKR
+              {ctas.notice ?? "No card required"} · Import from Topstep, Tradovate,
+              NinjaTrader, Rithmic &amp; IBKR
             </p>
           </div>
 

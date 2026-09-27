@@ -33,7 +33,7 @@ export default function AppLoading() {
         ))}
       </div>
       {/* Chart + side panel */}
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <CardSkeleton className="h-80 w-full lg:col-span-2" />
         <CardSkeleton className="h-80 w-full" />
       </div>

@@ -98,8 +98,11 @@ Registry + orchestrator in `index.ts`:
 - `detectAdapter(headers): BrokerAdapter | null`
 - `ingestCsv(text: string, brokerKey?: Broker): { broker: Broker;
    trades: NormalizedTrade[]; skipped: number; errors: string[] }`
-Validate each row with `NormalizedTradeSchema`. Compute `pnl` when the file
-lacks it: long = (exit−entry)×qty×mult − fees; short = (entry−exit)×qty×mult − fees;
+Validate each row with `NormalizedTradeSchema`. Every numeric field is `.finite()`
+and bounded (`MAX_TRADE_PRICE`/`MAX_TRADE_QUANTITY`/`MAX_TRADE_FEES`/`MAX_TRADE_PNL`
+in `src/lib/types.ts`) so an overflow row that computes to `Infinity` is rejected
+and reported as a row error, never silently dropped at insert time. Compute `pnl`
+when the file lacks it: long = (exit−entry)×qty×mult − fees; short = (entry−exit)×qty×mult − fees;
 use a per-symbol point multiplier table (ES=50, MES=5, NQ=20, MNQ=2, default 1)
 in a `symbols.ts` helper; equities default mult 1. `generic` maps common column
 names (symbol/ticker, side/direction, qty/quantity/size, entry/exit price, times).

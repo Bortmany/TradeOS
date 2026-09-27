@@ -6,6 +6,12 @@
 
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
+    // Stamp the real TCP peer address onto an internal header for every request
+    // (via Node's diagnostics_channel) so the anonymous rate limiter can key a
+    // cookie-less caller on its true source IP instead of the shared bucket.
+    const { subscribeSocketIpDiagnostics } = await import("./instrumentation-node");
+    await subscribeSocketIpDiagnostics();
+
     // Error tracking — DORMANT until keyed. With no SENTRY_DSN set, nothing is
     // imported or initialized, so the SDK has zero effect on a fresh install.
     if (process.env.SENTRY_DSN) {

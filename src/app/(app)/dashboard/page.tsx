@@ -26,6 +26,7 @@ import {
   pnlColor,
   formatDuration,
   formatDateTime,
+  formatDate,
 } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -78,12 +79,10 @@ export default async function DashboardPage({
 
   const startingBalance = activeAccount?.startingBalance ?? 0;
 
-  // Flatten failing evaluations across trades for the "recent violations" feed.
-  const violations = Object.entries(data.evaluations)
-    .flatMap(([tradeId, evs]) =>
-      evs.filter((e) => e.status === "fail").map((e) => ({ tradeId, ...e }))
-    )
-    .slice(0, 6);
+  // Failing evaluations, newest trade first, carrying enough of the trade for the
+  // feed to read like a journal entry — built from the same trades the rest of
+  // the dashboard uses, so nothing is loaded twice.
+  const violations = data.recentViolations;
 
   return (
     <div className="container max-w-7xl space-y-6 py-6">
@@ -98,30 +97,34 @@ export default async function DashboardPage({
 
       {/* Discipline hero — the score is the product's anchor metric */}
       <Card>
-        <CardHeader className="flex-row items-center justify-between">
-          <div>
+        <CardHeader className="flex-row items-center justify-between gap-3">
+          <div className="min-w-0">
             <CardTitle>Discipline Score</CardTitle>
             <p className="mt-0.5 text-sm text-muted-foreground">
               Every trade graded against your own rulebook — deterministic, no black box.
             </p>
           </div>
-          <Button asChild variant="outline" size="sm">
+          <Button asChild variant="outline" size="lg" className="shrink-0 px-4">
             <Link href="/rules">Rulebook</Link>
           </Button>
         </CardHeader>
-        <CardContent className="flex flex-col gap-6 md:flex-row md:items-center">
-          <div className="flex shrink-0 justify-center md:px-8">
+        {/* The ring owns the card on its own row; the four sub-scores sit under
+            it as a compact strip so nothing competes with the anchor metric. */}
+        <CardContent className="space-y-5">
+          <div className="flex flex-col items-center gap-1.5 py-2">
             <ScoreRing
               score={data.discipline.overall}
-              size={168}
-              strokeWidth={12}
+              size={208}
+              strokeWidth={14}
               label="Overall"
             />
+            <p className="text-2xs uppercase tracking-wide text-muted-foreground">
+              Out of 100 · {m.tradeCount} trades graded
+            </p>
           </div>
-          <div className="hidden h-32 w-px shrink-0 bg-border md:block" />
-          <div className="grid flex-1 gap-x-8 gap-y-4 sm:grid-cols-2">
+          <div className="grid grid-cols-2 gap-x-6 gap-y-4 border-t border-border pt-4 sm:grid-cols-4">
             {data.discipline.breakdown.map((b) => (
-              <ScoreMeter key={b.label} label={b.label} score={b.score} detail={b.detail} />
+              <ScoreMeter key={b.label} label={b.label} score={b.score} detail={b.detail} compact />
             ))}
           </div>
         </CardContent>
@@ -157,22 +160,25 @@ export default async function DashboardPage({
         />
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Equity curve */}
         <Card className="lg:col-span-2">
-          <CardHeader className="flex-row items-center justify-between">
-            <div>
+          <CardHeader className="flex-row items-center justify-between gap-3">
+            <div className="min-w-0">
               <CardTitle>Equity Curve</CardTitle>
               <p className="mt-0.5 text-sm text-muted-foreground">
                 Cumulative net P&L over time
               </p>
             </div>
-            <div className="text-right">
+            <div className="shrink-0 text-right">
               <p className={`text-lg font-semibold tabular ${pnlColor(m.netPnl)}`}>
                 {formatCurrency(m.netPnl, { sign: true })}
               </p>
               <p className="text-2xs uppercase tracking-wide text-muted-foreground">
-                Streak {m.currentStreak > 0 ? `+${m.currentStreak}` : m.currentStreak}
+                Streak{" "}
+                <span className={`tabular ${pnlColor(m.currentStreak)}`}>
+                  {m.currentStreak > 0 ? `+${m.currentStreak}` : m.currentStreak}
+                </span>
               </p>
             </div>
           </CardHeader>
@@ -181,10 +187,16 @@ export default async function DashboardPage({
           </CardContent>
         </Card>
 
-        {/* Recent violations */}
+        {/* Recent violations — written as journal entries: the rule you broke,
+            what it cost you, and when. Each one opens that trade's journal. */}
         <Card>
           <CardHeader className="flex-row items-center justify-between">
-            <CardTitle>Recent Violations</CardTitle>
+            <div className="min-w-0">
+              <CardTitle>Recent Violations</CardTitle>
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                Straight from your journal — tap one to read the whole trade.
+              </p>
+            </div>
             <Badge variant={violations.length ? "loss" : "profit"}>
               {violations.length ? `${violations.length}` : "Clean"}
             </Badge>
@@ -199,21 +211,29 @@ export default async function DashboardPage({
                 <Link
                   key={i}
                   href={`/journal/${v.tradeId}`}
-                  className="flex items-start gap-2.5 rounded-lg border border-border bg-surface-raised px-3 py-2 transition-colors hover:border-loss/40"
+                  className="block rounded-lg border border-border bg-surface-raised px-3 py-2.5 transition-colors hover:border-loss/40"
                 >
-                  <span
-                    className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${
-                      v.severity === "high"
-                        ? "bg-loss"
-                        : v.severity === "medium"
-                          ? "bg-warning"
-                          : "bg-muted-foreground"
-                    }`}
-                  />
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">{v.ruleName}</p>
-                    <p className="truncate text-2xs text-muted-foreground">{v.explanation}</p>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                        v.severity === "high"
+                          ? "bg-loss"
+                          : v.severity === "medium"
+                            ? "bg-warning"
+                            : "bg-muted-foreground"
+                      }`}
+                    />
+                    <p className="min-w-0 flex-1 truncate text-sm font-medium">{v.ruleName}</p>
+                    <span className={`shrink-0 text-2xs font-semibold tabular ${pnlColor(v.pnl)}`}>
+                      {v.isOpen ? "Open" : formatCurrency(v.pnl, { sign: true })}
+                    </span>
                   </div>
+                  <p className="mt-1 text-2xs leading-relaxed text-muted-foreground">
+                    {v.explanation}
+                  </p>
+                  <p className="mt-1 text-2xs uppercase tracking-wide text-muted-foreground/60">
+                    {v.symbol} · {formatDate(v.entryTime)}
+                  </p>
                 </Link>
               ))
             )}
@@ -222,7 +242,7 @@ export default async function DashboardPage({
       </div>
 
       {/* Secondary row */}
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
             <CardTitle>P&L by Session</CardTitle>
@@ -254,7 +274,7 @@ export default async function DashboardPage({
               View all <ArrowRight className="h-3 w-3" />
             </Link>
           </CardHeader>
-          <CardContent className="grid gap-2 sm:grid-cols-2">
+          <CardContent className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {alerts.map((a) => (
               <div
                 key={a.id}
@@ -312,7 +332,13 @@ function Kpi({
           </p>
           <Icon className="h-4 w-4 text-muted-foreground" />
         </div>
-        <p className={`mt-2 text-2xl font-semibold tabular ${valueClass ?? ""}`}>{value}</p>
+        {/* Steps down a size where the column is narrow (2-up on phones, 4-up at
+            lg) so long P&L figures stay fully readable instead of being cut off. */}
+        <p
+          className={`mt-2 truncate text-xl font-semibold tabular sm:text-2xl lg:text-xl xl:text-2xl ${valueClass ?? ""}`}
+        >
+          {value}
+        </p>
         {hint && <p className="mt-1 text-2xs text-muted-foreground">{hint}</p>}
       </CardContent>
     </Card>

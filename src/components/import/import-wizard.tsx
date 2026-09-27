@@ -145,13 +145,17 @@ function CsvImport({
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-3">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
       <Card className="lg:col-span-2">
         <CardHeader>
           <CardTitle>Upload a broker CSV</CardTitle>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            Your file is read in your browser. Nothing leaves this device until you press
+            Import, and we never ask for your broker password.
+          </p>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label>Target account</Label>
               <Select value={accountId} onValueChange={setAccountId}>
@@ -198,7 +202,7 @@ function CsvImport({
                   {fileName ?? "Choose a .csv file"}
                 </p>
                 <p className="text-2xs text-muted-foreground">
-                  Read locally in your browser — nothing uploads until you hit Import.
+                  Read locally — nothing uploads until you press Import.
                 </p>
               </div>
               <input
@@ -367,6 +371,11 @@ function ManualEntry({ accounts }: { accounts: AccountOption[] }) {
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [done, setDone] = React.useState(false);
+  // One idempotency key per "open form" — so a rapid double-submit (or a network
+  // retry) of the SAME trade lands as one row, not several. The API dedupes on
+  // this key; we mint a fresh one after each successful save so the next, genuinely
+  // different trade isn't mistaken for a duplicate.
+  const idempotencyKey = React.useRef<string>(crypto.randomUUID());
 
   function set<K extends keyof typeof form>(key: K, value: string) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -395,6 +404,7 @@ function ManualEntry({ accounts }: { accounts: AccountOption[] }) {
           strategyTag: form.strategyTag || null,
           emotions: form.emotions || null,
           notes: form.notes || null,
+          idempotencyKey: idempotencyKey.current,
         }),
       });
       const json = await res.json();
@@ -402,6 +412,8 @@ function ManualEntry({ accounts }: { accounts: AccountOption[] }) {
         setError(json.error ?? "Could not save trade.");
         return;
       }
+      // Saved: start a fresh dedupe key so the next trade is treated as new.
+      idempotencyKey.current = crypto.randomUUID();
       setForm({ ...empty, accountId: form.accountId });
       setDone(true);
       router.refresh();
@@ -419,7 +431,7 @@ function ManualEntry({ accounts }: { accounts: AccountOption[] }) {
       </CardHeader>
       <CardContent>
         <form onSubmit={onSubmit} className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <div className="space-y-1.5">
               <Label>Account</Label>
               <Select value={form.accountId} onValueChange={(v) => set("accountId", v)}>

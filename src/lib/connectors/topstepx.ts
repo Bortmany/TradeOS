@@ -212,13 +212,17 @@ export function pairFills(fills: ProjectXFill[]): NormalizedTrade[] {
       new Date(a.creationTimestamp).getTime() - new Date(b.creationTimestamp).getTime()
   );
 
-  const lotsByContract = new Map<string, OpenLot[]>();
+  // Key open lots by account AND contract. Grouping by contract alone would
+  // cross-pair two different accounts' positions in the same instrument if a
+  // caller ever fed this function fills from more than one account at once.
+  const lotsByAccountContract = new Map<string, OpenLot[]>();
   const trades: NormalizedTrade[] = [];
 
   for (const fill of sorted) {
     const fillSide: "long" | "short" = fill.side === 0 ? "long" : "short";
-    const lots = lotsByContract.get(fill.contractId) ?? [];
-    lotsByContract.set(fill.contractId, lots);
+    const lotKey = `${fill.accountId}|${fill.contractId}`;
+    const lots = lotsByAccountContract.get(lotKey) ?? [];
+    lotsByAccountContract.set(lotKey, lots);
 
     const time = new Date(fill.creationTimestamp);
     const feesPerUnit = fill.size > 0 ? (fill.fees ?? 0) / fill.size : 0;

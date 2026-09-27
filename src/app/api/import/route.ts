@@ -1,17 +1,21 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import { withUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { ingestCsv } from "@/lib/ingestion";
 import { getFeatures, effectivePlan } from "@/lib/billing/plans";
 import { rateLimit } from "@/lib/rate-limit";
 import { recomputeCompliance } from "@/lib/rules/recompute-compliance";
+import { apiErrorResponse } from "@/lib/api-error";
 import type { Broker } from "@/lib/types";
 import { BROKERS } from "@/lib/types";
 
+import { MAX_CSV_CHARS, importRowLimit } from "@/lib/import-limits";
+
 const schema = z.object({
   accountId: z.string().min(1),
-  csvText: z.string().min(1),
+  csvText: z.string().min(1).max(MAX_CSV_CHARS, "That file is too large to import in one go (2 MB limit). Split it and try again."),
   broker: z.enum(BROKERS).optional(),
 });
 
@@ -37,8 +41,10 @@ export const POST = withUser(async (user, req: Request) => {
 
     const result = ingestCsv(csvText, broker as Broker | undefined);
 
-    // Feature gate: cap the import size by plan.
-    const limit = getFeatures(effectivePlan(user.plan as never, user.billingStatus)).maxTradesPerImport;
+    // Feature gate: cap the number of parsed rows BEFORE any insert. The plan's
+    // own limit applies when it has one; otherwise a fixed ceiling.
+    const planLimit = getFeatures(effectivePlan(user.plan as never, user.billingStatus)).maxTradesPerImport;
+    const limit = importRowLimit(planLimit);
     if (result.trades.length > limit) {
       return NextResponse.json(
         {
@@ -61,6 +67,8 @@ export const POST = withUser(async (user, req: Request) => {
     });
 
     let imported = 0;
+    let deduped = 0;
+    const insertErrors: string[] = [];
     for (const t of result.trades) {
       try {
         await prisma.trade.create({
@@ -88,14 +96,31 @@ export const POST = withUser(async (user, req: Request) => {
           },
         });
         imported++;
-      } catch {
-        // Likely a unique-constraint dedupe on [accountId, externalId]; skip.
+      } catch (e) {
+        // Only a GENUINE dedupe — the unique index on [accountId, externalId]
+        // rejecting a row we've already imported — is an expected, silent skip.
+        // Anything else (bad data that slipped through, a real database error)
+        // must be surfaced as an error, never quietly counted as a skip, or a
+        // whole import can report "ok" while silently dropping rows.
+        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+          deduped++;
+        } else {
+          insertErrors.push(`${t.symbol}: could not be saved (unexpected data in this row).`);
+        }
       }
     }
 
+    // "skipped" in the response is the honest count of rows that were not saved
+    // for a benign reason (parser skips + genuine dedupes). Rows that failed to
+    // insert for any OTHER reason are reported in `errors`, not hidden here.
+    const skipped = result.skipped + deduped;
+    const errors = [...result.errors, ...insertErrors].slice(0, 10);
+
+    // The batch row has no error column, so its skippedCount records every row
+    // that didn't make it in (dedupes + failed inserts) to keep rowCount honest.
     await prisma.importBatch.update({
       where: { id: batch.id },
-      data: { importedCount: imported, skippedCount: result.skipped + (result.trades.length - imported) },
+      data: { importedCount: imported, skippedCount: skipped + insertErrors.length },
     });
 
     // Recompute discipline/compliance in the background of the request.
@@ -105,12 +130,12 @@ export const POST = withUser(async (user, req: Request) => {
       ok: true,
       broker: result.broker,
       imported,
-      skipped: result.skipped + (result.trades.length - imported),
-      errors: result.errors.slice(0, 10),
+      skipped,
+      errors,
     });
   } catch (err) {
-    const message =
-      err instanceof z.ZodError ? "Invalid request." : err instanceof Error ? err.message : "Import failed.";
-    return NextResponse.json({ ok: false, error: message }, { status: 400 });
+    // Never echo a raw error message to the client — the shared helper maps it
+    // to a safe, plain-English response (and handles bad-JSON bodies as a 400).
+    return apiErrorResponse(err, { validationMessage: "Invalid request." });
   }
 });

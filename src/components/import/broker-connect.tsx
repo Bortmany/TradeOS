@@ -29,6 +29,14 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { FIRMS } from "@/lib/connectors/firms";
 
 // ---------------------------------------------------------------------------
 // Types — mirror the /api/connectors contracts exactly.
@@ -54,8 +62,6 @@ interface DiscoveredAccount {
   balance?: number;
   canTrade?: boolean;
 }
-
-const DEFAULT_BASE_URL = "https://api.topstepx.com";
 
 function relativeTime(iso: string): string {
   const then = new Date(iso).getTime();
@@ -117,11 +123,19 @@ export function BrokerConnect() {
   return (
     <Card>
       <CardHeader className="flex-row items-center justify-between">
-        <CardTitle className="flex items-center gap-2">
-          <Plug className="h-4 w-4 text-muted-foreground" />
-          Broker API — TopstepX (ProjectX)
-        </CardTitle>
-        <Badge variant="outline">Sync only</Badge>
+        <div className="min-w-0">
+          <CardTitle className="flex items-center gap-2">
+            <Plug className="h-4 w-4 text-muted-foreground" />
+            Broker API — TopstepX (ProjectX)
+          </CardTitle>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            A read-only link: TradeOS pulls your filled trades in. It can never place,
+            change or cancel an order, and it can never move money.
+          </p>
+        </div>
+        <Badge variant="outline" className="shrink-0">
+          Read-only sync
+        </Badge>
       </CardHeader>
       <CardContent className="space-y-5">
         {/* Existing connections */}
@@ -141,7 +155,7 @@ export function BrokerConnect() {
                 className="rounded-lg border border-dashed border-border py-8"
                 icon={<Link2 className="h-5 w-5" />}
                 title="No broker connections yet"
-                description="Link a TopstepX account below to sync fills automatically — no CSV wrangling."
+                description="Link a TopstepX account below to pull your fills in automatically — read-only, no CSV wrangling."
               />
             )
           ) : (
@@ -159,9 +173,10 @@ export function BrokerConnect() {
         <ConnectFlow onConnected={refreshAll} />
 
         <p className="text-2xs text-muted-foreground">
-          Requires a TopstepX API key (Settings → API in TopstepX). Credentials are
-          encrypted at rest. Trades sync automatically on a schedule and on demand —
-          no orders are ever placed.
+          Requires a TopstepX API key (Settings → API in TopstepX) — never your broker
+          password. The key is encrypted at rest and only ever used to read your trades:
+          they sync on a schedule and on demand, and no order is ever placed. Disconnect
+          any time; your imported trades stay in your journal.
         </p>
       </CardContent>
     </Card>
@@ -327,7 +342,8 @@ function ConnectionRow({
 function ConnectFlow({ onConnected }: { onConnected: () => Promise<void> }) {
   const [username, setUsername] = React.useState("");
   const [apiKey, setApiKey] = React.useState("");
-  const [baseUrl, setBaseUrl] = React.useState("");
+  // The firm picks the gateway address server-side — users never type a URL.
+  const [firm, setFirm] = React.useState<string>(FIRMS[0].id);
   const [accounts, setAccounts] = React.useState<DiscoveredAccount[] | null>(null);
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [discovering, setDiscovering] = React.useState(false);
@@ -352,9 +368,9 @@ function ConnectFlow({ onConnected }: { onConnected: () => Promise<void> }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "discover",
+          firm,
           username: username.trim(),
           apiKey,
-          ...(baseUrl.trim() ? { baseUrl: baseUrl.trim() } : {}),
         }),
       });
       const json = await res.json();
@@ -382,9 +398,9 @@ function ConnectFlow({ onConnected }: { onConnected: () => Promise<void> }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "connect",
+          firm,
           username: username.trim(),
           apiKey,
-          ...(baseUrl.trim() ? { baseUrl: baseUrl.trim() } : {}),
           externalAccountId: picked.id,
           externalAccountName: picked.name,
         }),
@@ -415,14 +431,29 @@ function ConnectFlow({ onConnected }: { onConnected: () => Promise<void> }) {
 
       {/* Step 1 — credentials */}
       <form onSubmit={onDiscover} className="space-y-3">
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="bc-firm">Firm</Label>
+            <Select value={firm} onValueChange={setFirm} disabled={discovering}>
+              <SelectTrigger id="bc-firm" aria-label="Firm">
+                <SelectValue placeholder="Choose a firm" />
+              </SelectTrigger>
+              <SelectContent>
+                {FIRMS.map((f) => (
+                  <SelectItem key={f.id} value={f.id}>
+                    {f.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <div className="space-y-1.5">
             <Label htmlFor="bc-username">Username</Label>
             <Input
               id="bc-username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder="TopstepX username"
+              placeholder="e.g. JohnDoe"
               autoComplete="off"
             />
           </div>
@@ -434,18 +465,6 @@ function ConnectFlow({ onConnected }: { onConnected: () => Promise<void> }) {
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
               placeholder="••••••••••••"
-              autoComplete="off"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="bc-baseurl">
-              Base URL <span className="normal-case text-muted-foreground">(optional)</span>
-            </Label>
-            <Input
-              id="bc-baseurl"
-              value={baseUrl}
-              onChange={(e) => setBaseUrl(e.target.value)}
-              placeholder={DEFAULT_BASE_URL}
               autoComplete="off"
             />
           </div>
@@ -473,7 +492,7 @@ function ConnectFlow({ onConnected }: { onConnected: () => Promise<void> }) {
           <p className="text-2xs uppercase tracking-wide text-muted-foreground">
             Pick an account to link
           </p>
-          <div className="grid gap-2 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {accounts.map((a) => {
               const selected = a.id === selectedId;
               return (

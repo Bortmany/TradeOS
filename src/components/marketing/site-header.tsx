@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { Activity } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import type { SignupCtas } from "@/components/marketing/signup-cta";
 
-export function SiteHeader() {
+export function SiteHeader({ ctas }: { ctas: SignupCtas }) {
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur">
       <div className="container flex h-14 items-center justify-between">
@@ -18,12 +19,20 @@ export function SiteHeader() {
           <a href="#pricing" className="hover:text-foreground">Pricing</a>
         </nav>
         <div className="flex items-center gap-2">
-          <Button asChild variant="ghost" size="sm">
-            <Link href="/login">Sign in</Link>
-          </Button>
-          <Button asChild size="sm">
-            <Link href="/register">Start free</Link>
-          </Button>
+          {ctas.mode === "closed" ? (
+            <Button asChild size="sm">
+              <Link href="/login">Sign in</Link>
+            </Button>
+          ) : (
+            <>
+              <Button asChild variant="ghost" size="sm">
+                <Link href="/login">Sign in</Link>
+              </Button>
+              <Button asChild size="sm">
+                <Link href={ctas.href}>{ctas.header}</Link>
+              </Button>
+            </>
+          )}
         </div>
       </div>
     </header>

@@ -2,8 +2,9 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Reveal } from "@/components/marketing/reveal";
+import type { SignupCtas } from "@/components/marketing/signup-cta";
 
-export function FinalCta() {
+export function FinalCta({ ctas }: { ctas: SignupCtas }) {
   return (
     <section className="border-b border-border">
       <div className="container py-20 text-center">
@@ -15,8 +16,8 @@ export function FinalCta() {
             Import your last 30 days and see your discipline score in under five minutes.
           </p>
           <Button asChild size="lg" className="mt-7 gap-2">
-            <Link href="/register">
-              Start your free trial <ArrowRight className="h-4 w-4" />
+            <Link href={ctas.href}>
+              {ctas.primary} <ArrowRight className="h-4 w-4" />
             </Link>
           </Button>
         </Reveal>
