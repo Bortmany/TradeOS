@@ -4,12 +4,21 @@ import { withUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { apiErrorResponse } from "@/lib/api-error";
-import { WEEK_KEY_PATTERN, normalizeWeekKey, weekKeyToDate } from "@/lib/reviews";
+import {
+  INVALID_WEEK_MESSAGE,
+  WEEK_KEY_PATTERN,
+  isRealDateKey,
+  normalizeWeekKey,
+  weekKeyToDate,
+} from "@/lib/reviews";
 
 // Save (or re-save) the three guided answers for one week. One row per
 // user + week, so posting again simply updates the trader's own answers.
 const schema = z.object({
-  weekStart: z.string().regex(WEEK_KEY_PATTERN, "Pick a week to review."),
+  weekStart: z
+    .string()
+    .regex(WEEK_KEY_PATTERN, "Pick a week to review.")
+    .refine(isRealDateKey, INVALID_WEEK_MESSAGE),
   worked: z.string().max(2000).default(""),
   costliestRule: z.string().max(2000).default(""),
   oneChange: z.string().max(2000).default(""),
@@ -31,22 +40,22 @@ export const POST = withUser(async (user, req: Request) => {
       oneChange: d.oneChange.trim(),
     });
 
-    // Scoped to the signed-in user on both halves of the upsert.
-    const existing = await prisma.weeklyReview.findFirst({
-      where: { userId: user.id, weekStart: weekKeyToDate(weekKey) },
-      select: { id: true },
+    // One atomic write on the unique [userId, weekStart] key, scoped to the
+    // signed-in user: two saves racing each other can never create a duplicate
+    // row or fail on the unique constraint.
+    const weekStart = weekKeyToDate(weekKey);
+    await prisma.weeklyReview.upsert({
+      where: { userId_weekStart: { userId: user.id, weekStart } },
+      update: { answers },
+      create: { userId: user.id, weekStart, answers },
     });
-
-    if (existing) {
-      await prisma.weeklyReview.update({ where: { id: existing.id }, data: { answers } });
-    } else {
-      await prisma.weeklyReview.create({
-        data: { userId: user.id, weekStart: weekKeyToDate(weekKey), answers },
-      });
-    }
 
     return NextResponse.json({ ok: true, weekStart: weekKey });
   } catch (err) {
+    // An impossible week gets its own plain-English message, not the generic one.
+    if (err instanceof z.ZodError && err.issues.some((i) => i.message === INVALID_WEEK_MESSAGE)) {
+      return NextResponse.json({ ok: false, error: INVALID_WEEK_MESSAGE }, { status: 400 });
+    }
     return apiErrorResponse(err, {
       validationMessage: "Please check your review answers and try again.",
     });

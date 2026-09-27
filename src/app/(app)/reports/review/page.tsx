@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ArrowLeft, ArrowRight, ClipboardCheck, NotebookPen } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth";
-import { buildReport } from "@/lib/reports";
+import { buildWeekReport } from "@/lib/reports";
 import {
   getWeeklyReview,
   listWeeklyReviews,
@@ -41,21 +41,28 @@ export default async function WeeklyReviewPage({
   if (!user) redirect("/login");
   const { week } = await searchParams;
 
-  const weekKey = normalizeWeekKey(week);
+  // A date-shaped value that doesn't exist (e.g. 2026-99-99) gets a clear
+  // message instead of silently opening some other week.
+  let weekKey: string;
+  try {
+    weekKey = normalizeWeekKey(week);
+  } catch (err) {
+    return <InvalidWeek message={err instanceof Error ? err.message : "That week doesn't exist."} />;
+  }
   const thisWeekKey = weekKeyOf(new Date());
   const isCurrentWeek = weekKey === thisWeekKey;
   const prevKey = shiftWeekKey(weekKey, -1);
   const nextKey = shiftWeekKey(weekKey, 1);
 
-  // The numbers are read-only: exactly what the Reports page computes for the
-  // trailing week, never re-derived here.
+  // The numbers are read-only and always cover exactly the week on screen:
+  // Monday to Sunday in New York time, for this week or any earlier one.
   const [report, saved, history] = await Promise.all([
-    isCurrentWeek ? buildReport(user.id, "week") : null,
+    buildWeekReport(user.id, weekKey),
     getWeeklyReview(user.id, weekKey),
     listWeeklyReviews(user.id),
   ]);
 
-  const m = report?.metrics;
+  const m = report.metrics;
 
   return (
     <div className="container max-w-7xl space-y-6 py-6">
@@ -98,26 +105,20 @@ export default async function WeeklyReviewPage({
           <div className="min-w-0">
             <CardTitle>The week in numbers</CardTitle>
             <p className="mt-0.5 text-sm text-muted-foreground">
-              {report
-                ? `Your last 7 days: ${formatDate(report.from)} – ${formatDate(report.to)}.`
-                : "Live numbers only cover the last 7 days, so this past week shows your written answers only."}
+              {isCurrentWeek
+                ? `Monday to Sunday, New York time: ${weekLabel(weekKey)}. The week is still running.`
+                : `Monday to Sunday, New York time: ${weekLabel(weekKey)}.`}
             </p>
           </div>
-          {report && (
-            <Badge variant={report.metrics.netPnl >= 0 ? "profit" : "loss"} className="tabular">
-              {formatCurrency(report.metrics.netPnl, { sign: true })}
-            </Badge>
-          )}
+          <Badge variant={report.metrics.netPnl >= 0 ? "profit" : "loss"} className="tabular">
+            {formatCurrency(report.metrics.netPnl, { sign: true })}
+          </Badge>
         </CardHeader>
         <CardContent>
-          {!report ? (
-            <p className="py-4 text-sm text-muted-foreground">
-              Open this week&apos;s review to see the numbers alongside the questions.
-            </p>
-          ) : report.tradeCount === 0 ? (
+          {report.tradeCount === 0 ? (
             <EmptyState
               icon={<ClipboardCheck className="h-6 w-6" />}
-              title="No trades in the last 7 days"
+              title="No trades this week"
               description="Nothing to grade yet — you can still write down what you want to change."
               className="py-6"
             />
@@ -126,14 +127,14 @@ export default async function WeeklyReviewPage({
               <div className="grid grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-4">
                 <Stat
                   label="Net P&L"
-                  value={formatCurrency(m!.netPnl, { sign: true })}
-                  accent={m!.netPnl >= 0 ? "profit" : "loss"}
+                  value={formatCurrency(m.netPnl, { sign: true })}
+                  accent={m.netPnl >= 0 ? "profit" : "loss"}
                   hint={`${report.tradeCount} trades`}
                 />
                 <Stat
                   label="Win Rate"
-                  value={formatPercent(m!.winRate)}
-                  hint={`${m!.winCount}W / ${m!.lossCount}L`}
+                  value={formatPercent(m.winRate)}
+                  hint={`${m.winCount}W / ${m.lossCount}L`}
                 />
                 <Stat
                   label="Rule Adherence"
@@ -243,6 +244,24 @@ export default async function WeeklyReviewPage({
           )}
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function InvalidWeek({ message }: { message: string }) {
+  return (
+    <div className="container max-w-7xl space-y-6 py-6">
+      <PageHeader title="Weekly Review" description="Pick a week to look back on." />
+      <EmptyState
+        icon={<ClipboardCheck className="h-6 w-6" />}
+        title="We couldn't find that week"
+        description={message}
+        action={
+          <Button asChild>
+            <Link href="/reports/review">Go to this week</Link>
+          </Button>
+        }
+      />
     </div>
   );
 }

@@ -61,14 +61,28 @@ export function weekEndKey(key: string): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** True when `key` ("YYYY-MM-DD") is a date that actually exists on the calendar. */
+export function isRealDateKey(key: string): boolean {
+  if (!WEEK_KEY_PATTERN.test(key)) return false;
+  const parsed = noonUtc(key);
+  // 2026-99-99 is Invalid Date; 2026-02-30 silently rolls over to March, so the
+  // round-trip must give back exactly the same text.
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === key;
+}
+
+export const INVALID_WEEK_MESSAGE =
+  "That week doesn't exist. Pick a real date in the form YYYY-MM-DD.";
+
 /**
- * A week key from a URL param, falling back to the current week. Anything that
- * isn't a real date is treated as "no week given".
+ * A week key from a URL param or request body. No value (or one that isn't
+ * shaped like a date at all) means "this week". A value shaped like a date that
+ * doesn't exist on the calendar (e.g. 2026-99-99) throws a clear error instead
+ * of quietly falling back to the current week.
  */
 export function normalizeWeekKey(raw: string | undefined, now: Date = new Date()): string {
   if (raw && WEEK_KEY_PATTERN.test(raw)) {
-    const parsed = noonUtc(raw);
-    if (!Number.isNaN(parsed.getTime())) return weekKeyOf(parsed);
+    if (!isRealDateKey(raw)) throw new Error(INVALID_WEEK_MESSAGE);
+    return weekKeyOf(noonUtc(raw));
   }
   return weekKeyOf(now);
 }
