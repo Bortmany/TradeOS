@@ -9,7 +9,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth";
-import { getAccounts, getDashboardData, getOpenAlerts, getTrades } from "@/lib/data";
+import { getAccounts, getDashboardData, getOpenAlerts } from "@/lib/data";
 import { PageHeader } from "@/components/page-header";
 import { AccountSwitcher } from "@/components/account-switcher";
 import { EquityChart } from "@/components/charts/equity-chart";
@@ -40,13 +40,10 @@ export default async function DashboardPage({
   if (!user) redirect("/login");
   const { account } = await searchParams;
 
-  const [accounts, data, alerts, trades] = await Promise.all([
+  const [accounts, data, alerts] = await Promise.all([
     getAccounts(user.id),
     getDashboardData(user.id, account),
     getOpenAlerts(user.id),
-    // Same user-scoped, account-filtered set the dashboard data uses — read only,
-    // so violations can be shown with the symbol, date and P&L of their trade.
-    getTrades(user.id, account ? { accountId: account } : {}),
   ]);
 
   const activeAccount = account ? accounts.find((a) => a.id === account) : null;
@@ -83,21 +80,9 @@ export default async function DashboardPage({
   const startingBalance = activeAccount?.startingBalance ?? 0;
 
   // Failing evaluations, newest trade first, carrying enough of the trade for the
-  // feed to read like a journal entry (which rule, what it cost, when).
-  const violations = trades
-    .flatMap((t) =>
-      (data.evaluations[t.id] ?? [])
-        .filter((e) => e.status === "fail")
-        .map((e) => ({
-          tradeId: t.id,
-          symbol: t.symbol,
-          entryTime: t.entryTime,
-          pnl: t.pnl,
-          isOpen: t.exitTime === null,
-          ...e,
-        }))
-    )
-    .slice(0, 5);
+  // feed to read like a journal entry — built from the same trades the rest of
+  // the dashboard uses, so nothing is loaded twice.
+  const violations = data.recentViolations;
 
   return (
     <div className="container max-w-7xl space-y-6 py-6">

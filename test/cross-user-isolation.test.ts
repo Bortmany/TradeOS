@@ -177,3 +177,84 @@ describe("getDashboardData", () => {
     expect(bDash.tradeCount).toBe(2);
   });
 });
+
+describe("getDashboardData — recent violations", () => {
+  // Carol breaks her own 3-contract limit on six of seven days. The dashboard's
+  // "Recent Violations" feed now comes straight out of getDashboardData (no
+  // second trade load), so it must be newest-first, capped at 5, and hers only.
+  let carolId = "";
+  let carolTradeIds = new Set<string>();
+
+  beforeAll(async () => {
+    const carol = await prisma.user.create({
+      data: { email: `iso-carol-${stamp}@example.com`, passwordHash: "x", displayName: "carol" },
+    });
+    carolId = carol.id;
+    const account = await prisma.tradingAccount.create({
+      data: { userId: carol.id, name: "carol account", startingBalance: 50000 },
+    });
+    for (let day = 1; day <= 7; day += 1) {
+      const t = await prisma.trade.create({
+        data: {
+          userId: carol.id,
+          accountId: account.id,
+          symbol: "NQ",
+          side: "long",
+          entryPrice: 20000,
+          exitPrice: 20001,
+          quantity: day === 7 ? 1 : 5, // day 7 is the only clean trade
+          entryTime: new Date(`2026-07-0${day}T14:00:00Z`),
+          exitTime: new Date(`2026-07-0${day}T15:00:00Z`),
+          fees: 0,
+          pnl: day * 10,
+          source: "manual",
+        },
+      });
+      carolTradeIds.add(t.id);
+    }
+    const book = await prisma.ruleBook.create({ data: { userId: carol.id, name: "carol book" } });
+    await prisma.rule.create({
+      data: {
+        ruleBookId: book.id,
+        name: "carol max contracts",
+        type: "max_contracts",
+        severity: "high",
+        config: JSON.stringify({ maxContracts: 3 }),
+      },
+    });
+  });
+
+  afterAll(async () => {
+    if (!carolId) return;
+    await prisma.trade.deleteMany({ where: { userId: carolId } });
+    carolTradeIds = new Set();
+  });
+
+  it("returns the 5 newest failed checks, newest first, with their trade details", async () => {
+    const dash = await getDashboardData(carolId);
+    expect(dash.recentViolations).toHaveLength(5);
+    // Day 7 is clean, so the feed runs day 6 → day 2.
+    expect(dash.recentViolations.map((v) => v.pnl)).toEqual([60, 50, 40, 30, 20]);
+    for (const v of dash.recentViolations) {
+      expect(v.status).toBe("fail");
+      expect(v.ruleName).toBe("carol max contracts");
+      expect(v.symbol).toBe("NQ");
+      expect(v.isOpen).toBe(false);
+      expect(carolTradeIds.has(v.tradeId)).toBe(true);
+    }
+  });
+
+  it("never shows another trader's violations", async () => {
+    // Alice and Bob keep their rules, so their feeds are empty — and never
+    // contain one of Carol's trades.
+    for (const u of [alice, bob]) {
+      const dash = await getDashboardData(u.userId);
+      expect(dash.recentViolations.some((v) => carolTradeIds.has(v.tradeId))).toBe(false);
+      expect(dash.recentViolations).toEqual([]);
+    }
+    // Asking for Alice's account with Carol's user id yields nothing at all.
+    const cross = await getDashboardData(carolId, alice.accountId);
+    expect(cross.tradeCount).toBe(0);
+    expect(cross.recentViolations).toEqual([]);
+  });
+});
