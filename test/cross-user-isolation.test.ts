@@ -15,6 +15,7 @@ import {
   getDashboardData,
   getOpenAlerts,
 } from "@/lib/data";
+import { dailyPnlSeries } from "@/lib/analytics/daily";
 
 // Hard rail: this file writes to a database. Refuse to run if that database is
 // the seeded dev DB — the suite must only ever touch the throwaway file.
@@ -175,6 +176,42 @@ describe("getDashboardData", () => {
     const bDash = await getDashboardData(bob.userId);
     expect(aDash.tradeCount).toBe(3);
     expect(bDash.tradeCount).toBe(2);
+  });
+});
+
+describe("getDashboardData — daily P&L calendar", () => {
+  // The analytics page's P&L calendar now comes out of getDashboardData instead
+  // of a second trade load. It must be correct and hold only the trader's own days.
+  it("returns each trader's own realized P&L per ET day, oldest first", async () => {
+    const aDash = await getDashboardData(alice.userId);
+    expect(aDash.dailyPnl).toEqual([
+      { date: "2026-07-01", pnl: 100, trades: 1 },
+      { date: "2026-07-02", pnl: -50, trades: 1 },
+      { date: "2026-07-03", pnl: 200, trades: 1 },
+    ]);
+    const bDash = await getDashboardData(bob.userId);
+    expect(bDash.dailyPnl).toEqual([
+      { date: "2026-07-01", pnl: -30, trades: 1 },
+      { date: "2026-07-02", pnl: 75, trades: 1 },
+    ]);
+  });
+
+  it("matches what the old separate trade load produced", async () => {
+    for (const u of [alice, bob]) {
+      const dash = await getDashboardData(u.userId);
+      expect(dash.dailyPnl).toEqual(dailyPnlSeries(await getTrades(u.userId)));
+      const scoped = await getDashboardData(u.userId, u.accountId);
+      expect(scoped.dailyPnl).toEqual(
+        dailyPnlSeries(await getTrades(u.userId, { accountId: u.accountId }))
+      );
+    }
+  });
+
+  it("never includes another trader's trades, even when asking for their account", async () => {
+    const cross = await getDashboardData(bob.userId, alice.accountId);
+    expect(cross.dailyPnl).toEqual([]);
+    const aTotal = (await getDashboardData(alice.userId)).dailyPnl.reduce((s, d) => s + d.trades, 0);
+    expect(aTotal).toBe(alice.tradeCount);
   });
 });
 

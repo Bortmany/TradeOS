@@ -15,6 +15,7 @@ import {
   byStrategy,
   bySymbol,
 } from "@/lib/analytics";
+import { dailyPnlSeries } from "@/lib/analytics/daily";
 import { evaluateTrades, type RuleLike, type EvalResult } from "@/lib/rules/engine";
 import { parseRuleConfig } from "@/lib/rules/config";
 import { computeDisciplineScore } from "@/lib/discipline/score";
@@ -127,6 +128,8 @@ export interface DashboardData {
   tradeCount: number;
   openCount: number;
   evaluations: Record<string, EvalResult[]>;
+  /** Realized P&L per ET calendar day, oldest first (the analytics P&L calendar). */
+  dailyPnl: ReturnType<typeof dailyPnlSeries>;
   /** Up to 5 failed rule checks, newest trade first, with the trade they belong to. */
   recentViolations: RecentViolation[];
 }
@@ -195,6 +198,7 @@ export async function getDashboardData(
     tradeCount: trades.length,
     openCount: trades.length - closed.length,
     evaluations,
+    dailyPnl: dailyPnlSeries(trades),
     recentViolations: recentViolationsOf(trades, evaluations),
   };
 }
