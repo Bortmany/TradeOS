@@ -53,8 +53,9 @@ export default function PrivacyPage() {
           </li>
           <li>
             <strong>Billing</strong> — if paid subscriptions are enabled, payments are
-            processed by Stripe. We store a Stripe customer reference and your plan status;
-            your card details go to Stripe and never touch our servers.
+            processed by Paddle, which acts as the reseller and merchant of record. We
+            store a Paddle customer reference, a subscription reference, and your plan
+            status; your card details go to Paddle and never touch our servers.
           </li>
         </ul>
       </Section>
@@ -75,7 +76,7 @@ export default function PrivacyPage() {
       <Section title="Who processes data for us">
         <p>
           Your data lives in our hosting provider&apos;s database. If paid billing is enabled,
-          Stripe processes payments. If error tracking is enabled, crash reports
+          Paddle processes payments. If error tracking is enabled, crash reports
           (technical details about an error, with credentials automatically redacted) may
           be sent to Sentry so problems can be fixed. These providers process data only to
           provide their service to us.

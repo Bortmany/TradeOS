@@ -18,6 +18,7 @@ import {
   pairFills,
   ConnectorError,
 } from "@/lib/connectors/topstepx";
+import { isAllowedBaseUrl, DISALLOWED_BASE_URL_MESSAGE } from "@/lib/connectors/firms";
 
 const WINDOW_DAYS = 90;
 
@@ -37,6 +38,13 @@ export async function syncConnection(
   if (!conn) throw new ConnectorError("Connection not found.");
 
   try {
+    // Older connections were stored with a user-typed gateway URL. The server
+    // only calls addresses on the firm registry's allow-list — anything else
+    // (a private/loopback address, an unknown host) is refused, never fetched.
+    if (!isAllowedBaseUrl(conn.baseUrl)) {
+      throw new ConnectorError(DISALLOWED_BASE_URL_MESSAGE, "auth");
+    }
+
     let apiKey: string;
     try {
       apiKey = decryptSecret(conn.apiKeyEnc);

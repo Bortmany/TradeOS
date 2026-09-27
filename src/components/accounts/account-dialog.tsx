@@ -23,6 +23,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 const BROKER_LABELS: Record<string, string> = {
   topstepx: "TopstepX",
@@ -35,6 +41,16 @@ const BROKER_LABELS: Record<string, string> = {
 };
 
 const COLORS = ["#5b8def", "#22c55e", "#ef4444", "#f59e0b", "#a855f7", "#14b8a6"];
+
+// Plain-English names for the swatches above (shown in the hover hint).
+const COLOR_NAMES: Record<string, string> = {
+  "#5b8def": "Blue",
+  "#22c55e": "Green",
+  "#ef4444": "Red",
+  "#f59e0b": "Amber",
+  "#a855f7": "Purple",
+  "#14b8a6": "Teal",
+};
 
 export function AccountDialog({
   disabled = false,
@@ -163,20 +179,26 @@ export function AccountDialog({
 
           <div className="space-y-1.5">
             <Label>Color</Label>
-            <div className="flex gap-2">
-              {COLORS.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => setColor(c)}
-                  aria-label={`Select color ${c}`}
-                  className={`h-7 w-7 rounded-full ring-offset-2 ring-offset-background transition-all ${
-                    color === c ? "ring-2 ring-ring" : "hover:scale-110"
-                  }`}
-                  style={{ backgroundColor: c }}
-                />
-              ))}
-            </div>
+            <TooltipProvider delayDuration={300}>
+              <div className="flex gap-2">
+                {COLORS.map((c) => (
+                  <Tooltip key={c}>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        onClick={() => setColor(c)}
+                        aria-label={`Select color ${c}`}
+                        className={`h-7 w-7 rounded-full ring-offset-2 ring-offset-background transition-all ${
+                          color === c ? "ring-2 ring-ring" : "hover:scale-110"
+                        }`}
+                        style={{ backgroundColor: c }}
+                      />
+                    </TooltipTrigger>
+                    <TooltipContent>{COLOR_NAMES[c] ?? c}</TooltipContent>
+                  </Tooltip>
+                ))}
+              </div>
+            </TooltipProvider>
           </div>
 
           {error && (

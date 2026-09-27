@@ -273,7 +273,8 @@ function proxyHops(): number {
 //
 // Sensible presets. Most write endpoints are cheap, so they get a generous
 // per-minute allowance; the ones that reach out to a broker's API (connect /
-// sync) or to Stripe are tighter, because each call is slow and/or costs money.
+// sync) or to the payment provider are tighter, because each call is slow
+// and/or costs money.
 export const USER_WRITE_LIMIT = { limit: 60, windowMs: 60_000 } as const; // 60/min
 export const USER_EXTERNAL_LIMIT = { limit: 10, windowMs: 60_000 } as const; // 10/min
 

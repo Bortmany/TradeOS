@@ -31,6 +31,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { RULE_TYPES, SEVERITIES, type RuleType, type Severity } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -84,7 +90,15 @@ async function mutate(
 // New rulebook
 // --------------------------------------------------------------------------
 
-export function NewRuleBookButton() {
+// `disabled` + `limitLabel` mirror AccountDialog: when the plan's cap is
+// reached the button explains why instead of letting the server refuse.
+export function NewRuleBookButton({
+  disabled = false,
+  limitLabel,
+}: {
+  disabled?: boolean;
+  limitLabel?: string;
+} = {}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -127,14 +141,14 @@ export function NewRuleBookButton() {
         if (!o) reset();
       }}
     >
-      <Button size="sm" onClick={() => setOpen(true)}>
+      <Button size="sm" disabled={disabled} onClick={() => setOpen(true)}>
         <Plus className="h-4 w-4" /> New Rulebook
       </Button>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>New rulebook</DialogTitle>
           <DialogDescription>
-            Group related rules. Scope decides which trades it applies to.
+            {limitLabel ?? "Group related rules. Scope decides which trades it applies to."}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} className="space-y-4">
@@ -263,15 +277,23 @@ export function RuleBookDeleteButton({ id, name }: { id: string; name: string })
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <Button
-        variant="ghost"
-        size="icon"
-        className="h-7 w-7 text-muted-foreground hover:text-loss"
-        aria-label="Delete rulebook"
-        onClick={() => setOpen(true)}
-      >
-        <Trash2 className="h-4 w-4" />
-      </Button>
+      {/* Hover hint so the icon-only button explains itself. */}
+      <TooltipProvider delayDuration={300}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-muted-foreground hover:text-loss"
+              aria-label="Delete rulebook"
+              onClick={() => setOpen(true)}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Delete rulebook</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle>Delete rulebook</DialogTitle>
@@ -761,11 +783,23 @@ function FormError({ message }: { message: string }) {
 // Per-book "Add rule" button
 // --------------------------------------------------------------------------
 
-export function AddRuleButton({ bookId }: { bookId: string }) {
+export function AddRuleButton({
+  bookId,
+  disabled = false,
+  limitLabel,
+}: {
+  bookId: string;
+  disabled?: boolean;
+  /** Shown beside the button when the plan's rule cap is reached. */
+  limitLabel?: string;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
+      {disabled && limitLabel && (
+        <p className="mr-3 text-2xs text-muted-foreground">{limitLabel}</p>
+      )}
+      <Button variant="outline" size="sm" disabled={disabled} onClick={() => setOpen(true)}>
         <Plus className="h-4 w-4" /> Add rule
       </Button>
       {open && <RuleFormDialog bookId={bookId} open={open} onOpenChange={setOpen} />}
@@ -795,24 +829,37 @@ export function RuleRowActions({ bookId, rule }: { bookId: string; rule: RuleIni
 
   return (
     <div className="flex items-center gap-0.5">
-      <Button
-        variant="ghost"
-        size="icon"
-        className="h-7 w-7 text-muted-foreground hover:text-foreground"
-        aria-label="Edit rule"
-        onClick={() => setEditOpen(true)}
-      >
-        <Pencil className="h-3.5 w-3.5" />
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon"
-        className="h-7 w-7 text-muted-foreground hover:text-loss"
-        aria-label="Delete rule"
-        onClick={() => setDelOpen(true)}
-      >
-        <Trash2 className="h-3.5 w-3.5" />
-      </Button>
+      {/* Hover hints so the icon-only buttons explain themselves. */}
+      <TooltipProvider delayDuration={300}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-muted-foreground hover:text-foreground"
+              aria-label="Edit rule"
+              onClick={() => setEditOpen(true)}
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Edit rule</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-muted-foreground hover:text-loss"
+              aria-label="Delete rule"
+              onClick={() => setDelOpen(true)}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Delete rule</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
 
       {editOpen && (
         <RuleFormDialog bookId={bookId} rule={rule} open={editOpen} onOpenChange={setEditOpen} />

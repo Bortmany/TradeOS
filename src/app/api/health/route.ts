@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { isBillingConfigured } from "@/lib/billing/paddle";
+import { signupMode } from "@/lib/signup-mode";
 
 export const dynamic = "force-dynamic";
 
@@ -16,9 +18,11 @@ export async function GET() {
     ok = false;
   }
 
-  checks.billing = process.env.STRIPE_SECRET_KEY ? "configured" : "dev-mode";
+  checks.billing = isBillingConfigured() ? "configured" : "dev-mode";
   checks.aiCoaching = process.env.AI_COACHING_ENABLED === "true" ? "enabled" : "disabled";
   checks.errorTracking = process.env.SENTRY_DSN ? "configured" : "dormant";
+  // Who can create an account right now: "open" | "invite" | "closed".
+  checks.signups = signupMode();
 
   return NextResponse.json(
     { ok, status: ok ? "healthy" : "degraded", checks, time: new Date().toISOString() },

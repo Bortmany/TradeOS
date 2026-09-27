@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { ArrowLeft, Sparkles, Clock } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth";
 import { PLAN_DEFINITIONS, effectivePlan } from "@/lib/billing/plans";
+import { annualPricingAvailable } from "@/lib/billing/paddle";
 import type { Plan } from "@/lib/types";
 import { PageHeader } from "@/components/page-header";
 import { PlanCards } from "@/components/settings/plan-cards";
@@ -62,10 +63,17 @@ export default async function BillingPage() {
         )}
       </div>
 
-      <PlanCards currentPlan={plan} />
+      {/* Whether a year can be bought is decided on the server; the browser is
+          only ever told yes or no, never the payment provider's price ids. */}
+      <PlanCards currentPlan={plan} annualAvailable={annualPricingAvailable()} />
 
       <p className="pt-2 text-center text-2xs text-muted-foreground">
-        Payments are processed securely by Stripe. Cancel anytime.
+        Payments are processed securely by Paddle, our reseller and merchant of record.
+        Cancel anytime — see our{" "}
+        <Link href="/refunds" className="text-primary underline-offset-2 hover:underline">
+          refund policy
+        </Link>
+        .
       </p>
     </div>
   );

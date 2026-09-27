@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
-import { hasFeature } from "@/lib/billing/plans";
+import { effectivePlan, getFeatures, withinLimit } from "@/lib/billing/plans";
 import type { Plan } from "@/lib/types";
 import { apiErrorResponse } from "@/lib/api-error";
 
@@ -48,15 +48,25 @@ export async function POST(req: Request) {
   if (!user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   const limited = enforceUserRateLimit("rulebooks:write", user.id);
   if (limited) return limited;
-  // Server-side gate: the rule engine (rulebooks + rules) is a paid feature.
-  if (!hasFeature(user.plan as Plan, user.billingStatus, "ruleEngine")) {
-    return NextResponse.json(
-      { ok: false, error: "Rulebooks are part of the rule engine. Upgrade to Pro to create one." },
-      { status: 403 }
-    );
-  }
   try {
     const d = createSchema.parse(await req.json());
+
+    // Server-side cap: every plan has the rule engine, but the free tier only
+    // gets one rulebook. Counting then creating can in theory race with a second
+    // request from the same person, exactly like the existing account limit —
+    // the worst case is one extra row, so no transaction is taken for it.
+    const bookCount = await prisma.ruleBook.count({ where: { userId: user.id } });
+    if (!withinLimit(user.plan as Plan, user.billingStatus, "maxRuleBooks", bookCount)) {
+      const limit = getFeatures(effectivePlan(user.plan as Plan, user.billingStatus)).maxRuleBooks;
+      return NextResponse.json(
+        {
+          ok: false,
+          error: `Your plan includes ${limit} rulebook${limit === 1 ? "" : "s"}. Upgrade to Pro for unlimited rulebooks.`,
+        },
+        { status: 403 }
+      );
+    }
+
     const book = await prisma.ruleBook.create({
       data: {
         userId: user.id,

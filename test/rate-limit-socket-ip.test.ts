@@ -7,7 +7,8 @@
 // collapsed into ONE shared "anon:unknown" bucket — a small cookie-less burst
 // locked login/register for every visitor site-wide.
 //
-// The fix mirrors InvestIQ: src/instrumentation-node.ts subscribes to Node's
+// The fix mirrors the approach used in the owner's other Next.js apps:
+// src/instrumentation-node.ts subscribes to Node's
 // diagnostics_channel and stamps the true socket address onto an internal,
 // non-spoofable header (SOCKET_IP_HEADER) before any handler runs; socketAddress()
 // reads THAT header. These tests exercise that header path (which works in the

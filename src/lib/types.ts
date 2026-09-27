@@ -35,6 +35,12 @@ export type Plan = (typeof PLANS)[number];
 export const BILLING_STATUSES = ["trialing", "active", "past_due", "canceled"] as const;
 export type BillingStatus = (typeof BILLING_STATUSES)[number];
 
+// How often a paid plan is billed. Lives here (not in the plans or provider
+// modules) so the client-safe plan table and the server-only provider module can
+// both use the word without importing each other.
+export const BILLING_INTERVALS = ["monthly", "annual"] as const;
+export type BillingInterval = (typeof BILLING_INTERVALS)[number];
+
 export const SEVERITIES = ["low", "medium", "high"] as const;
 export type Severity = (typeof SEVERITIES)[number];
 
@@ -293,6 +299,10 @@ export interface PlanFeatures {
   maxAccounts: number; // Infinity for unlimited
   maxTradesPerImport: number;
   historyDays: number; // analytics look-back cap (Infinity = unlimited)
+  maxRuleBooks: number; // Infinity for unlimited
+  maxRules: number; // counted across ALL of a user's rulebooks; Infinity = unlimited
+  // "This product has a rule engine" — true on every tier. What differs between
+  // tiers is how many rulebooks and rules you get (the two caps above).
   ruleEngine: boolean;
   propFirmModule: boolean;
   reports: boolean;

@@ -15,19 +15,27 @@ import {
 } from "@/lib/validation";
 
 /** Which box to outline in red, when the message says so. */
-type ErrorField = "email" | "password" | "both" | null;
+type ErrorField = "email" | "password" | "inviteCode" | "both" | null;
 
 function fieldForError(message: string): ErrorField {
   const m = message.toLowerCase();
   if (m.includes("already exists")) return "email";
   if (m.includes("invalid email or password")) return "both";
+  if (m.includes("invite code")) return "inviteCode";
   if (m.includes("password")) return "password";
   if (m.includes("email")) return "email";
   // Rate limits, network trouble and the like aren't any one field's fault.
   return null;
 }
 
-export function AuthForm({ mode }: { mode: "login" | "register" }) {
+export function AuthForm({
+  mode,
+  inviteRequired = false,
+}: {
+  mode: "login" | "register";
+  /** Sign-up is invitation-only: show the invite code box and send it along. */
+  inviteRequired?: boolean;
+}) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -37,7 +45,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
   // The moment the user starts fixing things, drop the red state — but an
   // email complaint only clears when the EMAIL box is edited, so typing a
   // password doesn't wipe the message the user still needs.
-  function clearError(field?: "email" | "password") {
+  function clearError(field?: "email" | "password" | "inviteCode") {
     if (!error) return;
     if (errorField === "email" && field === "password") return;
     setError(null);
@@ -61,7 +69,16 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
       email: String(form.get("email") ?? ""),
       password: String(form.get("password") ?? ""),
       ...(isRegister ? { displayName: String(form.get("displayName") ?? "") } : {}),
+      ...(isRegister && inviteRequired
+        ? { inviteCode: String(form.get("inviteCode") ?? "").trim() }
+        : {}),
     };
+
+    if (isRegister && inviteRequired && !payload.inviteCode) {
+      setError("Enter your invite code to continue.");
+      setErrorField("inviteCode");
+      return;
+    }
 
     // Never send an address that can't exist — same rule the server applies.
     if (!isPossibleEmail(payload.email)) {
@@ -164,6 +181,27 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
               }
             />
           </div>
+          {isRegister && inviteRequired && (
+            <div className="space-y-1.5">
+              <Label htmlFor="inviteCode">Invite code</Label>
+              <Input
+                id="inviteCode"
+                name="inviteCode"
+                required
+                placeholder="e.g. TRADE-2026-ABCD"
+                autoComplete="off"
+                autoCapitalize="off"
+                spellCheck={false}
+                onChange={() => clearError("inviteCode")}
+                aria-invalid={errorField === "inviteCode" || undefined}
+                aria-describedby={errorField === "inviteCode" ? "auth-form-error" : "invite-code-note"}
+                className={errorField === "inviteCode" ? "border-loss" : undefined}
+              />
+              <p id="invite-code-note" className="text-xs text-muted-foreground">
+                Sign-up is by invitation for now — enter the code you were given.
+              </p>
+            </div>
+          )}
 
           {error && errorField !== "email" && (
             <p

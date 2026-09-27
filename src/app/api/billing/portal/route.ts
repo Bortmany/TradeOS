@@ -1,9 +1,17 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { getStripe } from "@/lib/billing/stripe";
+import {
+  BILLING_NOT_CONFIGURED,
+  PaddleError,
+  createPortalUrl,
+  paddleConfig,
+} from "@/lib/billing/paddle";
+import { enforceUserRateLimit, USER_EXTERNAL_LIMIT } from "@/lib/rate-limit";
 
-// Opens the Stripe customer portal so subscribers can manage/cancel their plan.
+// Opens the payment provider's customer portal so subscribers can update their
+// card, or cancel. A FRESH address is minted on every press — these links are
+// single-use and short-lived, so one is never cached, stored, or logged.
 export async function POST() {
   let user;
   try {
@@ -12,20 +20,39 @@ export async function POST() {
     return NextResponse.json({ ok: false, message: "Unauthorized" }, { status: 401 });
   }
 
-  const stripe = getStripe();
-  if (!stripe) {
-    return NextResponse.json({ ok: false, message: "Billing is not configured yet." });
+  // Tight limit: each call reaches out to the payment provider.
+  const limited = enforceUserRateLimit("billing:portal", user.id, USER_EXTERNAL_LIMIT);
+  if (limited) return limited;
+
+  const config = paddleConfig();
+  if (!config) {
+    return NextResponse.json({ ok: false, message: BILLING_NOT_CONFIGURED });
   }
 
-  const dbUser = await prisma.user.findUnique({ where: { id: user.id } });
-  if (!dbUser?.stripeCustomerId) {
-    return NextResponse.json({ ok: false, message: "No active subscription to manage." });
-  }
-
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
-  const session = await stripe.billingPortal.sessions.create({
-    customer: dbUser.stripeCustomerId,
-    return_url: `${appUrl}/settings/billing`,
+  const dbUser = await prisma.user.findUnique({
+    where: { id: user.id },
+    select: { paddleCustomerId: true, paddleSubscriptionId: true },
   });
-  return NextResponse.json({ ok: true, url: session.url });
+  if (!dbUser?.paddleCustomerId) {
+    return NextResponse.json({
+      ok: false,
+      message:
+        "We don't have a subscription on file for your account yet. If you've just paid, give it a minute and refresh.",
+    });
+  }
+
+  try {
+    const url = await createPortalUrl(
+      config,
+      dbUser.paddleCustomerId,
+      dbUser.paddleSubscriptionId
+    );
+    return NextResponse.json({ ok: true, url });
+  } catch (err) {
+    const message =
+      err instanceof PaddleError
+        ? err.message
+        : "We couldn't open your billing page. Please try again in a moment.";
+    return NextResponse.json({ ok: false, message }, { status: 400 });
+  }
 }
