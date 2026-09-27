@@ -21,6 +21,9 @@ export default defineConfig({
     // The cross-user isolation test shares one SQLite file — keep files serial.
     fileParallelism: false,
   },
+  // Pages are server components written in JSX; compile them the way Next.js
+  // does (automatic runtime) so a test can call a page's loader directly.
+  esbuild: { jsx: "automatic" },
   resolve: {
     alias: {
       "@": `${root}src`,

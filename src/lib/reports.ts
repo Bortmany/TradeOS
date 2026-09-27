@@ -13,16 +13,14 @@ import { computeMetrics, byStrategy, bySession } from "@/lib/analytics";
 import { evaluateTrades, etDayKey } from "@/lib/rules/engine";
 import type { RuleLike } from "@/lib/rules/engine";
 import { weekEndKey } from "@/lib/reviews";
+import { dailyPnlSeries, type DailyPnlPoint } from "@/lib/analytics/daily";
 import type { TradeRecord, PerformanceMetrics, BucketPerformance } from "@/lib/types";
 import { parseTags } from "@/lib/utils";
 
-export type ReportPeriod = "day" | "week" | "month";
+// Re-exported so existing imports from "@/lib/reports" keep working.
+export { dailyPnlSeries, type DailyPnlPoint };
 
-export interface DailyPnlPoint {
-  date: string; // ET calendar day, "YYYY-MM-DD"
-  pnl: number; // realized net P&L booked that day
-  trades: number; // closed trades that day
-}
+export type ReportPeriod = "day" | "week" | "month";
 
 export interface ComplianceSummary {
   adherencePct: number; // 0-100, pass / (pass + fail)
@@ -49,26 +47,6 @@ export interface ReportData {
   dailyPnl: DailyPnlPoint[];
   compliance: ComplianceSummary;
   emotions: EmotionSummary[];
-}
-
-/**
- * Buckets closed trades into ET calendar-day realized P&L points, sorted by
- * date ascending. Open trades (no exitTime) are ignored. Exported for reuse by
- * the analytics P&L calendar.
- */
-export function dailyPnlSeries(trades: TradeRecord[]): DailyPnlPoint[] {
-  const map = new Map<string, { pnl: number; trades: number }>();
-  for (const t of trades) {
-    if (t.exitTime === null) continue;
-    const date = etDayKey(t.entryTime);
-    const acc = map.get(date) ?? { pnl: 0, trades: 0 };
-    acc.pnl += t.pnl;
-    acc.trades += 1;
-    map.set(date, acc);
-  }
-  return Array.from(map.entries())
-    .map(([date, v]) => ({ date, pnl: v.pnl, trades: v.trades }))
-    .sort((a, b) => a.date.localeCompare(b.date));
 }
 
 /** Lower bound of the fetch window for a period (with a small buffer for `day`). */

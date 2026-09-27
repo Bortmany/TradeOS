@@ -1,8 +1,7 @@
 import { redirect } from "next/navigation";
 import { BarChart3, TrendingDown } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth";
-import { getAccounts, getDashboardData, getTrades } from "@/lib/data";
-import { dailyPnlSeries } from "@/lib/reports";
+import { getAccounts, getDashboardData } from "@/lib/data";
 import { PageHeader } from "@/components/page-header";
 import { AccountSwitcher } from "@/components/account-switcher";
 import { BucketBar } from "@/components/charts/bucket-bar";
@@ -37,15 +36,15 @@ export default async function AnalyticsPage({
   if (!user) redirect("/login");
   const { account } = await searchParams;
 
-  const [accounts, data, trades] = await Promise.all([
+  // getDashboardData loads the trades once and hands back everything this page
+  // needs (including the daily P&L calendar) — no second trade load.
+  const [accounts, data] = await Promise.all([
     getAccounts(user.id),
     getDashboardData(user.id, account),
-    getTrades(user.id, account ? { accountId: account } : {}),
   ]);
 
   const activeAccount = account ? accounts.find((a) => a.id === account) : null;
   const m = data.metrics;
-  const dailyPnl = dailyPnlSeries(trades);
 
   if (data.tradeCount === 0) {
     return (
@@ -238,7 +237,7 @@ export default async function AnalyticsPage({
           </p>
         </CardHeader>
         <CardContent>
-          <PnlCalendar data={dailyPnl} />
+          <PnlCalendar data={data.dailyPnl} />
         </CardContent>
       </Card>
     </div>
