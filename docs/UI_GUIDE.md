@@ -37,8 +37,13 @@ override (`next-themes`, class strategy, wired in `src/app/layout.tsx` via
 - Never rename or remove a token: the `@media print` block at the bottom of
   `globals.css` (used by the Reports PDF export) re-values them and must keep
   working. New tokens must be added to light, dark, AND print.
-- The marketing page (`src/app/page.tsx`) is pinned dark via a `dark` wrapper
-  class — it does not follow the user's theme by design.
+- The marketing page (`src/app/page.tsx`) is pinned LIGHT via a `light` wrapper
+  class (globals.css scopes the light tokens with `:root, .light`) — it does not
+  follow the user's theme by design. This executes the approved redesign brief
+  (`docs/redesign/DESIGN_BRIEF.md`): dark for tools you operate, light for pages
+  you read. The landing sections live in `src/components/marketing/` (one file
+  per section); the page also loads Inter via `next/font` scoped to its own
+  subtree through the `--font-sans` variable — the app keeps the system stack.
 - New decorative elements (gradients, textures) get `print:hidden`.
 
 ### Token vocabulary
