@@ -1,0 +1,6 @@
+echo ""
+echo "TradeOS: running the full verify recipe before this push goes to GitHub —"
+echo "type check, build, and the tests (including the ones that prove trade"
+echo "pairing and the discipline score are correct). This takes a minute or two."
+echo ""
+npm run verify

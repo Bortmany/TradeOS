@@ -38,3 +38,5 @@ TradeOS's core guarantee: FIFO trade pairing and the rule/discipline-score engin
 6. `npm run typecheck` if defined, else `npx tsc --noEmit`.
 7. `npm run build`.
 8. `npm test` — the vitest core-guarantee suite (`test/`: FIFO pairing, rule engine, discipline score, cross-user isolation). It creates and deletes its own throwaway SQLite database and never touches `prisma/dev.db`.
+
+**Pre-push check.** Every `git push` first runs `npm run verify` (steps 6–8: type check, build, tests) through `.husky/pre-push`, installed by `npm install`. It needs a local `.env` with `AUTH_SECRET` set (the build refuses to run without one), needs no database server, and takes about half a minute to a minute. Step 5 (lint) is left out for now: this repo has no ESLint settings file, so `next lint` stops to ask a setup question instead of checking anything. In an emergency, `git push --no-verify` skips the check.
