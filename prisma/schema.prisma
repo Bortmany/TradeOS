@@ -36,7 +36,15 @@ model User {
   // status: trialing | active | past_due | canceled
   billingStatus   String    @default("trialing")
   trialEndsAt     DateTime?
-  stripeCustomerId String?  @unique
+  // Identifiers at the payment provider (Paddle). Not keys, tokens or card
+  // details — none of those are ever stored. Written only by the billing
+  // webhook; used to open the customer portal and to recognise a returning
+  // customer. See src/lib/billing/paddle.ts.
+  paddleCustomerId     String?   @unique
+  paddleSubscriptionId String?
+  // When the provider says the last billing event we acted on happened. Used to
+  // ignore a delivery that overtook a newer one.
+  billingEventAt       DateTime?
 
   accounts        TradingAccount[]
   trades          Trade[]
@@ -48,10 +56,12 @@ model User {
   alerts          Alert[]
   sessions        Session[]
   brokerConnections BrokerConnection[]
+  weeklyReviews   WeeklyReview[]
   backtestRuns    BacktestRun[]
   marketDatasets  MarketDataset[]
 
   @@index([email])
+  @@index([paddleSubscriptionId])
 }
 
 model Session {
@@ -246,6 +256,28 @@ model DisciplineSnapshot {
 
   @@unique([userId, period, periodStart])
   @@index([userId, periodStart])
+}
+
+// --------------------------------------------------------------------------
+// Guided weekly review — the trader's own written reflection on a week
+// --------------------------------------------------------------------------
+
+model WeeklyReview {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Monday of the reviewed week, stored as UTC midnight of that ET calendar day
+  // so one week always maps to exactly one row per user.
+  weekStart   DateTime
+  // answers is a JSON string { worked, costliestRule, oneChange } — stored as
+  // String (not Json/scalar list) so the schema stays SQLite+Postgres portable.
+  answers     String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, weekStart])
+  @@index([userId])
 }
 
 // --------------------------------------------------------------------------

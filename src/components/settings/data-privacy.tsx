@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Download } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,6 +12,7 @@ const CONFIRM_WORD = "DELETE";
 export function DataPrivacy() {
   const router = useRouter();
   const [exporting, setExporting] = React.useState(false);
+  const [exported, setExported] = React.useState(false);
   const [confirming, setConfirming] = React.useState(false);
   const [confirmText, setConfirmText] = React.useState("");
   const [password, setPassword] = React.useState("");
@@ -20,6 +21,7 @@ export function DataPrivacy() {
 
   async function onExport() {
     setError(null);
+    setExported(false);
     setExporting(true);
     try {
       const res = await fetch("/api/profile/export");
@@ -35,6 +37,7 @@ export function DataPrivacy() {
       a.download = `tradeos-export-${new Date().toISOString().slice(0, 10)}.json`;
       a.click();
       URL.revokeObjectURL(url);
+      setExported(true);
     } catch {
       setError("Network error. Please try again.");
     } finally {
@@ -73,7 +76,8 @@ export function DataPrivacy() {
         <p className="text-sm font-medium">Export your data</p>
         <p className="mt-0.5 text-sm text-muted-foreground">
           Download everything you&apos;ve stored — profile, accounts, trades, rulebooks,
-          prop trackers, backtests and market datasets — as one JSON file.
+          prop trackers, weekly reviews, backtests and market datasets — as one JSON
+          file.
         </p>
         <Button
           variant="secondary"
@@ -85,6 +89,11 @@ export function DataPrivacy() {
           <Download className="h-4 w-4" />
           {exporting ? "Preparing…" : "Export data"}
         </Button>
+        {exported && (
+          <p className="mt-2 flex items-center gap-1.5 text-sm text-profit">
+            <CheckCircle2 className="h-4 w-4" /> Downloaded.
+          </p>
+        )}
       </div>
 
       <div className="border-t border-border pt-5">
@@ -97,7 +106,6 @@ export function DataPrivacy() {
         {!confirming ? (
           <Button
             variant="destructive"
-            size="sm"
             className="mt-2"
             onClick={() => setConfirming(true)}
           >
@@ -131,7 +139,6 @@ export function DataPrivacy() {
               <Button
                 type="submit"
                 variant="destructive"
-                size="sm"
                 disabled={deleting || confirmText !== CONFIRM_WORD || password.length === 0}
               >
                 {deleting ? "Deleting…" : "Permanently delete my account"}

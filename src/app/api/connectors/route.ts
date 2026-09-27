@@ -3,31 +3,32 @@ import { z } from "zod";
 import { withUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { encryptSecret } from "@/lib/crypto";
-import {
-  pxLogin,
-  pxSearchAccounts,
-  ConnectorError,
-  DEFAULT_BASE_URL,
-} from "@/lib/connectors/topstepx";
+import { pxLogin, pxSearchAccounts, ConnectorError } from "@/lib/connectors/topstepx";
+import { FIRM_IDS, getFirm } from "@/lib/connectors/firms";
 import { syncConnection } from "@/lib/connectors/sync";
 import { withinLimit } from "@/lib/billing/plans";
 import type { Plan } from "@/lib/types";
 import { enforceUserRateLimit, USER_EXTERNAL_LIMIT } from "@/lib/rate-limit";
 
+// The gateway address is never taken from the request: the client sends a firm
+// id from the registry and the server looks up the URL itself. A stray
+// `baseUrl` in the body is ignored (zod strips unknown keys).
+const firmField = z.enum(FIRM_IDS).default("topstepx");
+
 const discoverSchema = z.object({
   action: z.literal("discover"),
-  username: z.string().min(1),
-  apiKey: z.string().min(1),
-  baseUrl: z.string().url().optional(),
+  firm: firmField,
+  username: z.string().min(1).max(200),
+  apiKey: z.string().min(1).max(500),
 });
 
 const connectSchema = z.object({
   action: z.literal("connect"),
-  username: z.string().min(1),
-  apiKey: z.string().min(1),
-  baseUrl: z.string().url().optional(),
-  externalAccountId: z.string().min(1),
-  externalAccountName: z.string().optional(),
+  firm: firmField,
+  username: z.string().min(1).max(200),
+  apiKey: z.string().min(1).max(500),
+  externalAccountId: z.string().min(1).max(100),
+  externalAccountName: z.string().max(200).optional(),
 });
 
 export const GET = withUser(async (user) => {
@@ -71,15 +72,22 @@ export const POST = withUser(async (user, req: Request) => {
   try {
     if (action === "discover") {
       const d = discoverSchema.parse(body);
-      const baseUrl = d.baseUrl ?? DEFAULT_BASE_URL;
-      const token = await pxLogin(baseUrl, d.username, d.apiKey);
-      const accounts = await pxSearchAccounts(baseUrl, token);
+      const firm = getFirm(d.firm);
+      if (!firm) {
+        return NextResponse.json({ ok: false, error: "Unknown broker." }, { status: 400 });
+      }
+      const token = await pxLogin(firm.apiBase, d.username, d.apiKey);
+      const accounts = await pxSearchAccounts(firm.apiBase, token);
       return NextResponse.json({ ok: true, accounts });
     }
 
     if (action === "connect") {
       const d = connectSchema.parse(body);
-      const baseUrl = d.baseUrl ?? DEFAULT_BASE_URL;
+      const firm = getFirm(d.firm);
+      if (!firm) {
+        return NextResponse.json({ ok: false, error: "Unknown broker." }, { status: 400 });
+      }
+      const baseUrl = firm.apiBase;
 
       // Plan gate: connected accounts count toward the account limit.
       const accountCount = await prisma.tradingAccount.count({ where: { userId: user.id } });
@@ -91,7 +99,7 @@ export const POST = withUser(async (user, req: Request) => {
       }
 
       const existing = await prisma.brokerConnection.findFirst({
-        where: { userId: user.id, broker: "topstepx", externalAccountId: d.externalAccountId },
+        where: { userId: user.id, broker: firm.id, externalAccountId: d.externalAccountId },
       });
       if (existing) {
         return NextResponse.json(
@@ -106,8 +114,8 @@ export const POST = withUser(async (user, req: Request) => {
       const account = await prisma.tradingAccount.create({
         data: {
           userId: user.id,
-          name: d.externalAccountName ?? `TopstepX ${d.externalAccountId}`,
-          broker: "topstepx",
+          name: d.externalAccountName ?? `${firm.name} ${d.externalAccountId}`,
+          broker: firm.id,
           kind: "funded",
           startingBalance: 0,
           color: "#22c55e",
@@ -117,7 +125,7 @@ export const POST = withUser(async (user, req: Request) => {
         data: {
           userId: user.id,
           accountId: account.id,
-          broker: "topstepx",
+          broker: firm.id,
           baseUrl,
           username: d.username,
           apiKeyEnc: encryptSecret(d.apiKey),

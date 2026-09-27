@@ -1,6 +1,12 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ShieldCheck, HeartPulse, AlertTriangle, ClipboardList } from "lucide-react";
+import {
+  ShieldCheck,
+  HeartPulse,
+  AlertTriangle,
+  ClipboardList,
+  NotebookPen,
+} from "lucide-react";
 import { getCurrentUser } from "@/lib/auth";
 import { buildReport, type ReportPeriod, type ReportData } from "@/lib/reports";
 import type { TradeRecord } from "@/lib/types";
@@ -60,7 +66,15 @@ export default async function ReportsPage({
         title="Reports"
         description="Print-ready performance & compliance summaries."
       >
-        <PrintButton />
+        <div className="flex items-center gap-2">
+          <Button asChild variant="secondary" className="gap-1.5 print:hidden">
+            <Link href="/reports/review">
+              <NotebookPen className="h-4 w-4" />
+              Weekly review
+            </Link>
+          </Button>
+          <PrintButton />
+        </div>
       </PageHeader>
 
       {/* Server-driven tabs */}
@@ -152,7 +166,7 @@ function ReportBody({ report, periodLabel }: { report: ReportData; periodLabel: 
         </CardContent>
       </Card>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Compliance */}
         <Card>
           <CardHeader className="flex-row items-center justify-between">
@@ -246,7 +260,7 @@ function ReportBody({ report, periodLabel }: { report: ReportData; periodLabel: 
               No rule breaks — disciplined {periodLabel.toLowerCase()}. 🎯
             </p>
           ) : (
-            <div className="grid gap-2 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {report.compliance.topViolations.map((v, i) => (
                 <div
                   key={v.ruleName}
@@ -269,7 +283,7 @@ function ReportBody({ report, periodLabel }: { report: ReportData; periodLabel: 
       </Card>
 
       {/* Best / worst trades */}
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <TradeList title="Best Trades" trades={report.best} tone="profit" />
         <TradeList title="Worst Trades" trades={report.worst} tone="loss" />
       </div>

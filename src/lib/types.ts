@@ -35,6 +35,12 @@ export type Plan = (typeof PLANS)[number];
 export const BILLING_STATUSES = ["trialing", "active", "past_due", "canceled"] as const;
 export type BillingStatus = (typeof BILLING_STATUSES)[number];
 
+// How often a paid plan is billed. Lives here (not in the plans or provider
+// modules) so the client-safe plan table and the server-only provider module can
+// both use the word without importing each other.
+export const BILLING_INTERVALS = ["monthly", "annual"] as const;
+export type BillingInterval = (typeof BILLING_INTERVALS)[number];
+
 export const SEVERITIES = ["low", "medium", "high"] as const;
 export type Severity = (typeof SEVERITIES)[number];
 
@@ -82,17 +88,28 @@ export type Emotion = (typeof EMOTIONS)[number];
 // persisted (ids/user/account are attached at persistence time).
 // --------------------------------------------------------------------------
 
+// Sane absolute limits shared by the manual-trade route and the CSV importer.
+// Two jobs: (1) `.finite()` keeps Infinity/NaN out of the database — an overflow
+// row (e.g. huge price × huge quantity) that computed to `Infinity` used to slip
+// past validation, throw on insert, and get swallowed as a fake "dedupe"; now it
+// is rejected up front and reported as a real error. (2) The upper bounds reject
+// absurd values long before they can overflow a later multiplication.
+export const MAX_TRADE_PRICE = 1_000_000_000; // $1B — beyond any real instrument price
+export const MAX_TRADE_QUANTITY = 10_000_000; // 10M units in a single trade
+export const MAX_TRADE_FEES = 10_000_000; // $10M of fees on a single trade
+export const MAX_TRADE_PNL = 1_000_000_000_000; // $1T absolute cap on computed P&L
+
 export const NormalizedTradeSchema = z.object({
   symbol: z.string().min(1),
   side: z.enum(SIDES),
-  entryPrice: z.number(),
-  exitPrice: z.number().nullable().optional(),
-  quantity: z.number().positive(),
+  entryPrice: z.number().finite().min(-MAX_TRADE_PRICE).max(MAX_TRADE_PRICE),
+  exitPrice: z.number().finite().min(-MAX_TRADE_PRICE).max(MAX_TRADE_PRICE).nullable().optional(),
+  quantity: z.number().finite().positive().max(MAX_TRADE_QUANTITY),
   entryTime: z.coerce.date(),
   exitTime: z.coerce.date().nullable().optional(),
-  fees: z.number().default(0),
-  pnl: z.number().optional(), // computed if omitted
-  pnlGross: z.number().nullable().optional(),
+  fees: z.number().finite().min(-MAX_TRADE_FEES).max(MAX_TRADE_FEES).default(0),
+  pnl: z.number().finite().min(-MAX_TRADE_PNL).max(MAX_TRADE_PNL).optional(), // computed if omitted
+  pnlGross: z.number().finite().min(-MAX_TRADE_PNL).max(MAX_TRADE_PNL).nullable().optional(),
   strategyTag: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
   emotions: z.string().nullable().optional(),
@@ -134,11 +151,31 @@ export interface TradeRecord {
 // Rule engine config shapes (the `Rule.config` JSON blob, keyed by rule.type)
 // --------------------------------------------------------------------------
 
-export const TimeWindowConfig = z.object({
-  start: z.string().regex(/^\d{2}:\d{2}$/), // "09:30" local exchange time
-  end: z.string().regex(/^\d{2}:\d{2}$/),
-  timezone: z.string().default("America/New_York"),
-});
+// "HH:MM" 24-hour, hours 00-23 and minutes 00-59 only — a plain \d{2}:\d{2}
+// regex would also accept impossible times like "99:99".
+const TIME_OF_DAY = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+// "HH:MM" (already regex-validated) → minutes since midnight, for comparing the
+// two ends of a time window.
+function timeOfDayToMinutes(v: string): number {
+  const [h, m] = v.split(":");
+  return Number(h) * 60 + Number(m);
+}
+
+export const TimeWindowConfig = z
+  .object({
+    start: z.string().regex(TIME_OF_DAY, "Enter a valid time (HH:MM, 00:00-23:59)."), // "09:30" local exchange time
+    end: z.string().regex(TIME_OF_DAY, "Enter a valid time (HH:MM, 00:00-23:59)."),
+    timezone: z.string().default("America/New_York"),
+  })
+  // A window whose start is AFTER its end (e.g. 16:00–09:00) can never match any
+  // trade — the engine fails every trade as both "before open" and "after close",
+  // so the rule silently never passes. Overnight/wraparound windows aren't
+  // supported, so reject the impossible config instead of accepting a dead rule.
+  .refine((c) => timeOfDayToMinutes(c.start) <= timeOfDayToMinutes(c.end), {
+    message: "The window's start time must be at or before its end time (overnight windows aren't supported).",
+    path: ["end"],
+  });
 
 export const RiskLimitConfig = z.object({
   maxLossPerTrade: z.number().positive().optional(),
@@ -422,6 +459,10 @@ export interface PlanFeatures {
   maxAccounts: number; // Infinity for unlimited
   maxTradesPerImport: number;
   historyDays: number; // analytics look-back cap (Infinity = unlimited)
+  maxRuleBooks: number; // Infinity for unlimited
+  maxRules: number; // counted across ALL of a user's rulebooks; Infinity = unlimited
+  // "This product has a rule engine" — true on every tier. What differs between
+  // tiers is how many rulebooks and rules you get (the two caps above).
   ruleEngine: boolean;
   propFirmModule: boolean;
   reports: boolean;

@@ -1,22 +1,21 @@
 // TradeOS — backtest engine fixture tests (candles, simulation, replay,
-// result assembly). Run with: `tsx scripts/test-backtest.ts` (wired into
-// `npm test`). Plain checks, exit 1 on any failure — same harness style as
-// test-pairing.ts.
+// result assembly) for the Testing Portal. Runs inside `npm test` (vitest).
+// Each `check(...)` below is its own named test, so a failure names exactly
+// which behaviour broke.
 
-import { parseCandleCsv } from "../src/lib/backtest/candles";
-import { runSimulation } from "../src/lib/backtest/simulate";
-import { runReplay } from "../src/lib/backtest/replay";
-import { assembleResults, downsampleEquity } from "../src/lib/backtest/results";
-import { SimConfigSchema, type Candle, type ReplayConfig, type SimConfig, type TradeRecord } from "../src/lib/types";
+import { describe, it, expect } from "vitest";
+import { parseCandleCsv } from "@/lib/backtest/candles";
+import { runSimulation } from "@/lib/backtest/simulate";
+import { runReplay } from "@/lib/backtest/replay";
+import { assembleResults, downsampleEquity } from "@/lib/backtest/results";
+import { SimConfigSchema, type Candle, type ReplayConfig, type SimConfig, type TradeRecord } from "@/lib/types";
 
-let failures = 0;
+// The fixtures in each group are worked out while the group is collected;
+// each check then registers as one test with the detail as its failure message.
 function check(name: string, cond: boolean, detail?: string): void {
-  if (cond) {
-    console.log(`  ✓ ${name}`);
-  } else {
-    failures++;
-    console.error(`  ✗ ${name}${detail ? ` — ${detail}` : ""}`);
-  }
+  it(name, () => {
+    expect(cond, detail ?? name).toBe(true);
+  });
 }
 
 const bar = (iso: string, o: number, h: number, l: number, c: number): Candle => ({
@@ -43,10 +42,7 @@ const simDefaults: Omit<SimConfig, "strategy"> = {
   tickSize: 0.25,
 };
 
-// ---------------------------------------------------------------------------
-console.log("candle CSV parsing");
-// ---------------------------------------------------------------------------
-{
+describe("candle CSV parsing", () => {
   // TradingView-style: unix seconds.
   const tv = parseCandleCsv(
     "time,open,high,low,close,volume\n1751808600,100,101,99,100.5,1200\n1751808900,100.5,102,100,101,900\n"
@@ -77,13 +73,10 @@ console.log("candle CSV parsing");
 
   const missing = parseCandleCsv("time,open,close\n1751808600,1,2\n");
   check("missing columns get a clear error", missing.candles.length === 0 && missing.errors.length > 0);
-}
+});
 
-// ---------------------------------------------------------------------------
-console.log("simulation: opening range breakout (ES, July = EDT)");
-// ---------------------------------------------------------------------------
+describe("simulation: opening range breakout (ES, July = EDT)", () => {
 // 2026-07-06 is a Monday; 09:30 ET = 13:30 UTC in July.
-{
   const day = [
     bar("2026-07-06T13:30:00Z", 100, 102, 99, 101), //   09:30 — range
     bar("2026-07-06T13:35:00Z", 101, 103, 100, 102), //  09:35 — range
@@ -171,12 +164,9 @@ console.log("simulation: opening range breakout (ES, July = EDT)");
   ];
   const winter = runSimulation(winterDay, config, "ES");
   check("DST: January (EST) day trades identically", winter.length === 1 && winter[0]?.entryPrice === 104);
-}
+});
 
-// ---------------------------------------------------------------------------
-console.log("simulation: MA cross and prev-day level");
-// ---------------------------------------------------------------------------
-{
+describe("simulation: MA cross and prev-day level", () => {
   // SMA 2/3 over a series that dips then rips: cross up fires once.
   const base = "2026-07-06T";
   const closes = [10, 10, 10, 10, 20, 30, 30.5];
@@ -216,12 +206,9 @@ console.log("simulation: MA cross and prev-day level");
     JSON.stringify(pdTrades)
   );
   check("prev_day_level: no trade on the first day", pdTrades.every((t) => t.entryTime.getTime() >= Date.parse("2026-07-07T00:00:00Z")));
-}
+});
 
-// ---------------------------------------------------------------------------
-console.log("replay: filters and rulebook exclusion");
-// ---------------------------------------------------------------------------
-{
+describe("replay: filters and rulebook exclusion", () => {
   let seq = 0;
   const trade = (over: Partial<TradeRecord>): TradeRecord => ({
     id: `t${++seq}`,
@@ -309,12 +296,9 @@ console.log("replay: filters and rulebook exclusion");
     etOut.baselineTrades.length === 2 && !etOut.baselineTrades.some((t) => t.id === eve.id),
     JSON.stringify(etOut.baselineTrades.map((t) => t.id))
   );
-}
+});
 
-// ---------------------------------------------------------------------------
-console.log("result assembly: sanitization and caps");
-// ---------------------------------------------------------------------------
-{
+describe("result assembly: sanitization and caps", () => {
   const winner: TradeRecord = {
     id: "w1",
     userId: "u",
@@ -359,12 +343,9 @@ console.log("result assembly: sanitization and caps");
     down4000.length <= 2000 && down4000[down4000.length - 1].value === 3999,
     `${down4000.length} points`
   );
-}
+});
 
-// ---------------------------------------------------------------------------
-console.log("regressions: review-confirmed engine fixes");
-// ---------------------------------------------------------------------------
-{
+describe("regressions: review-confirmed engine fixes", () => {
   // R1 — a same-bar exit after an intrabar entry must never use the bar's
   // pre-entry open. Range 90-100; the breakout bar OPENS at 93 (below the
   // stop 95) then rallies through 100: correct exit is the stop at 95.
@@ -469,11 +450,4 @@ console.log("regressions: review-confirmed engine fixes");
       flattenAt: "9:30",
     }).success
   );
-}
-
-// ---------------------------------------------------------------------------
-if (failures > 0) {
-  console.error(`\n${failures} backtest check(s) FAILED`);
-  process.exit(1);
-}
-console.log("\nAll backtest checks passed.");
+});

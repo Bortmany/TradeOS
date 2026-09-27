@@ -14,7 +14,7 @@ where consistency breaks down — before it costs a payout.
 ## Quick start (local, zero external accounts)
 
 The app runs fully locally out of the box: **SQLite** for the database and a
-**built-in email/password auth** layer. No Supabase or Stripe account needed to
+**built-in email/password auth** layer. No Supabase or Paddle account needed to
 try it.
 
 ```bash
@@ -121,8 +121,9 @@ Feature gating lives in `src/lib/billing/plans.ts`:
 | **Elite** | $79/mo | Prop-firm guardrails, reports, priority |
 
 New users get a 14-day full-access trial. Path to $10k MRR ≈ **345 Pro** or
-**~130 Elite** subscribers. Stripe is architecture-ready (env-gated) — the app
-enforces gating today and lights up checkout when keys are added.
+**~130 Elite** subscribers. Paddle billing is built and env-gated — the app
+enforces gating today and lights up checkout when the keys are added. Paddle is
+the merchant of record, so it handles worldwide sales tax/VAT.
 
 ---
 
@@ -140,7 +141,7 @@ enforces gating today and lights up checkout when keys are added.
   `npm run db:push`. All `Json`-as-string fields are already Postgres-safe.
 - **Supabase Auth:** `src/lib/auth.ts` is a thin, swappable layer — keep the
   `getCurrentUser()` contract and replace token issue/verify.
-- **Stripe:** set `STRIPE_*` env vars; wire `api/billing/checkout`.
+- **Paddle:** set the `PADDLE_*` env vars — checkout, portal and webhook are already wired.
 - **AI coaching (Phase 4):** interfaces are stubbed and disabled; no core logic
   depends on AI.
 
@@ -154,16 +155,31 @@ enforces gating today and lights up checkout when keys are added.
   *Remaining: more live connectors (Tradovate, Rithmic).*
 - **Phase 3:** trade replay (schematic playback ✅), reports → PDF (print
   pipeline ✅). *Remaining: screenshot analysis, Monte-Carlo risk-of-ruin.*
-- **Phase 4:** Stripe billing (env-gated: checkout, webhook, customer portal ✅),
+- **Phase 4:** Paddle billing (env-gated: checkout, webhook, customer portal ✅),
   AI coaching layer (provider interface + disabled default ✅ — no AI dependency
   in core). *Remaining: real AI provider, native iOS/Android (web is PWA-ready).*
 
 ### Enabling the env-gated pieces
-- **Stripe:** set `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and the
-  `NEXT_PUBLIC_STRIPE_PRICE_PRO/ELITE` price ids. Checkout, the customer portal,
-  and subscription-sync webhooks activate automatically; until then the UI shows
-  a graceful "not configured" notice and gating still works.
+- **Sign-up access:** `SIGNUP_INVITE_CODES` (comma-separated codes, 8+
+  characters each) makes sign-up invitation-only — the register page asks for
+  a code and wrong guesses are rate-limited. `SIGNUPS_OPEN=true` opens sign-up
+  to everyone. In production with neither set, sign-up is closed; locally it
+  stays open unless codes are set. Logic: `src/lib/signup-mode.ts`;
+  `/api/health` reports `signups: open | invite | closed`.
+- **Paddle:** set `PADDLE_ENV`, `PADDLE_API_KEY`, `PADDLE_WEBHOOK_SECRET` and
+  the `PADDLE_PRICE_ID_PRO` / `PADDLE_PRICE_ID_ELITE` price ids. Optionally add
+  `PADDLE_PRICE_ID_PRO_ANNUAL` / `PADDLE_PRICE_ID_ELITE_ANNUAL` to also sell a
+  year up front ($290 / $790 — two months free); without them no yearly option
+  is shown and monthly billing is unchanged. Checkout, the
+  customer portal and subscription-sync webhooks activate automatically; until
+  then the UI shows a graceful "not switched on" notice and gating still works.
+  The whole integration is one file (`src/lib/billing/paddle.ts`); the account
+  sign-up sequence is in `GO-LIVE.md`.
 - **AI coaching:** implement a `CoachingProvider` (see `src/lib/ai/types.ts`),
   register it in `src/lib/ai/index.ts`, and set `AI_COACHING_ENABLED=true`.
+- **Legal-page contact address:** `PRIVACY_CONTACT_EMAIL` (optional) is the
+  address shown as the "Contact" line on `/terms`, `/privacy` and `/refunds`.
+  Unset, it defaults to the owner's address (`naeljam@hotmail.com`). Read
+  server-side only: `src/lib/legal-contact.ts`.
 
 *For educational analytics only. Not financial advice.*

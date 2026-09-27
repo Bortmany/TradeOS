@@ -1,9 +1,9 @@
 // TradeOS — data export. Returns everything the signed-in user has stored, as
 // one downloadable JSON file: profile (minus the password hash), trading
-// accounts, trades, rulebooks + rules, prop-firm trackers, backtest runs and
-// market datasets. Broker connections are deliberately NOT included — they
-// hold the encrypted API key, and broker credentials never leave the server
-// in any form.
+// accounts, trades, rulebooks + rules, prop-firm trackers, weekly reviews,
+// backtest runs, and market datasets (details only, not the raw price bars).
+// Broker connections are deliberately NOT included — they hold the encrypted API key,
+// and broker credentials never leave the server in any form.
 
 import { NextResponse } from "next/server";
 import { withUser } from "@/lib/auth";
@@ -20,7 +20,16 @@ export const GET = withUser(async (user) => {
     );
   }
 
-  const [profile, accounts, trades, ruleBooks, propAccounts, backtestRuns, marketDatasets] = await Promise.all([
+  const [
+    profile,
+    accounts,
+    trades,
+    ruleBooks,
+    propAccounts,
+    weeklyReviews,
+    backtestRuns,
+    marketDatasets,
+  ] = await Promise.all([
     prisma.user.findUnique({
       where: { id: user.id },
       // Everything except passwordHash (never leaves the server).
@@ -32,7 +41,8 @@ export const GET = withUser(async (user) => {
         plan: true,
         billingStatus: true,
         trialEndsAt: true,
-        stripeCustomerId: true,
+        paddleCustomerId: true,
+        paddleSubscriptionId: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -45,9 +55,14 @@ export const GET = withUser(async (user) => {
       orderBy: { createdAt: "asc" },
     }),
     prisma.propAccount.findMany({ where: { userId: user.id }, orderBy: { createdAt: "asc" } }),
+    // The trader's own words from the guided weekly review — their writing, so
+    // it belongs in their export.
+    prisma.weeklyReview.findMany({ where: { userId: user.id }, orderBy: { weekStart: "asc" } }),
+    // Saved Testing Portal runs (settings, results and notes).
     prisma.backtestRun.findMany({ where: { userId: user.id }, orderBy: { createdAt: "asc" } }),
-    // Metadata only — the candles column can be megabytes per dataset, and
+    // Details only — the candles column can be megabytes per dataset, and
     // serializing every blob into one JSON response would exhaust memory.
+    // Candles are market prices the user uploaded, not personal data.
     prisma.marketDataset.findMany({
       where: { userId: user.id },
       orderBy: { createdAt: "asc" },
@@ -74,6 +89,7 @@ export const GET = withUser(async (user) => {
       trades,
       ruleBooks,
       propAccounts,
+      weeklyReviews,
       backtestRuns,
       marketDatasets,
     },

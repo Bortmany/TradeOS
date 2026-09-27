@@ -13,7 +13,7 @@ export default function PrivacyPage() {
     <article className="space-y-8">
       <header>
         <h1 className="text-3xl font-semibold tracking-tight">Privacy Policy</h1>
-        <p className="mt-2 text-sm text-muted-foreground">Last updated: July 18, 2026</p>
+        <p className="mt-2 text-sm text-muted-foreground">Last updated: September 28, 2026</p>
       </header>
 
       <div className="rounded-lg border border-warning/40 bg-warning-muted p-4 text-sm">
@@ -39,10 +39,13 @@ export default function PrivacyPage() {
             quantities, times, fees, profit/loss), your trading accounts, CSV import
             history, your rulebooks and rules, prop-firm tracker settings, and the
             compliance scores, discipline snapshots and alerts computed from them.
+            If you use the Testing Portal: the price-data files you upload and the
+            strategy tests you save (their settings and results).
           </li>
           <li>
             <strong>Journal content</strong> — the notes, emotion tags and labels you attach
-            to trades.
+            to trades, the written answers you save in a weekly review, and any notes
+            you add to a saved strategy test.
           </li>
           <li>
             <strong>Broker connection (optional)</strong> — if you link a TopstepX account:
@@ -53,8 +56,9 @@ export default function PrivacyPage() {
           </li>
           <li>
             <strong>Billing</strong> — if paid subscriptions are enabled, payments are
-            processed by Stripe. We store a Stripe customer reference and your plan status;
-            your card details go to Stripe and never touch our servers.
+            processed by Paddle, which acts as the reseller and merchant of record. We
+            store a Paddle customer reference, a subscription reference, and your plan
+            status; your card details go to Paddle and never touch our servers.
           </li>
         </ul>
       </Section>
@@ -64,8 +68,10 @@ export default function PrivacyPage() {
           <li>We don&apos;t sell your data or share it with advertisers.</li>
           <li>We don&apos;t run advertising or cross-site tracking scripts.</li>
           <li>
-            We use one cookie: an httpOnly session cookie that keeps you signed in for up
-            to 30 days. Signing out removes it.
+            We use two strictly-necessary httpOnly cookies and nothing else: a session
+            cookie that keeps you signed in for up to 30 days (signing out removes it), and,
+            when we aren&apos;t behind a proxy, a random anti-abuse cookie that lets us rate-limit
+            sign-in attempts per browser. Neither is used for advertising or tracking.
           </li>
         </ul>
       </Section>
@@ -73,7 +79,7 @@ export default function PrivacyPage() {
       <Section title="Who processes data for us">
         <p>
           Your data lives in our hosting provider&apos;s database. If paid billing is enabled,
-          Stripe processes payments. If error tracking is enabled, crash reports
+          Paddle processes payments. If error tracking is enabled, crash reports
           (technical details about an error, with credentials automatically redacted) may
           be sent to Sentry so problems can be fixed. These providers process data only to
           provide their service to us.
@@ -84,7 +90,9 @@ export default function PrivacyPage() {
         <ul className="list-disc space-y-1.5 pl-5">
           <li>
             <strong>Export</strong> — download a copy of your profile, trading accounts,
-            trades, rulebooks and prop-firm data as a JSON file from
+            trades, rulebooks, prop-firm data, weekly reviews and saved strategy tests
+            (plus the name and date range of each uploaded price-data file) as a JSON
+            file from
             Settings → Data &amp; privacy. (Derived records the app computes for
             you — alerts, rule evaluations, score history and import logs — are
             not included, and broker connections are never exported because

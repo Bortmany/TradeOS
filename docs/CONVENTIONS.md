@@ -6,12 +6,17 @@ House rules for anyone (human or agent) changing code in this repo. The generic 
 
 Next.js 15 (App Router) + React 19 + TypeScript, Prisma 5, Tailwind + Radix-style primitives. Before writing anything, read a reference implementation end to end — an existing route handler under `src/app/api/`, its lib module under `src/lib/`, and the component that consumes it — and match their style exactly.
 
+## Core guarantee
+
+TradeOS's core guarantee: FIFO trade pairing and the rule/discipline-score engine are deterministic and correct — proven by the automated suite `npm test` runs (`test/`, vitest). Any future change to FIFO pairing (`src/lib/connectors/topstepx.ts`), the rule engine (`src/lib/rules/engine.ts`), the discipline score (`src/lib/discipline/score.ts`), or the user-scoping in `src/lib/data.ts` must extend that suite in the same change — a guarantee-area diff with no test update is a review-blocking finding, not a nitpick.
+
 ## Non-negotiable rules
 
 - **Database portability**: the schema runs on SQLite (dev) AND Postgres (prod). No native enums, no scalar lists, no Postgres-only column types — status/type fields are plain `String` with the allowed values in a comment, exactly as the existing schema does.
 - **Deterministic core**: the rule engine, discipline score and analytics are deterministic and explainable. AI is an optional, swappable layer behind the interface in `src/lib/ai/` — never wire AI into core scoring.
 - **Validation & auth**: zod on every API input; auth checks the session (jose JWT) before touching data; every query scoped to the signed-in user's data.
 - **Secrets**: broker API keys are AES-256-GCM encrypted at rest (see `BrokerConnection`) — never log or return them.
+- **Outbound calls only to the firm registry**: the server contacts broker gateways listed in `src/lib/connectors/firms.ts` and nothing else — never a user-supplied URL. Adding a firm is one registry entry (`docs/connectors.md`).
 - **Numbers**: follow the existing numeric conventions in the schema and `src/lib/` — don't introduce new float handling.
 - Contract changes (the normalized Trade shape, rule-engine inputs/outputs, discipline-score semantics) require updating `docs/CONTRACTS.md` in the same change — silent drift is a review-blocking finding.
 
@@ -32,4 +37,6 @@ Next.js 15 (App Router) + React 19 + TypeScript, Prisma 5, Tailwind + Radix-styl
 5. `npm run lint` if defined.
 6. `npm run typecheck` if defined, else `npx tsc --noEmit`.
 7. `npm run build`.
-8. Tests, if a test script exists.
+8. `npm test` — the vitest core-guarantee suite (`test/`: FIFO pairing, rule engine, discipline score, cross-user isolation). It creates and deletes its own throwaway SQLite database and never touches `prisma/dev.db`.
+
+**Pre-push check.** Every `git push` first runs `npm run verify` (steps 6–8: type check, build, tests) through `.husky/pre-push`, installed by `npm install`. It needs a local `.env` with `AUTH_SECRET` set (the build refuses to run without one), needs no database server, and takes about half a minute to a minute. Step 5 (lint) is left out for now: this repo has no ESLint settings file, so `next lint` stops to ask a setup question instead of checking anything. In an emergency, `git push --no-verify` skips the check.

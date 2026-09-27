@@ -33,7 +33,7 @@ export function AccountSwitcher({ accounts }: { accounts: AccountOption[] }) {
 
   return (
     <Select value={current} onValueChange={onChange}>
-      <SelectTrigger className="h-9 w-[180px] gap-2">
+      <SelectTrigger className="h-11 w-[180px] gap-2">
         <Wallet className="h-4 w-4 text-muted-foreground" />
         <SelectValue placeholder="All accounts" />
       </SelectTrigger>

@@ -3,7 +3,9 @@ import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
-import { RULE_TYPES, SEVERITIES, RULE_CONFIG_SCHEMAS, type RuleType } from "@/lib/types";
+import { RULE_TYPES, SEVERITIES, RULE_CONFIG_SCHEMAS, type RuleType, type Plan } from "@/lib/types";
+import { effectivePlan, getFeatures, withinLimit } from "@/lib/billing/plans";
+import { apiErrorResponse } from "@/lib/api-error";
 
 const createSchema = z.object({
   ruleBookId: z.string().min(1),
@@ -61,7 +63,26 @@ export async function POST(req: Request) {
     });
     if (!book) return NextResponse.json({ ok: false, error: "Rulebook not found." }, { status: 404 });
 
+    // Server-side cap: the free tier gets a small number of rules IN TOTAL, so
+    // this count is over everything the signed-in user owns — scoped through
+    // ruleBook.userId, never by rulebook id alone (another person's book must
+    // never be able to spend, or be spent by, this person's allowance).
+    // Same accepted race as the account limit: worst case one extra row.
+    const ownedRules = await prisma.rule.count({ where: { ruleBook: { userId: user.id } } });
+    if (!withinLimit(user.plan as Plan, user.billingStatus, "maxRules", ownedRules)) {
+      const limit = getFeatures(effectivePlan(user.plan as Plan, user.billingStatus)).maxRules;
+      return NextResponse.json(
+        {
+          ok: false,
+          error: `Your plan includes ${limit} rules. Upgrade to Pro for unlimited rules.`,
+        },
+        { status: 403 }
+      );
+    }
+
     const config = serializeConfig(d.type, d.config);
+    // Separate, deliberate second count: this one is the new rule's position
+    // WITHIN its own book, which is a different question from the plan cap.
     const count = await prisma.rule.count({ where: { ruleBookId: d.ruleBookId } });
 
     const rule = await prisma.rule.create({
@@ -78,7 +99,7 @@ export async function POST(req: Request) {
     await recompute(user.id);
     return NextResponse.json({ ok: true, id: rule.id });
   } catch (err) {
-    return NextResponse.json({ ok: false, error: errMessage(err) }, { status: 400 });
+    return apiErrorResponse(err, { validationMessage: configValidationMessage(err) });
   }
 }
 
@@ -113,7 +134,7 @@ export async function PATCH(req: Request) {
     await recompute(user.id);
     return NextResponse.json({ ok: true });
   } catch (err) {
-    return NextResponse.json({ ok: false, error: errMessage(err) }, { status: 400 });
+    return apiErrorResponse(err, { validationMessage: configValidationMessage(err) });
   }
 }
 
@@ -133,14 +154,16 @@ export async function DELETE(req: Request) {
     await recompute(user.id);
     return NextResponse.json({ ok: true });
   } catch (err) {
-    return NextResponse.json({ ok: false, error: errMessage(err) }, { status: 400 });
+    return apiErrorResponse(err, { validationMessage: configValidationMessage(err) });
   }
 }
 
-function errMessage(err: unknown): string {
+// Turn a config validation slip into a specific, plain-English hint (used only
+// for the ZodError branch inside apiErrorResponse — other errors stay generic).
+function configValidationMessage(err: unknown): string {
   if (err instanceof z.ZodError) {
     const first = err.issues[0];
     return first ? `Invalid config: ${first.message}` : "Please check the rule fields.";
   }
-  return err instanceof Error ? err.message : "Failed.";
+  return "Please check the rule fields.";
 }
