@@ -16,6 +16,7 @@ import {
 import { BACKTEST_KIND_LABELS } from "@/lib/backtest/labels";
 import { formatCurrency, formatDate, formatPercent, pnlColor } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
+import { SimulatedDisclaimer } from "@/components/backtest/simulated-disclaimer";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -50,6 +51,9 @@ export default async function BacktestPage() {
           title="Backtesting"
           description="Test strategies on your past sessions and record every run."
         />
+        <div className="mt-4">
+          <SimulatedDisclaimer />
+        </div>
         <div className="mt-10">
           <EmptyState
             icon={<Lock className="h-8 w-8" />}
@@ -87,12 +91,14 @@ export default async function BacktestPage() {
         </div>
       </PageHeader>
 
+      <SimulatedDisclaimer />
+
       {runs.length === 0 ? (
         <div className="mt-6">
           <EmptyState
             icon={<FlaskConical className="h-8 w-8" />}
             title="Run your first strategy test"
-            description="Replay your recorded trades with what-if filters, or simulate a strategy on uploaded market data. Results are saved here so tests build on each other."
+            description="Replay your recorded trades with what-if filters, or simulate a strategy on uploaded market data. Results are saved here so you can compare tests side by side."
             steps={[
               { label: "Import trades so there is history to replay", done: options.strategyTags.length > 0 },
               { label: "Run a replay test — pick a strategy, sessions, or a rulebook" },

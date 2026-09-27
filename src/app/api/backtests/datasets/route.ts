@@ -105,7 +105,9 @@ export const POST = withUser(async (user, req: Request) => {
 const deleteSchema = z.object({ id: z.string().min(1) });
 
 export const DELETE = withUser(async (user, req: Request) => {
-  const limited = rateLimit(`backtests-datasets:${user.id}`, { limit: 10, windowMs: 10 * 60 * 1000 });
+  // Its own bucket, so cleaning up old datasets never uses up the upload
+  // allowance (and heavy uploading never blocks a delete). 30 / 10 min.
+  const limited = rateLimit(`backtests-datasets-delete:${user.id}`, { limit: 30, windowMs: 10 * 60 * 1000 });
   if (!limited.ok) {
     return NextResponse.json(
       { ok: false, error: "Too many requests. Please wait a few minutes." },

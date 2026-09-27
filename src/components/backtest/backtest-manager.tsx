@@ -184,8 +184,8 @@ export function NewReplayDialog({ options }: { options: ReplayOptions }) {
         <DialogHeader>
           <DialogTitle>New replay test</DialogTitle>
           <DialogDescription>
-            Re-run your recorded history with filters: which trades would this strategy
-            have kept, and how would it have performed vs. what you actually did?
+            Re-run your recorded history with filters: which past trades fit this strategy,
+            and how do those past results compare with what you actually did?
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} className="space-y-4">
@@ -427,8 +427,8 @@ export function NewSimulationDialog({ datasets }: { datasets: DatasetOption[] })
         <DialogHeader>
           <DialogTitle>New simulation</DialogTitle>
           <DialogDescription>
-            Run a no-code strategy over an uploaded candle dataset with deterministic,
-            conservative fills.
+            Run a no-code strategy over an uploaded candle dataset. Fills follow fixed
+            rules, so live trading can fill differently.
           </DialogDescription>
         </DialogHeader>
 

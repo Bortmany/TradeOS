@@ -30,6 +30,7 @@ import {
   pnlColor,
 } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
+import { SimulatedDisclaimer } from "@/components/backtest/simulated-disclaimer";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -83,6 +84,8 @@ export default async function BacktestDetailPage({
           </Button>
         </div>
       </PageHeader>
+
+      <SimulatedDisclaimer />
 
       {run.status === "failed" || !results || results.error ? (
         <Card>
