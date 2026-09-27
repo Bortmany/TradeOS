@@ -22,7 +22,7 @@
     "db:use-postgres": "node scripts/switch-db.mjs postgres",
     "setup": "prisma generate && prisma db push && npm run db:seed",
     "verify": "npm run typecheck && npm run build && npm test",
-    "prepare": "husky"
+    "prepare": "husky || true"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
