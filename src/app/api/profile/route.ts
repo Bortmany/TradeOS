@@ -4,11 +4,14 @@ import { withUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { apiErrorResponse } from "@/lib/api-error";
+import { isAllowedTimeZone, TIME_ZONE_ERROR } from "@/lib/utils";
 
 const schema = z
   .object({
     displayName: z.string().max(80).optional().nullable(),
-    timezone: z.string().min(1).max(64).optional(),
+    // Display zone only (grading stays on New York time). Must be a real zone:
+    // one from the app's label table or a zone name this runtime's Intl lists.
+    timezone: z.string().refine(isAllowedTimeZone, { message: TIME_ZONE_ERROR }).optional(),
   })
   .refine((d) => d.displayName !== undefined || d.timezone !== undefined, {
     message: "Nothing to update.",
@@ -19,7 +22,20 @@ export const PATCH = withUser(async (user, req: Request) => {
   if (limited) return limited;
 
   try {
-    const d = schema.parse(await req.json());
+    const parsed = schema.safeParse(await req.json());
+    if (!parsed.success) {
+      // A bad zone gets its own plain message (the form shows it under the
+      // picker); anything else keeps the generic validation hint.
+      const badZone = parsed.error.issues.some((i) => i.path[0] === "timezone");
+      if (badZone) {
+        return NextResponse.json(
+          { ok: false, error: TIME_ZONE_ERROR, field: "timezone" },
+          { status: 400 }
+        );
+      }
+      throw parsed.error;
+    }
+    const d = parsed.data;
 
     await prisma.user.update({
       where: { id: user.id },

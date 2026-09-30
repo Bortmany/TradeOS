@@ -2,7 +2,7 @@
   "name": "tradeos",
   "version": "0.1.0",
   "private": true,
-  "description": "TradeOS — AI-assisted trading discipline & analytics platform for day traders",
+  "description": "TradeOS — the trading journal that keeps you honest: grades your trades against your own rules and warns you at 50/80/100% of a limit",
   "engines": {
     "node": "22.x"
   },

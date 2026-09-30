@@ -1,7 +1,7 @@
 {
   "name": "TradeOS — Trading Discipline & Analytics",
   "short_name": "TradeOS",
-  "description": "Import your trades, enforce your rulebook, and turn analytics into a repeatable edge.",
+  "description": "The trading journal that keeps you honest. Grades your trades against your own rules and warns you at 50%, 80% and 100% of a limit. You decide what to do.",
   "start_url": "/dashboard",
   "display": "standalone",
   "background_color": "#0b0f1a",

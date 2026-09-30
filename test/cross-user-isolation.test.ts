@@ -14,7 +14,12 @@ import {
   getActiveRules,
   getDashboardData,
   getOpenAlerts,
+  getTradesPage,
+  getJournalFilterOptions,
+  getLatestTradeDayKey,
+  encodeTradeCursor,
 } from "@/lib/data";
+import { GET as getTradesPageRoute } from "@/app/api/trades/page/route";
 import { dailyPnlSeries } from "@/lib/analytics/daily";
 
 // Hard rail: this file writes to a database. Refuse to run if that database is
@@ -293,5 +298,71 @@ describe("getDashboardData — recent violations", () => {
     const cross = await getDashboardData(carolId, alice.accountId);
     expect(cross.tradeCount).toBe(0);
     expect(cross.recentViolations).toEqual([]);
+  });
+});
+
+describe("getTradesPage — journal paging stays per trader", () => {
+  it("each trader pages through exactly their own trades (positive control)", async () => {
+    const a = await getTradesPage(alice.userId, { limit: 100 });
+    const b = await getTradesPage(bob.userId, { limit: 100 });
+    expect(a.total).toBe(alice.tradeCount);
+    expect(b.total).toBe(bob.tradeCount);
+    expect(a.rows.every((t) => t.userId === alice.userId)).toBe(true);
+    expect(b.rows.every((t) => t.userId === bob.userId)).toBe(true);
+  });
+
+  it("Bob never receives Alice's trades, even page by page", async () => {
+    const aIds = new Set((await getTrades(alice.userId)).map((t) => t.id));
+    let cursor: string | null = null;
+    do {
+      const page = await getTradesPage(bob.userId, { limit: 1, cursor });
+      expect(page.rows.some((t) => aIds.has(t.id))).toBe(false);
+      cursor = page.nextCursor;
+    } while (cursor);
+  });
+
+  it("a cursor forged from Alice's trade only ever returns Bob's own trades", async () => {
+    const aTrades = await getTrades(alice.userId);
+    const aIds = new Set(aTrades.map((t) => t.id));
+    for (const t of aTrades) {
+      const forged = encodeTradeCursor({ entryTime: t.entryTime, id: t.id });
+      const page = await getTradesPage(bob.userId, { limit: 100, cursor: forged });
+      expect(page.rows.some((r) => aIds.has(r.id))).toBe(false);
+      expect(page.rows.every((r) => r.userId === bob.userId)).toBe(true);
+      // The total is still Bob's own count, whatever the cursor says.
+      expect(page.total).toBe(bob.tradeCount);
+    }
+    // Alice's newest trade is later than all of Bob's: the forged cursor just
+    // marks a position, and Bob gets his own two trades back.
+    const newest = aTrades[0];
+    const page = await getTradesPage(bob.userId, {
+      limit: 100,
+      cursor: encodeTradeCursor({ entryTime: newest.entryTime, id: newest.id }),
+    });
+    expect(page.rows.map((r) => r.userId)).toEqual([bob.userId, bob.userId]);
+  });
+
+  it("asking for Alice's account as Bob returns nothing", async () => {
+    const cross = await getTradesPage(bob.userId, { filter: { accountId: alice.accountId }, limit: 100 });
+    expect(cross.rows).toEqual([]);
+    expect(cross.total).toBe(0);
+    const options = await getJournalFilterOptions(bob.userId, alice.accountId);
+    expect(options).toEqual({ symbols: [], strategies: [], sources: [] });
+    expect(await getLatestTradeDayKey(bob.userId, alice.accountId)).toBeNull();
+  });
+
+  it("the latest trading day is each trader's own", async () => {
+    expect(await getLatestTradeDayKey(alice.userId)).toBe("2026-07-03");
+    expect(await getLatestTradeDayKey(bob.userId)).toBe("2026-07-02");
+  });
+
+  it("GET /api/trades/page refuses a signed-out request (401) and returns no trades", async () => {
+    const res = await getTradesPageRoute(
+      new Request(`http://localhost/api/trades/page?limit=100&userId=${alice.userId}`)
+    );
+    expect(res.status).toBe(401);
+    const json = await res.json();
+    expect(json.ok).toBe(false);
+    expect(json.rows).toBeUndefined();
   });
 });

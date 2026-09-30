@@ -6,7 +6,8 @@ import {
   Scale,
   Activity,
   AlertTriangle,
-  ArrowRight,
+  ChevronRight,
+  Info,
 } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth";
 import { getAccounts, getDashboardData, getOpenAlerts } from "@/lib/data";
@@ -26,8 +27,16 @@ import {
   pnlColor,
   formatDuration,
   formatDateTime,
-  formatDate,
+  resolveTimeZone,
 } from "@/lib/utils";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { collapseViolations } from "@/lib/violation-rows";
+import { isDemoDesk } from "@/lib/demo-desk";
 
 export const dynamic = "force-dynamic";
 
@@ -83,9 +92,18 @@ export default async function DashboardPage({
   // feed to read like a journal entry — built from the same trades the rest of
   // the dashboard uses, so nothing is loaded twice.
   const violations = data.recentViolations;
+  // Same rule broken more than once on the same trade reads as one row + count.
+  const violationRows = collapseViolations(violations);
+  const tz = resolveTimeZone(user.timezone);
 
   return (
     <div className="container max-w-7xl space-y-6 py-6">
+      {isDemoDesk(user.email) && (
+        <p className="flex items-center gap-2 rounded-md border border-border bg-surface-raised px-3 py-2 text-xs text-muted-foreground print:hidden">
+          <Info className="h-3.5 w-3.5 shrink-0" />
+          This is sample data. Import your own trades to replace it.
+        </p>
+      )}
       <PageHeader
         title="Dashboard"
         description={
@@ -153,10 +171,11 @@ export default async function DashboardPage({
         />
         <Kpi
           label="Max Drawdown"
-          value={formatCurrency(-m.maxDrawdown)}
+          labelHint="How far you are below your best profit so far, as a share of that profit."
+          value={formatPercent(m.maxDrawdownPct)}
           valueClass="text-loss"
           icon={AlertTriangle}
-          hint={formatPercent(m.maxDrawdownPct)}
+          hint={`of peak profit · ${formatCurrency(-m.maxDrawdown)}`}
         />
       </div>
 
@@ -207,13 +226,13 @@ export default async function DashboardPage({
                 No rule violations in this view. 🎯
               </p>
             ) : (
-              violations.map((v, i) => (
-                <Link
-                  key={i}
-                  href={`/journal/${v.tradeId}`}
-                  className="block rounded-lg border border-border bg-surface-raised px-3 py-2.5 transition-colors hover:border-loss/40"
-                >
-                  <div className="flex items-center gap-2">
+              <TooltipProvider delayDuration={300}>
+                {violationRows.map((v) => (
+                  <Link
+                    key={`${v.tradeId}-${v.ruleId}`}
+                    href={`/journal/${v.tradeId}`}
+                    className="flex min-h-[48px] items-center gap-2 rounded-lg border border-border bg-surface-raised px-3 py-2 transition-colors hover:border-loss/40 active:bg-surface-overlay focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
                     <span
                       className={`h-1.5 w-1.5 shrink-0 rounded-full ${
                         v.severity === "high"
@@ -223,19 +242,36 @@ export default async function DashboardPage({
                             : "bg-muted-foreground"
                       }`}
                     />
-                    <p className="min-w-0 flex-1 truncate text-sm font-medium">{v.ruleName}</p>
-                    <span className={`shrink-0 text-2xs font-semibold tabular ${pnlColor(v.pnl)}`}>
-                      {v.isOpen ? "Open" : formatCurrency(v.pnl, { sign: true })}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-2xs leading-relaxed text-muted-foreground">
-                    {v.explanation}
-                  </p>
-                  <p className="mt-1 text-2xs uppercase tracking-wide text-muted-foreground/60">
-                    {v.symbol} · {formatDate(v.entryTime)}
-                  </p>
-                </Link>
-              ))
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm">
+                        <span className="font-medium">{v.ruleName}</span>{" "}
+                        <span className="text-muted-foreground">
+                          {v.symbol} {v.side}
+                        </span>
+                      </p>
+                      <p className="text-2xs tabular text-muted-foreground">
+                        {formatDateTime(v.entryTime, tz)} ·{" "}
+                        <span className={v.isOpen ? undefined : pnlColor(v.pnl)}>
+                          {v.isOpen ? "open" : formatCurrency(v.pnl)}
+                        </span>
+                      </p>
+                    </div>
+                    {v.count > 1 && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Badge variant="loss" className="shrink-0 tabular">
+                            x{v.count}
+                          </Badge>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          Same rule broken {v.count} times on this trade
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
+                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/70" />
+                  </Link>
+                ))}
+              </TooltipProvider>
             )}
           </CardContent>
         </Card>
@@ -265,14 +301,8 @@ export default async function DashboardPage({
       {/* Open alerts */}
       {alerts.length > 0 && (
         <Card>
-          <CardHeader className="flex-row items-center justify-between">
+          <CardHeader>
             <CardTitle>Open Alerts</CardTitle>
-            <Link
-              href="/prop"
-              className="flex items-center gap-1 text-xs text-primary hover:underline"
-            >
-              View all <ArrowRight className="h-3 w-3" />
-            </Link>
           </CardHeader>
           <CardContent className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {alerts.map((a) => (
@@ -293,7 +323,7 @@ export default async function DashboardPage({
                   <p className="text-sm font-medium">{a.title}</p>
                   <p className="text-2xs text-muted-foreground">{a.message}</p>
                   <p className="mt-0.5 text-2xs text-muted-foreground/60">
-                    {formatDateTime(a.createdAt)}
+                    {formatDateTime(a.createdAt, tz)}
                   </p>
                 </div>
               </div>
@@ -312,24 +342,41 @@ export default async function DashboardPage({
 
 function Kpi({
   label,
+  labelHint,
   value,
   valueClass,
   hint,
   icon: Icon,
 }: {
   label: string;
+  /** Optional hover hint explaining what the number means. */
+  labelHint?: string;
   value: string;
   valueClass?: string;
   hint?: string;
   icon: React.ComponentType<{ className?: string }>;
 }) {
+  const labelText = (
+    <p className="text-2xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+  );
   return (
     <Card>
       <CardContent className="p-4">
         <div className="flex items-center justify-between">
-          <p className="text-2xs font-medium uppercase tracking-wide text-muted-foreground">
-            {label}
-          </p>
+          {labelHint ? (
+            <TooltipProvider delayDuration={300}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span tabIndex={0} className="cursor-help rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                    {labelText}
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs">{labelHint}</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          ) : (
+            labelText
+          )}
           <Icon className="h-4 w-4 text-muted-foreground" />
         </div>
         {/* Steps down a size where the column is narrow (2-up on phones, 4-up at

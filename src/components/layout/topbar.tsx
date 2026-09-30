@@ -1,9 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
-import { LogOut, ChevronDown, Sparkles, Upload } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
+import {
+  LogOut,
+  ChevronDown,
+  Sparkles,
+  Upload,
+  FileText,
+  Wallet,
+  Settings,
+  CreditCard,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -16,9 +25,29 @@ interface TopbarProps {
 
 export function Topbar({ user, trialDaysLeft }: TopbarProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
+  const avatarRef = useRef<HTMLButtonElement>(null);
   const name = user.displayName || user.email.split("@")[0];
   const initials = name.slice(0, 2).toUpperCase();
+
+  // Any route change closes the menu.
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [pathname]);
+
+  // Escape closes the menu and puts focus back on the avatar button.
+  useEffect(() => {
+    if (!menuOpen) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setMenuOpen(false);
+        avatarRef.current?.focus();
+      }
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [menuOpen]);
 
   async function signOut() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -55,8 +84,13 @@ export function Topbar({ user, trialDaysLeft }: TopbarProps) {
 
         <div className="relative">
           <button
+            ref={avatarRef}
+            type="button"
             onClick={() => setMenuOpen((v) => !v)}
-            className="flex items-center gap-2 rounded-md px-1.5 py-1 transition-colors hover:bg-accent"
+            aria-label="Account menu"
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            className="flex items-center gap-2 rounded-md px-1.5 py-1 transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/15 text-2xs font-semibold text-primary">
               {initials}
@@ -82,8 +116,22 @@ export function Topbar({ user, trialDaysLeft }: TopbarProps) {
                   </Badge>
                 </div>
                 <div className="p-1">
-                  <MenuItem href="/settings">Settings</MenuItem>
-                  <MenuItem href="/settings/billing">Billing & Plan</MenuItem>
+                  <MenuItem href="/reports" onSelect={() => setMenuOpen(false)}>
+                    <FileText className="h-4 w-4 text-muted-foreground" />
+                    Reports
+                  </MenuItem>
+                  <MenuItem href="/accounts" onSelect={() => setMenuOpen(false)}>
+                    <Wallet className="h-4 w-4 text-muted-foreground" />
+                    Accounts
+                  </MenuItem>
+                  <MenuItem href="/settings" onSelect={() => setMenuOpen(false)}>
+                    <Settings className="h-4 w-4 text-muted-foreground" />
+                    Settings
+                  </MenuItem>
+                  <MenuItem href="/settings/billing" onSelect={() => setMenuOpen(false)}>
+                    <CreditCard className="h-4 w-4 text-muted-foreground" />
+                    Billing & Plan
+                  </MenuItem>
                   <button
                     onClick={signOut}
                     className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-sm text-loss transition-colors hover:bg-loss-muted"
@@ -101,12 +149,21 @@ export function Topbar({ user, trialDaysLeft }: TopbarProps) {
   );
 }
 
-function MenuItem({ href, children }: { href: string; children: React.ReactNode }) {
+function MenuItem({
+  href,
+  children,
+  onSelect,
+}: {
+  href: string;
+  children: React.ReactNode;
+  onSelect?: () => void;
+}) {
   return (
     <Link
       href={href}
+      onClick={onSelect}
       className={cn(
-        "flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-sm transition-colors hover:bg-accent"
+        "flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       )}
     >
       {children}

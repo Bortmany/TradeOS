@@ -4,6 +4,8 @@ import { getCurrentUser } from "@/lib/auth";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
 import { MobileNav } from "@/components/layout/mobile-nav";
+import { TimeZoneProvider } from "@/components/time-zone-provider";
+import { resolveTimeZone } from "@/lib/utils";
 
 export default async function AppLayout({
   children,
@@ -23,7 +25,10 @@ export default async function AppLayout({
         )
       : null;
 
+  // One display zone for the whole app: server pages resolve the same saved
+  // zone themselves, client pieces read it from this provider.
   return (
+    <TimeZoneProvider timeZone={resolveTimeZone(user.timezone)}>
     <div className="flex min-h-screen">
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
@@ -36,10 +41,13 @@ export default async function AppLayout({
           }}
           trialDaysLeft={trialDaysLeft}
         />
-        <main className="flex-1 pb-20 md:pb-0">{children}</main>
+        {/* Under md the fixed bottom bar (64px + the phone's safe-area inset)
+            covers the end of the page, so the page ends with that much space
+            plus a 16px gap. Desktop has no bar and no extra space. */}
+        <main className="flex-1 pb-[calc(5rem+env(safe-area-inset-bottom))] md:pb-0">{children}</main>
         {/* Persistent legal footer — visible in-app on every screen. The bottom
             margin keeps it clear of the fixed mobile nav; print keeps reports clean. */}
-        <footer className="mb-16 flex flex-col items-center justify-between gap-1.5 border-t border-border px-4 py-3 text-center text-2xs text-muted-foreground sm:flex-row md:mb-0 md:px-6 print:hidden">
+        <footer className="mb-[calc(5rem+env(safe-area-inset-bottom))] flex flex-col items-center justify-between gap-1.5 border-t border-border px-4 py-3 text-center text-2xs text-muted-foreground sm:flex-row md:mb-0 md:px-6 print:hidden">
           <p>For educational analytics only. Not financial advice.</p>
           <nav className="flex items-center gap-4">
             <Link href="/terms" className="hover:text-foreground">Terms</Link>
@@ -50,5 +58,6 @@ export default async function AppLayout({
         <MobileNav />
       </div>
     </div>
+    </TimeZoneProvider>
   );
 }

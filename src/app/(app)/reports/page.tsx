@@ -8,7 +8,24 @@ import {
   NotebookPen,
 } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth";
-import { buildReport, type ReportPeriod, type ReportData } from "@/lib/reports";
+import {
+  buildReport,
+  resolveReportAnchor,
+  type ReportPeriod,
+  type ReportData,
+} from "@/lib/reports";
+import {
+  formatDayKeyRange,
+  formatDayKeyRangeShort,
+  nextAnchor,
+  previousAnchor,
+} from "@/lib/et-days";
+import {
+  ReportNavProvider,
+  ReportNavigator,
+  ReportNavLink,
+  ReportPendingBody,
+} from "@/components/reports/report-navigator";
 import type { TradeRecord } from "@/lib/types";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -33,32 +50,46 @@ import {
   formatDateTime,
   formatDate,
   pnlColor,
+  resolveTimeZone,
 } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
 const TABS: { period: ReportPeriod; label: string; sub: string }[] = [
-  { period: "day", label: "Daily", sub: "Today" },
-  { period: "week", label: "Weekly", sub: "Last 7 days" },
-  { period: "month", label: "Monthly", sub: "Last 30 days" },
+  { period: "day", label: "Daily", sub: "One day" },
+  { period: "week", label: "Weekly", sub: "7 days" },
+  { period: "month", label: "Monthly", sub: "30 days" },
 ];
 
 function normalizePeriod(raw?: string): ReportPeriod {
   return raw === "week" || raw === "month" ? raw : "day";
 }
 
+/** /reports?period=…&date=…&account=… — the date always travels with the tabs. */
+function reportHref(period: ReportPeriod, date: string, account?: string): string {
+  const qs = new URLSearchParams({ period, date });
+  if (account) qs.set("account", account);
+  return `/reports?${qs.toString()}`;
+}
+
 export default async function ReportsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ period?: string; account?: string }>;
+  searchParams: Promise<{ period?: string; account?: string; date?: string }>;
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  const { period: periodParam, account } = await searchParams;
+  const { period: periodParam, account: accountParam, date } = await searchParams;
   const period = normalizePeriod(periodParam);
+  const account = accountParam?.trim() ? accountParam.trim().slice(0, 64) : undefined;
   const active = TABS.find((t) => t.period === period)!;
 
-  const report = await buildReport(user.id, period, account);
+  // The window ends on a New York calendar day: ?date= when given (future or
+  // malformed snaps to today ET), else the latest ET day with trades.
+  const { anchorKey, todayKey, latestKey } = await resolveReportAnchor(user.id, date, account);
+  const report = await buildReport(user.id, period, account, anchorKey);
+  const atLatest = report.endKey >= todayKey;
+  const windowLabel = formatDayKeyRange(report.startKey, report.endKey);
 
   return (
     <div className="container max-w-7xl space-y-6 py-6">
@@ -77,52 +108,94 @@ export default async function ReportsPage({
         </div>
       </PageHeader>
 
-      {/* Server-driven tabs */}
-      <div className="flex items-center justify-between print:hidden">
-        <div className="inline-flex h-9 items-center gap-1 rounded-md bg-muted p-1">
-          {TABS.map((t) => {
-            const href = `/reports?period=${t.period}${account ? `&account=${account}` : ""}`;
-            const isActive = t.period === period;
-            return (
-              <Link
-                key={t.period}
-                href={href}
-                className={cn(
-                  "inline-flex items-center rounded-sm px-3 py-1 text-sm font-medium transition-colors",
-                  isActive
-                    ? "bg-surface-overlay text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {t.label}
-              </Link>
-            );
-          })}
+      <ReportNavProvider>
+        {/* Tabs + period navigator. Screen only: the printed page states its
+            window in the Performance card header instead. */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4 print:hidden">
+          <div className="grid h-10 grid-cols-3 items-center gap-1 rounded-md bg-muted p-1 sm:inline-grid sm:h-9">
+            {TABS.map((t) => {
+              const isActive = t.period === period;
+              return (
+                <ReportNavLink
+                  key={t.period}
+                  href={reportHref(t.period, anchorKey, account)}
+                  aria-current={isActive ? "page" : undefined}
+                  className={cn(
+                    "inline-flex h-full items-center justify-center rounded-sm px-3 text-sm font-medium transition-colors",
+                    isActive
+                      ? "bg-surface-overlay text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  {t.label}
+                </ReportNavLink>
+              );
+            })}
+          </div>
+          <ReportNavigator
+            prevHref={reportHref(period, previousAnchor(period, anchorKey), account)}
+            nextHref={atLatest ? null : reportHref(period, nextAnchor(period, anchorKey, todayKey), account)}
+            atLatest={atLatest}
+            label={windowLabel}
+            shortLabel={formatDayKeyRangeShort(report.startKey, report.endKey)}
+            anchorKey={anchorKey}
+            todayKey={todayKey}
+            dateHref={reportHref(period, "__DATE__", account)}
+          />
         </div>
-        <p className="text-2xs uppercase tracking-wide text-muted-foreground">
-          {formatDate(report.from)} – {formatDate(report.to)}
-        </p>
-      </div>
 
-      {report.tradeCount === 0 ? (
-        <EmptyState
-          icon={<ClipboardList className="h-8 w-8" />}
-          title={`No trades in this ${active.label.toLowerCase()} window`}
-          description="Nothing to report for the selected period. Try a wider window or import more trades."
-          action={
-            <Button asChild variant="secondary" className="print:hidden">
-              <Link href="/import">Import trades</Link>
-            </Button>
-          }
-        />
-      ) : (
-        <ReportBody report={report} periodLabel={active.label} />
-      )}
+        <ReportPendingBody>
+          {report.tradeCount > 0 ? (
+            <ReportBody
+              report={report}
+              periodLabel={active.label}
+              windowLabel={windowLabel}
+              tz={resolveTimeZone(user.timezone)}
+            />
+          ) : latestKey ? (
+            // The account has trades, just none on these days.
+            <EmptyState
+              icon={<ClipboardList className="h-8 w-8" />}
+              title="No trades in this window"
+              description="Nothing on these days. Your last trading day is one click away."
+              action={
+                <Button asChild variant="secondary" className="print:hidden">
+                  <ReportNavLink href={reportHref(period, latestKey, account)}>
+                    No trades in this window — show my last trading day
+                  </ReportNavLink>
+                </Button>
+              }
+            />
+          ) : (
+            <EmptyState
+              icon={<ClipboardList className="h-8 w-8" />}
+              title="No trades yet"
+              description="Import your broker file and this page fills in by itself."
+              action={
+                <Button asChild className="print:hidden">
+                  <Link href="/import">Import trades</Link>
+                </Button>
+              }
+            />
+          )}
+        </ReportPendingBody>
+      </ReportNavProvider>
     </div>
   );
 }
 
-function ReportBody({ report, periodLabel }: { report: ReportData; periodLabel: string }) {
+function ReportBody({
+  report,
+  periodLabel,
+  windowLabel,
+  tz,
+}: {
+  report: ReportData;
+  periodLabel: string;
+  /** "Sep 9 – Sep 15 ET" — New York calendar days, printed unshifted. */
+  windowLabel: string;
+  tz: string;
+}) {
   const m = report.metrics;
   return (
     <div className="space-y-6">
@@ -133,8 +206,8 @@ function ReportBody({ report, periodLabel }: { report: ReportData; periodLabel: 
           <div>
             <CardTitle>{periodLabel} Performance</CardTitle>
             <p className="mt-0.5 text-sm text-muted-foreground">
-              {formatDate(report.from)} – {formatDate(report.to)} · {report.tradeCount}{" "}
-              trades · {m.tradeCount} closed
+              {windowLabel} · {report.tradeCount} {report.tradeCount === 1 ? "trade" : "trades"} ·{" "}
+              {m.tradeCount} closed
             </p>
           </div>
           <Badge variant={m.netPnl >= 0 ? "profit" : "loss"} className="tabular">
@@ -284,8 +357,8 @@ function ReportBody({ report, periodLabel }: { report: ReportData; periodLabel: 
 
       {/* Best / worst trades */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <TradeList title="Best Trades" trades={report.best} tone="profit" />
-        <TradeList title="Worst Trades" trades={report.worst} tone="loss" />
+        <TradeList title="Best Trades" trades={report.best} tone="profit" tz={tz} />
+        <TradeList title="Worst Trades" trades={report.worst} tone="loss" tz={tz} />
       </div>
 
       {/* Daily breakdown */}
@@ -302,7 +375,7 @@ function ReportBody({ report, periodLabel }: { report: ReportData; periodLabel: 
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Date</TableHead>
+                  <TableHead>Date (ET)</TableHead>
                   <TableHead className="text-right">Trades</TableHead>
                   <TableHead className="text-right">Net P&L</TableHead>
                 </TableRow>
@@ -313,7 +386,7 @@ function ReportBody({ report, periodLabel }: { report: ReportData; periodLabel: 
                   .reverse()
                   .map((d) => (
                     <TableRow key={d.date}>
-                      <TableCell className="font-medium">{formatDate(`${d.date}T12:00:00`)}</TableCell>
+                      <TableCell className="font-medium">{formatDate(d.date, tz, "weekday")}</TableCell>
                       <TableCell className="text-right tabular text-muted-foreground">
                         {d.trades}
                       </TableCell>
@@ -335,10 +408,12 @@ function TradeList({
   title,
   trades,
   tone,
+  tz,
 }: {
   title: string;
   trades: TradeRecord[];
   tone: "profit" | "loss";
+  tz: string;
 }) {
   return (
     <Card>
@@ -364,7 +439,7 @@ function TradeList({
                   </span>
                 </p>
                 <p className="truncate text-2xs text-muted-foreground">
-                  {formatDateTime(t.entryTime)}
+                  {formatDateTime(t.entryTime, tz)}
                   {t.strategyTag ? ` · ${t.strategyTag}` : ""}
                 </p>
               </div>

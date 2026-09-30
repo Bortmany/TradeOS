@@ -190,6 +190,15 @@ body {
   outline-offset: 2px;
 }
 
+/* Phone bottom bar (mobile-nav.tsx: 64px + safe-area inset, hidden from md).
+   Anything the browser scrolls into view — a focused field, a button reached
+   by Tab, find-in-page — stops above the bar instead of underneath it. */
+@media screen and (max-width: 767px) {
+  html {
+    scroll-padding-bottom: calc(5rem + env(safe-area-inset-bottom));
+  }
+}
+
 /* ---------------------------------------------------------------------------
    Print styles — used by the Reports "Export PDF" (window.print) flow.
    Re-theme to a clean light layout and drop the app chrome so a saved PDF is

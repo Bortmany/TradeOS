@@ -14,7 +14,14 @@ import {
   getReplayFormOptions,
 } from "@/lib/backtest-data";
 import { BACKTEST_KIND_LABELS } from "@/lib/backtest/labels";
-import { formatCurrency, formatDate, formatPercent, pnlColor } from "@/lib/utils";
+import {
+  formatCurrency,
+  formatDate,
+  formatNumber,
+  formatPercent,
+  pnlColor,
+  resolveTimeZone,
+} from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { SimulatedDisclaimer } from "@/components/backtest/simulated-disclaimer";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -42,6 +49,7 @@ export const dynamic = "force-dynamic";
 export default async function BacktestPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+  const tz = resolveTimeZone(user.timezone);
 
   const gated = !hasFeature(user.plan as Plan, user.billingStatus, "backtesting");
   if (gated) {
@@ -161,7 +169,7 @@ export default async function BacktestPage() {
                       {run.netPnl !== null ? formatCurrency(run.netPnl, { sign: true }) : "—"}
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {formatDate(run.createdAt)}
+                      {formatDate(run.createdAt, tz)}
                     </TableCell>
                     <TableCell>
                       <RunRowActions id={run.id} name={run.name} notes={run.notes} />
@@ -206,11 +214,11 @@ export default async function BacktestPage() {
                     <TableCell className="tabular">{ds.symbol}</TableCell>
                     <TableCell className="text-muted-foreground">{ds.timeframe}</TableCell>
                     <TableCell className="text-right tabular">
-                      {ds.candleCount.toLocaleString()}
+                      {formatNumber(ds.candleCount)}
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {ds.firstTime && ds.lastTime
-                        ? `${formatDate(ds.firstTime)} – ${formatDate(ds.lastTime)}`
+                        ? `${formatDate(ds.firstTime, tz)} – ${formatDate(ds.lastTime, tz)}`
                         : "—"}
                     </TableCell>
                     <TableCell>

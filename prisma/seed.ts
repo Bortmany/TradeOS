@@ -498,55 +498,19 @@ async function main(): Promise<void> {
       drawdownType: "trailing",
       minTradingDays: 5,
       consistencyPct: 0.5,
-      phase: "evaluation",
+      // Matches the account's own status ("funded" above) so the demo desk
+      // never contradicts itself. The account's kind is the truth; this phase
+      // is only ever shown as "Eval progress".
+      phase: "funded",
     },
   });
 
   // --- Alerts -----------------------------------------------------------
-  await prisma.alert.createMany({
-    data: [
-      {
-        userId: user.id,
-        accountId: topstep.id,
-        type: "daily_loss_limit",
-        severity: "high",
-        title: "Daily loss limit approaching",
-        message: "You are within $150 of your $1,000 daily loss limit on Topstep 50K.",
-        status: "open",
-        meta: JSON.stringify({ limit: 1000, remaining: 150 }),
-      },
-      {
-        userId: user.id,
-        accountId: apex.id,
-        type: "overtrading",
-        severity: "medium",
-        title: "Overtrading detected",
-        message: "8 trades in the last 15 minutes on Apex 100K exceeds your threshold.",
-        status: "open",
-        meta: JSON.stringify({ windowMinutes: 15, count: 8, threshold: 3 }),
-      },
-      {
-        userId: user.id,
-        accountId: ibkr.id,
-        type: "drawdown",
-        severity: "high",
-        title: "Trailing drawdown warning",
-        message: "Live IBKR equity is nearing its trailing drawdown floor.",
-        status: "open",
-        meta: JSON.stringify({ drawdownType: "trailing", buffer: 420 }),
-      },
-      {
-        userId: user.id,
-        accountId: topstep.id,
-        type: "profit_target",
-        severity: "low",
-        title: "Profit target in sight",
-        message: "You are 68% of the way to the $3,000 Topstep profit target.",
-        status: "open",
-        meta: JSON.stringify({ target: 3000, progressPct: 0.68 }),
-      },
-    ],
-  });
+  // No hand-planted alerts. The four fixed ones that used to live here could
+  // never clear and argued with the Prop page. The demo's alerts now come only
+  // from the real alert generator (src/lib/alerts/generate.ts), which the
+  // compliance recompute at the end of this script runs — so they reflect the
+  // seeded trades and clear themselves exactly like a real trader's.
 
   // --- Backtesting: demo dataset + two recorded example runs ------------
   // Computed with the real engines so the seeded portal shows honest numbers.
@@ -694,8 +658,9 @@ async function main(): Promise<void> {
   console.log(`  accounts:  3 (${[topstep.name, apex.name, ibkr.name].join(", ")})`);
   console.log(`  trades:    ${trades.length} (${winRate}% net win rate)`);
   console.log(`  rulebooks: 2 (${intraday.name}, ${setupQuality.name}) / 6 rules`);
-  console.log(`  prop:      1 (Topstep 50K evaluation)`);
-  console.log(`  alerts:    4 open`);
+  const openAlerts = await prisma.alert.count({ where: { userId: user.id, status: "open" } });
+  console.log(`  prop:      1 (Topstep 50K, funded)`);
+  console.log(`  alerts:    ${openAlerts} open (generated from the trades, none hand-planted)`);
   console.log(`  backtests: ${backtestCount} recorded (+ 1 demo market dataset, ${candles.length} candles)`);
 }
 

@@ -91,8 +91,13 @@ export interface PropStatus {
   id: string;
   accountId: string;
   accountName: string;
+  /** The account's own status (TradingAccount.kind) — the truth for "status". */
+  accountKind: string;
+  /** Stored broker key; shown through brokerLabel(). */
+  accountBroker: string;
   firm: PropFirm;
   presetName: string;
+  /** The tracker's own phase — shown only as "Eval progress", never as a status. */
   phase: string;
   size: number;
   startingBalance: number;
@@ -278,6 +283,8 @@ export async function getPropStatus(userId: string): Promise<PropStatus[]> {
       id: p.id,
       accountId: p.accountId,
       accountName: p.account.name,
+      accountKind: p.account.kind,
+      accountBroker: p.account.broker,
       firm: p.firm as PropFirm,
       presetName: p.presetName,
       phase: p.phase,

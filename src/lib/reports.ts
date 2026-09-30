@@ -1,5 +1,5 @@
 // TradeOS — period report builder.
-// Aggregates a trailing window of trades into a print-friendly report payload:
+// Aggregates a window of New York calendar days of trades into a print-friendly report payload:
 // realized metrics, per-strategy / per-session breakdowns, best/worst trades,
 // a daily P&L series, rule-compliance stats, and an emotional summary.
 //
@@ -8,7 +8,10 @@
 // server timezones.
 
 import "server-only";
-import { getTrades, getActiveRules } from "@/lib/data";
+import { z } from "zod";
+import { getTrades, getActiveRules, getLatestTradeDayKey } from "@/lib/data";
+import { etDateStartUtc, etDateEndUtc } from "@/lib/backtest/time";
+import { isDayKey, reportWindowKeys } from "@/lib/et-days";
 import { computeMetrics, byStrategy, bySession } from "@/lib/analytics";
 import { evaluateTrades, etDayKey } from "@/lib/rules/engine";
 import type { RuleLike } from "@/lib/rules/engine";
@@ -36,8 +39,12 @@ export interface EmotionSummary {
 
 export interface ReportData {
   period: ReportPeriod;
+  /** Midday UTC of the first / last ET day (prints as that calendar date anywhere). */
   from: Date;
   to: Date;
+  /** First and last New York calendar day of the window ("YYYY-MM-DD"). */
+  startKey: string;
+  endKey: string;
   tradeCount: number;
   metrics: PerformanceMetrics;
   byStrategy: BucketPerformance[];
@@ -49,39 +56,88 @@ export interface ReportData {
   emotions: EmotionSummary[];
 }
 
-/** Lower bound of the fetch window for a period (with a small buffer for `day`). */
-function windowFrom(period: ReportPeriod, now: Date): Date {
-  const d = new Date(now);
-  if (period === "day") d.setDate(d.getDate() - 1); // buffer; refined by ET-day filter
-  else if (period === "week") d.setDate(d.getDate() - 7);
-  else d.setDate(d.getDate() - 30);
-  return d;
+/**
+ * The New York calendar day a report is anchored on, from the address bar's
+ * `?date=YYYY-MM-DD`:
+ *   - a real past-or-today day key is used as given;
+ *   - a malformed or future value snaps to today (ET);
+ *   - no value opens on the most recent ET day with trades for this user (and
+ *     account, when one is picked) — `getLatestTradeDayKey`, which uses the
+ *     rule engine's `etDayKey` boundary — or today when there are none.
+ * `latestKey` is null when the user (or account) has no trades at all.
+ */
+export async function resolveReportAnchor(
+  userId: string,
+  rawDate: string | undefined,
+  accountId?: string,
+  now: Date = new Date()
+): Promise<{ anchorKey: string; todayKey: string; latestKey: string | null }> {
+  const todayKey = etDayKey(now);
+  const latestFound = await getLatestTradeDayKey(userId, accountId);
+  // A trade stamped in the future can't pull the report past today.
+  const latestKey = latestFound && latestFound > todayKey ? todayKey : latestFound;
+  let anchorKey: string;
+  if (rawDate === undefined || rawDate === "") anchorKey = latestKey ?? todayKey;
+  else {
+    const parsed = ReportDateSchema.safeParse(rawDate);
+    anchorKey = parsed.success && parsed.data <= todayKey ? parsed.data : todayKey;
+  }
+  return { anchorKey, todayKey, latestKey };
 }
 
+/** The `?date=` shape: a real calendar day written YYYY-MM-DD. */
+export const ReportDateSchema = z.string().refine(isDayKey, "Use a real date in the form YYYY-MM-DD.");
+
 /**
- * Builds the aggregated report for a user over the trailing window of `period`
- * (day = today ET, week = last 7d, month = last 30d), optionally scoped to one
- * account. Never throws; returns zeroed sections for an empty window.
+ * Builds the aggregated report for the window that ENDS on the New York day
+ * `anchorKey` (Daily = that day, Weekly = the 7 days ending that day, Monthly
+ * = the 30 days ending that day), optionally scoped to one account. A trade
+ * belongs to the window when its entry's ET calendar day (`etDayKey`, the
+ * rule engine's boundary) is inside it — never the machine's own dates. With
+ * no anchor the window ends today (ET). Never throws on an empty window;
+ * returns zeroed sections.
  */
 export async function buildReport(
   userId: string,
   period: ReportPeriod,
-  accountId?: string
+  accountId?: string,
+  anchorKey?: string
 ): Promise<ReportData> {
-  const now = new Date();
-  const from = windowFrom(period, now);
+  const endKey = anchorKey && isDayKey(anchorKey) ? anchorKey : etDayKey(new Date());
+  const { startKey } = reportWindowKeys(period, endKey);
 
   const [loaded, rules] = await Promise.all([
-    getTrades(userId, { from, ...(accountId ? { accountId } : {}) }),
+    getTrades(userId, {
+      from: etDateStartUtc(startKey),
+      to: etDateEndUtc(endKey),
+      ...(accountId ? { accountId } : {}),
+    }),
     getActiveRules(userId),
   ]);
 
-  // For the intraday view, keep only trades whose ET calendar day is today.
-  const todayKey = etDayKey(now);
-  const trades =
-    period === "day" ? loaded.filter((t) => etDayKey(t.entryTime) === todayKey) : loaded;
+  // Keep exactly the trades whose ET day is inside the window (the database
+  // bounds above are the same ET midnights; this is the engine's own check).
+  const trades = tradesInDayRange(loaded, startKey, endKey);
+  const report = summarizeTrades(
+    period,
+    new Date(`${startKey}T12:00:00.000Z`),
+    new Date(`${endKey}T12:00:00.000Z`),
+    trades,
+    rules
+  );
+  return { ...report, startKey, endKey };
+}
 
-  return summarizeTrades(period, from, now, trades, rules);
+/** Trades whose entry's ET calendar day is within [startKey, endKey]. Pure. */
+export function tradesInDayRange(
+  trades: TradeRecord[],
+  startKey: string,
+  endKey: string
+): TradeRecord[] {
+  return trades.filter((t) => {
+    const day = etDayKey(t.entryTime);
+    return day >= startKey && day <= endKey;
+  });
 }
 
 /**
@@ -122,7 +178,7 @@ export async function buildWeekReport(
   // Midday UTC of the Monday / Sunday — reads as the right calendar date anywhere.
   const from = new Date(`${weekKey}T12:00:00.000Z`);
   const to = new Date(`${endKey}T12:00:00.000Z`);
-  return summarizeTrades("week", from, to, tradesInWeek(loaded, weekKey), rules);
+  return { ...summarizeTrades("week", from, to, tradesInWeek(loaded, weekKey), rules), startKey: weekKey, endKey };
 }
 
 /** Aggregates an already-filtered set of trades into the report payload. */
@@ -132,7 +188,7 @@ function summarizeTrades(
   to: Date,
   trades: TradeRecord[],
   rules: RuleLike[]
-): ReportData {
+): Omit<ReportData, "startKey" | "endKey"> {
   const closed = trades.filter((t) => t.exitTime !== null);
 
   // Best / worst by realized P&L (closed only).

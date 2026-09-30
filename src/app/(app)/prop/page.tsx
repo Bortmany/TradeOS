@@ -12,13 +12,27 @@ import {
   Landmark,
 } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth";
-import { getPropStatus, type PropStatus, type PropStatusLevel } from "@/lib/prop";
+import {
+  getPropStatus,
+  PROP_PRESETS,
+  type PropStatus,
+  type PropStatusLevel,
+} from "@/lib/prop";
+import { getAccounts } from "@/lib/data";
+import { accountDisplay, evalProgressLabel, EVAL_PROGRESS_HINT } from "@/lib/account-display";
 import { PageHeader } from "@/components/page-header";
+import { AddTrackerDialog, type TrackerPreset } from "@/components/prop/add-tracker-dialog";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { formatCurrency, formatPercent, pnlColor, cn, clamp } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -57,30 +71,55 @@ export default async function PropPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  const statuses = await getPropStatus(user.id);
+  const [statuses, accounts] = await Promise.all([getPropStatus(user.id), getAccounts(user.id)]);
+
+  // Accounts without a tracker, evaluation and funded first — every one of them
+  // can be picked from "Add prop tracker".
+  const tracked = new Set(statuses.map((s) => s.accountId));
+  const propKind = (k: string) => (k === "evaluation" || k === "funded" ? 0 : 1);
+  const untracked = accounts
+    .filter((a) => !tracked.has(a.id))
+    .sort((a, b) => propKind(a.kind) - propKind(b.kind))
+    .map((a) => {
+      const shown = accountDisplay(a);
+      return { id: a.id, name: shown.name, broker: shown.broker, status: shown.status };
+    });
+  const presets: TrackerPreset[] = Object.entries(PROP_PRESETS).map(([key, p]) => ({
+    key,
+    name: p.presetName,
+    summary: [
+      p.profitTarget ? `${formatCurrency(p.profitTarget, { compact: true })} target` : null,
+      p.maxDrawdown ? `${formatCurrency(p.maxDrawdown, { compact: true })} drawdown` : null,
+      p.maxDailyLoss ? `${formatCurrency(p.maxDailyLoss, { compact: true })} daily loss` : null,
+    ]
+      .filter(Boolean)
+      .join(" · "),
+  }));
+  const addTracker = <AddTrackerDialog accounts={untracked} presets={presets} />;
 
   return (
     <div className="container max-w-7xl space-y-6 py-6">
       <PageHeader
         title="Prop Firm Tracker"
         description="Live compliance cockpit for your evaluation and funded accounts."
-      />
+      >
+        {accounts.length > 0 && addTracker}
+      </PageHeader>
 
       {statuses.length === 0 ? (
         <div className="mt-10">
           <EmptyState
             icon={<Landmark className="h-8 w-8" />}
             title="No prop accounts tracked"
-            description="Know exactly how close you are to a breach — before the firm tells you."
-            steps={[
-              { label: "Add an evaluation or funded account under Accounts" },
-              { label: "Attach its prop-firm ruleset (drawdown, daily loss, target)" },
-              { label: "Every buffer updates here with each imported trade" },
-            ]}
+            description="Track an evaluation or funded account: pick one of your accounts to start."
             action={
-              <Button asChild>
-                <Link href="/accounts">Connect a prop account</Link>
-              </Button>
+              accounts.length > 0 ? (
+                addTracker
+              ) : (
+                <Button asChild>
+                  <Link href="/accounts">Add an account first</Link>
+                </Button>
+              )
             }
           />
         </div>
@@ -134,6 +173,9 @@ export default async function PropPage() {
 function PropCard({ s }: { s: PropStatus }) {
   const meta = STATUS_META[s.status];
   const StatusIcon = meta.icon;
+  // Name, status and broker come from the account itself (same helper as the
+  // Accounts page and trade header); the tracker's phase is only "Eval progress".
+  const shown = accountDisplay({ name: s.accountName, kind: s.accountKind, broker: s.accountBroker });
 
   const ddTone = s.drawdown ? bufferTone(s.drawdown.bufferPct) : bufferTone(1);
   const dailyTone = s.dailyLoss ? bufferTone(s.dailyLoss.bufferPct) : bufferTone(1);
@@ -144,11 +186,25 @@ function PropCard({ s }: { s: PropStatus }) {
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <StatusIcon className={cn("h-4 w-4 shrink-0", meta.iconClass)} />
-            <h3 className="truncate text-base font-semibold">{s.accountName}</h3>
+            <h3 className="truncate text-base font-semibold">{shown.name}</h3>
+            <Badge variant={shown.statusVariant} className="shrink-0">
+              {shown.status}
+            </Badge>
           </div>
-          <p className="mt-1 text-2xs uppercase tracking-wide text-muted-foreground">
-            {FIRM_LABEL[s.firm] ?? s.firm} · {formatCurrency(s.size, { compact: true })} · {s.phase}
+          <p className="mt-1 text-2xs text-muted-foreground">
+            {shown.broker} · {FIRM_LABEL[s.firm] ?? s.firm} ·{" "}
+            {formatCurrency(s.size, { compact: true })}
           </p>
+          <TooltipProvider delayDuration={300}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span tabIndex={0} className="mt-2 inline-flex rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                  <Badge variant="secondary">{evalProgressLabel(s.phase)}</Badge>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs">{EVAL_PROGRESS_HINT}</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </div>
         <Badge variant={meta.badge}>{meta.label}</Badge>
       </CardHeader>

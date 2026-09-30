@@ -18,6 +18,28 @@ Session classification (US futures, times in America/New_York):
 - `pre` 04:00–09:30, `rth_am` 09:30–12:00, `lunch` 12:00–13:00,
   `rth_pm` 13:00–16:00, `post` 16:00–20:00, `overnight` otherwise.
 
+Grading zone vs display zone: grading (rule engine, discipline score, ET day
+keys, report windows) is fixed to America/New_York and never reads the user's
+setting. `User.timezone` is DISPLAY ONLY: it changes how times are printed, via
+`formatDateTime`/`formatDate(value, zone)` in `utils.ts` (zone label after every
+time, e.g. "9:45 AM ET"); day-key strings are printed unshifted.
+
+Journal paging and report windows (read-only, per user):
+- `getTradesPage(userId, { filter, limit, cursor })` in `data.ts` returns
+  `{ rows, nextCursor, total }`, newest first (`entryTime` desc, then `id`
+  desc). The cursor is an opaque compound (`entryTime` + `id`) so trades with
+  identical times are never skipped or repeated; a malformed cursor throws
+  `InvalidCursorError` (route answers 400). Page size is clamped to 1..100.
+  Filters (account, symbol, strategy, source, outcome, `fromDay`/`toDay`) run in
+  the database; `total` is the count for the filters. Day filters are New York
+  calendar days (ET midnight to ET end of day, the `etDayKey` boundary). Served
+  to the browser by `GET /api/trades/page` (`USER_READ_LIMIT`, 120/min/user).
+- `buildReport(userId, period, accountId?, anchorKey?)` in `reports.ts` covers
+  the New York days ending on `anchorKey` (day = 1, week = 7, month = 30); a
+  trade is in the window when `etDayKey(entryTime)` is. `resolveReportAnchor`
+  turns `?date=` into the anchor (future/malformed → today ET; none → the
+  latest ET day with trades via `getLatestTradeDayKey`). Report maths unchanged.
+
 ---
 
 ## Package A — Analytics (`src/lib/analytics/`)
@@ -201,7 +223,9 @@ wipe demo user's data then recreate. Create:
   max_trades, behavioral(revenge), setup_validation (config JSON-stringified).
 - 1 PropAccount for the Topstep account (Topstep 50K preset:
   profitTarget 3000, maxDailyLoss 1000, maxDrawdown 2000 trailing, consistencyPct 0.5).
-- a few open Alerts.
+- no hand-planted Alerts: the closing recompute runs the real alert generator,
+  so demo alerts come from the seeded trades. The tracker's phase matches the
+  account's own kind (the account's status is the truth).
 End by calling `recomputeUserCompliance(user.id)` if available (dynamic import,
 try/catch) so evaluations + discipline snapshots exist. Log a summary.
 

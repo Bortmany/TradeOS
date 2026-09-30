@@ -12,6 +12,7 @@ import {
   Unplug,
 } from "lucide-react";
 import { cn, formatCurrency, formatDateTime } from "@/lib/utils";
+import { useTimeZone } from "@/components/time-zone-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -63,7 +64,7 @@ interface DiscoveredAccount {
   canTrade?: boolean;
 }
 
-function relativeTime(iso: string): string {
+function relativeTime(iso: string, timeZone: string): string {
   const then = new Date(iso).getTime();
   if (!isFinite(then)) return "—";
   const diffMin = Math.round((Date.now() - then) / 60_000);
@@ -73,7 +74,7 @@ function relativeTime(iso: string): string {
   if (h < 24) return `${h}h ago`;
   const d = Math.floor(h / 24);
   if (d < 7) return `${d}d ago`;
-  return formatDateTime(iso);
+  return formatDateTime(iso, timeZone);
 }
 
 function ErrorPanel({ message }: { message: string }) {
@@ -194,6 +195,7 @@ function ConnectionRow({
   connection: BrokerConnection;
   onChanged: () => Promise<void>;
 }) {
+  const timeZone = useTimeZone();
   const [syncing, setSyncing] = React.useState(false);
   const [syncResult, setSyncResult] = React.useState<string | null>(null);
   const [syncError, setSyncError] = React.useState<string | null>(null);
@@ -265,7 +267,7 @@ function ConnectionRow({
         <p className="mt-0.5 truncate text-2xs text-muted-foreground">
           → {connection.accountName} · Last sync{" "}
           <span className="tabular">
-            {connection.lastSyncAt ? relativeTime(connection.lastSyncAt) : "never"}
+            {connection.lastSyncAt ? relativeTime(connection.lastSyncAt, timeZone) : "never"}
           </span>
         </p>
         {/* Failures stay fully readable — never truncated, never buried. */}

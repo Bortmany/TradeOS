@@ -11,7 +11,7 @@ export const metadata: Metadata = {
     template: "%s · TradeOS",
   },
   description:
-    "TradeOS is the discipline engine for day traders. Import your trades, enforce your rulebook, and turn analytics into a repeatable edge.",
+    "TradeOS is the trading journal that keeps you honest. Import your trades, grade every one against your own rules, and get a warning at 50%, 80% and 100% of a limit. You decide what to do.",
   applicationName: "TradeOS",
   manifest: "/manifest.webmanifest",
   keywords: [
@@ -26,7 +26,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "TradeOS — Trading discipline, quantified",
     description:
-      "Import your trades, grade every one against your rulebook, and turn raw fills into a discipline score you can improve.",
+      "The trading journal that keeps you honest. Import your trades, grade every one against your rulebook, and turn raw fills into a discipline score you can improve.",
     url: appUrl,
     siteName: "TradeOS",
     type: "website",
@@ -35,7 +35,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "TradeOS — Trading discipline, quantified",
     description:
-      "The discipline engine for day & funded traders. Rulebook enforcement, analytics, and prop-firm guardrails.",
+      "The trading journal that keeps you honest, for day & funded traders. Grades your trades against your Rulebook and warns you at 50/80/100% of a limit. You decide.",
   },
 };
 
@@ -47,6 +47,9 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
+  // Lets the page reach under the phone's home indicator so
+  // env(safe-area-inset-bottom) is real (the bottom bar pads by it).
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

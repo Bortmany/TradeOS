@@ -21,6 +21,7 @@ export function DisciplineSection() {
                 {[
                   "Deterministic scoring — no black-box AI required",
                   "Full audit trail for every rule evaluation",
+                  "Warnings at 50%, 80% and 100% of a limit — you decide what to do",
                   "Works across every linked account",
                 ].map((t) => (
                   <li key={t} className="flex items-center gap-2.5">

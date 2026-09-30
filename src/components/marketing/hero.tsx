@@ -20,8 +20,9 @@ export function Hero({ ctas }: { ctas: SignupCtas }) {
               <span className="text-primary"> your own rules.</span>
             </h1>
             <p className="mt-5 max-w-xl text-balance text-lg text-muted-foreground">
-              TradeOS imports your trades, grades every one against your rulebook,
-              and turns raw fills into a discipline score you can actually improve.
+              The trading journal that keeps you honest. TradeOS imports your trades,
+              grades every one against your rulebook, and warns you at 50%, 80% and
+              100% of a limit. You decide what to do next.
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <Button asChild size="lg" className="gap-2">

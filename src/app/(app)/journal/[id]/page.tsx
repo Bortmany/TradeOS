@@ -18,7 +18,9 @@ import {
   formatDuration,
   formatDateTime,
   pnlColor,
+  resolveTimeZone,
 } from "@/lib/utils";
+import { accountDisplay } from "@/lib/account-display";
 import type { EvalStatus } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -48,6 +50,9 @@ export default async function TradeDetailPage({
   if (!detail) notFound();
 
   const { trade, account, evaluations } = detail;
+  const shownAccount = account ? accountDisplay(account) : null;
+  // Display zone only — the rule verdicts below keep the engine's own "ET".
+  const tz = resolveTimeZone(user.timezone);
   const open = trade.exitTime === null || trade.exitPrice === null;
 
   const holdMinutes =
@@ -83,9 +88,12 @@ export default async function TradeDetailPage({
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-semibold tracking-tight">{trade.symbol}</h1>
           <Badge variant={trade.side === "long" ? "profit" : "loss"}>{trade.side}</Badge>
-          {account && (
-            <span className="text-sm text-muted-foreground">
-              {account.name} · {account.kind}
+          {shownAccount && (
+            <span className="flex min-w-0 flex-wrap items-center gap-2 text-sm text-muted-foreground">
+              <span className="truncate">
+                {shownAccount.name} · {shownAccount.broker}
+              </span>
+              <Badge variant={shownAccount.statusVariant}>{shownAccount.status}</Badge>
             </span>
           )}
         </div>
@@ -172,11 +180,11 @@ export default async function TradeDetailPage({
             </CardHeader>
             <CardContent>
               <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3">
-                <Fact label="Entry" value={formatNumber(trade.entryPrice, 2)} sub={formatDateTime(trade.entryTime)} />
+                <Fact label="Entry" value={formatNumber(trade.entryPrice, 2)} sub={formatDateTime(trade.entryTime, tz)} />
                 <Fact
                   label="Exit"
                   value={open ? "Open" : formatNumber(trade.exitPrice as number, 2)}
-                  sub={open ? "Position still open" : formatDateTime(trade.exitTime as Date)}
+                  sub={open ? "Position still open" : formatDateTime(trade.exitTime as Date, tz)}
                 />
                 <Fact label="Quantity" value={formatNumber(trade.quantity)} sub={`${mult}× point mult`} />
                 <Fact

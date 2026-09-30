@@ -9,7 +9,7 @@ import { DataPrivacy } from "@/components/settings/data-privacy";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { formatDate } from "@/lib/utils";
+import { formatDate, resolveTimeZone } from "@/lib/utils";
 import { prisma } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
@@ -34,7 +34,7 @@ export default async function SettingsPage() {
           <CardHeader>
             <CardTitle>Profile</CardTitle>
             <p className="mt-0.5 text-sm text-muted-foreground">
-              Your name and the timezone your sessions are bucketed in.
+              Your name and the clock the app shows times in.
             </p>
           </CardHeader>
           <CardContent>
@@ -69,7 +69,7 @@ export default async function SettingsPage() {
             />
             <Row
               label="Member since"
-              value={dbUser ? formatDate(dbUser.createdAt) : "—"}
+              value={dbUser ? formatDate(dbUser.createdAt, resolveTimeZone(user.timezone)) : "—"}
             />
           </CardContent>
         </Card>

@@ -23,13 +23,16 @@ import {
   formatPercent,
   formatDate,
   formatDateTime,
+  formatDayKey,
   pnlColor,
+  resolveTimeZone,
 } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
+// Week keys are New York calendar days: printed as those dates, never shifted.
 function weekLabel(weekKey: string): string {
-  return `${formatDate(`${weekKey}T12:00:00`)} – ${formatDate(`${weekEndKey(weekKey)}T12:00:00`)}`;
+  return `${formatDayKey(weekKey)} – ${formatDayKey(weekEndKey(weekKey))}`;
 }
 
 export default async function WeeklyReviewPage({
@@ -40,6 +43,7 @@ export default async function WeeklyReviewPage({
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   const { week } = await searchParams;
+  const tz = resolveTimeZone(user.timezone);
 
   // A date-shaped value that doesn't exist (e.g. 2026-99-99) gets a clear
   // message instead of silently opening some other week.
@@ -179,7 +183,7 @@ export default async function WeeklyReviewPage({
                       {formatCurrency(report.worst[0].pnl, { sign: true })}
                     </span>{" "}
                     <span className="text-muted-foreground">
-                      on {formatDate(report.worst[0].entryTime)}
+                      on {formatDate(report.worst[0].entryTime, tz)}
                     </span>
                   </p>
                 </div>
@@ -203,7 +207,7 @@ export default async function WeeklyReviewPage({
             worked={saved?.answers.worked ?? ""}
             costliestRule={saved?.answers.costliestRule ?? ""}
             oneChange={saved?.answers.oneChange ?? ""}
-            savedAt={saved ? formatDateTime(saved.updatedAt) : null}
+            savedAt={saved ? formatDateTime(saved.updatedAt, tz) : null}
           />
         </CardContent>
       </Card>

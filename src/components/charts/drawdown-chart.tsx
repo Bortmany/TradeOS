@@ -10,7 +10,8 @@ import {
   CartesianGrid,
   ReferenceLine,
 } from "recharts";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatDate, formatDateTime } from "@/lib/utils";
+import { useTimeZone } from "@/components/time-zone-provider";
 
 interface Props {
   /** Points from computeDrawdownSeries — `drawdown` may be signed either way. */
@@ -24,6 +25,7 @@ interface Props {
  * negative magnitude so the area hangs beneath zero.
  */
 export function DrawdownChart({ data, height = 240 }: Props) {
+  const tz = useTimeZone();
   if (data.length === 0) {
     return (
       <div
@@ -38,10 +40,8 @@ export function DrawdownChart({ data, height = 240 }: Props) {
   const chartData = data.map((p) => ({
     time: p.time,
     value: -Math.abs(p.drawdown), // negative-going
-    label: new Date(p.time * 1000).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-    }),
+    label: formatDate(new Date(p.time * 1000), tz, "short"),
+    when: formatDateTime(new Date(p.time * 1000), tz),
   }));
 
   const stroke = "hsl(var(--loss))";
@@ -91,7 +91,7 @@ function DrawdownTooltip({ active, payload }: any) {
   const p = payload[0].payload;
   return (
     <div className="rounded-md border border-border bg-popover px-3 py-2 text-xs shadow-lg">
-      <p className="text-muted-foreground">{p.label}</p>
+      <p className="text-muted-foreground">{p.when}</p>
       <p className="mt-0.5 font-semibold tabular text-loss">
         {formatCurrency(p.value)}
       </p>

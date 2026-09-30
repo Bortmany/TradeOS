@@ -61,7 +61,7 @@ export const PLAN_DEFINITIONS: Record<Plan, PlanDefinition> = {
     name: "Pro",
     priceMonthly: 29,
     priceAnnual: 290, // ten months' worth — two months free
-    tagline: "The full discipline engine.",
+    tagline: "Every trade graded, every limit watched.",
     highlighted: true,
     features: {
       maxAccounts: Infinity,
