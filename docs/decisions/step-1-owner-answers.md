@@ -51,3 +51,7 @@ Go / changes on each. Their open questions have suggested defaults, and you can 
 - The demo button signs in read-only.
 - The score reads "not scored yet" until you have a rule.
 - The sample trades stay, with a line explaining them.
+
+## Owner answer (30 Sep 2026)
+
+"Go with your suggestions" — every recommendation (A–C) and every spec default (D) above is approved as written.
