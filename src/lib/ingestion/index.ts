@@ -16,7 +16,7 @@
 
 import type { Broker } from "@/lib/types";
 import type { NormalizedTrade } from "@/lib/types";
-import { parseCsv } from "@/lib/ingestion/csv";
+import { parseCsv, parseCsvRecords } from "@/lib/ingestion/csv";
 import type { BrokerAdapter, ParseOptions } from "@/lib/ingestion/adapters/generic";
 import { genericAdapter } from "@/lib/ingestion/adapters/generic";
 import { topstepxAdapter } from "@/lib/ingestion/adapters/topstepx";
@@ -24,7 +24,7 @@ import { tradovateAdapter } from "@/lib/ingestion/adapters/tradovate";
 import { ninjatraderAdapter } from "@/lib/ingestion/adapters/ninjatrader";
 import { rithmicAdapter } from "@/lib/ingestion/adapters/rithmic";
 import { ibkrAdapter } from "@/lib/ingestion/adapters/ibkr";
-import { mt5Adapter } from "@/lib/ingestion/adapters/mt5";
+import { mt5Adapter, findMt5Table } from "@/lib/ingestion/adapters/mt5";
 
 export type { BrokerAdapter, ParseResult, ParseOptions } from "@/lib/ingestion/adapters/generic";
 
@@ -71,12 +71,32 @@ export function ingestCsv(text: string, brokerKey?: Broker, options?: ParseOptio
   if (brokerKey) {
     adapter = ADAPTERS.find((a) => a.key === brokerKey);
   }
-  const chosen = adapter ?? detectAdapter(headers) ?? genericAdapter;
+  let chosen = adapter ?? detectAdapter(headers) ?? genericAdapter;
+  let useHeaders = headers;
+  let useRows = rows;
+  let useOptions = options;
+
+  // A saved MT5 History report has title rows above the Positions table. Only when
+  // MT5 was chosen, or auto-detect found nothing better than generic, and row 1 is
+  // not already an MT5 header, look further down for the table. Other adapters
+  // read their files exactly as before.
+  if ((brokerKey === "mt5" || (!brokerKey && chosen.key === "generic")) && !mt5Adapter.detect(headers)) {
+    const found = findMt5Table(parseCsvRecords(text));
+    if (found?.kind === "refusal") {
+      return { broker: "mt5", trades: [], skipped: 0, errors: [], refusal: found.refusal };
+    }
+    if (found) {
+      chosen = mt5Adapter;
+      useHeaders = found.headers;
+      useRows = found.rows;
+      useOptions = { ...options, firstDataRow: found.firstDataRow };
+    }
+  }
 
   const { trades, skipped, errors, refusal, openSkipped, timesReadAs } = chosen.parse(
-    headers,
-    rows,
-    options
+    useHeaders,
+    useRows,
+    useOptions
   );
   return {
     broker: chosen.key,

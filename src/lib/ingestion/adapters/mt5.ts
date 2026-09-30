@@ -146,6 +146,44 @@ const cents = (n: number) => {
   return r === 0 ? 0 : r;
 };
 
+// --- finding the table inside a saved History report ---------------------------
+//
+// "File > Save as report" puts title rows (report name, Name, Account, Company,
+// Date, a "Positions" label) above the table, and Orders / Deals / summary
+// sections below it. Blank spacer columns may sit between the headers.
+
+const SCAN_ROWS = 30;
+
+export type Mt5TableSearch =
+  | { kind: "table"; headers: string[]; rows: string[][]; firstDataRow: number }
+  | { kind: "refusal"; refusal: string };
+
+/**
+ * Look through the first rows of a file for the Positions header. Returns the
+ * header and the rows under it (up to the next blank row or section title), a
+ * plain-English refusal if the first table found is the Deals table or the file
+ * is semicolon-separated, or null when nothing MT5-like is there.
+ */
+export function findMt5Table(records: string[][]): Mt5TableSearch | null {
+  const limit = Math.min(records.length, SCAN_ROWS);
+  for (let r = 0; r < limit; r++) {
+    const headers = records[r].map((h) => h.trim());
+    const n = normHeaders(headers);
+    if (isPositionsTable(n)) {
+      const rows: string[][] = [];
+      for (let k = r + 1; k < records.length; k++) {
+        const filled = records[k].filter((c) => c.trim() !== "").length;
+        if (filled <= 1) break; // blank row, or a section title such as "Orders"
+        rows.push(records[k]);
+      }
+      return { kind: "table", headers, rows, firstDataRow: r + 2 };
+    }
+    if (isDealsTable(n)) return { kind: "refusal", refusal: MT5_MESSAGES.deals };
+    if (isSemicolonFile(headers)) return { kind: "refusal", refusal: MT5_MESSAGES.semicolons };
+  }
+  return null;
+}
+
 export const mt5Adapter: BrokerAdapter = {
   key: "mt5",
   label: "MetaTrader 5",
@@ -181,7 +219,7 @@ export const mt5Adapter: BrokerAdapter = {
     let openSkipped = 0;
 
     rows.forEach((row, i) => {
-      const rowNumber = i + 2;
+      const rowNumber = (options?.firstDataRow ?? 2) + i;
       const cell = (col: number) => (row[col] ?? "").trim();
       const g = makeGetter(idx, row);
 

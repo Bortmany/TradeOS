@@ -44,6 +44,9 @@ export interface ParseResult {
 // Optional extras an import can pass down. Existing adapters ignore them.
 export interface ParseOptions {
   serverTime?: ServerTime;
+  // MT5 only: the file row number of the first data row (2 when the header is
+  // on row 1; larger when a report has title rows above the table).
+  firstDataRow?: number;
 }
 
 export interface BrokerAdapter {
@@ -212,6 +215,9 @@ export function computePnl(f: {
   return gross - f.fees;
 }
 
+// A forex quantity at or above this is read as units, not lots (see TradeCollector.add).
+const FOREX_UNITS_FROM = 1000;
+
 // A small accumulator adapters push rows into. Handles pnl computation, zod
 // validation, skip counting, and error capping uniformly.
 export class TradeCollector {
@@ -246,8 +252,19 @@ export class TradeCollector {
       // 1 (that gives wildly wrong P&L). It goes through the instruments maths,
       // in dollars; a row that needs a conversion rate we don't have is skipped
       // with the pair named. Everything else (futures, shares) is unchanged.
-      const inst = exitPrice != null ? getInstrument(f.symbol) : null;
+      // Only exact table symbols (and broker endings) count here, never bare
+      // aliases: GOLD or WTI in a shares file are stocks, not gold or oil CFDs.
+      // (The MT5 adapter always supplies its own P&L and resolves aliases itself.)
+      const inst = exitPrice != null ? getInstrument(f.symbol, { useAliases: false }) : null;
       if (inst && exitPrice != null) {
+        // Forex quantity here means LOTS. A figure this big is units (IBKR style,
+        // e.g. 20000): skip the row rather than guess a conversion.
+        if (inst.assetClass === "forex" && f.quantity >= FOREX_UNITS_FROM) {
+          return this.fail(
+            rowNumber,
+            `${inst.symbol} quantity ${f.quantity} looks like units, not lots (1 lot = ${inst.contractSize} units). Enter the size in lots and import again`
+          );
+        }
         try {
           const gross = pnlFromPrices({
             symbol: f.symbol,

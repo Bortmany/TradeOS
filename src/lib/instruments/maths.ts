@@ -50,9 +50,10 @@ function norm(n: number): number {
 
 const BY_SYMBOL = new Map<string, InstrumentRow>(INSTRUMENT_TABLE.map((r) => [r.symbol, r]));
 
-function lookup(key: string): InstrumentRow | null {
+function lookup(key: string, useAliases = true): InstrumentRow | null {
   const direct = BY_SYMBOL.get(key);
   if (direct) return direct;
+  if (!useAliases) return null;
   const alias = INSTRUMENT_ALIASES[key];
   return alias ? BY_SYMBOL.get(alias) ?? null : null;
 }
@@ -63,25 +64,31 @@ const PLAIN_SUFFIXES = ["PRO", "RAW", "ECN", "CASH", "STD", "MICRO", "M", "C"];
 /**
  * Find the table row for a broker symbol, or null. Copes with the endings
  * brokers add (EURUSD.r, EURUSDm, GBPUSD.pro, EURUSD#, XAUUSD.) and the common
- * alternative names (GOLD, USOIL, NAS100/USTEC, GER40/DE40 ...).
+ * alternative names (GOLD, USOIL, NAS100/USTEC, GER40/DE40 ...). With
+ * `{ useAliases: false }` only exact table symbols (plus broker endings) match,
+ * so a stock ticker such as GOLD or WTI is never taken for a metal or oil CFD.
  */
-export function getInstrument(symbol: string): InstrumentRow | null {
+export function getInstrument(
+  symbol: string,
+  options?: { useAliases?: boolean }
+): InstrumentRow | null {
+  const useAliases = options?.useAliases ?? true;
   if (typeof symbol !== "string") return null;
   const s = symbol.trim().toUpperCase();
   if (!s || s.length > 32) return null;
 
-  const direct = lookup(s);
+  const direct = lookup(s, useAliases);
   if (direct) return direct;
 
   // "EURUSD.R", "EURUSD#", "XAUUSD.", "EURUSD_i" -> "EURUSD"
   const cut = s.replace(/[.#_\-!+@].*$/, "");
   if (!cut) return null;
-  const afterCut = lookup(cut);
+  const afterCut = lookup(cut, useAliases);
   if (afterCut) return afterCut;
 
   for (const suffix of PLAIN_SUFFIXES) {
     if (cut.length > suffix.length && cut.endsWith(suffix)) {
-      const row = lookup(cut.slice(0, -suffix.length));
+      const row = lookup(cut.slice(0, -suffix.length), useAliases);
       if (row) return row;
     }
   }

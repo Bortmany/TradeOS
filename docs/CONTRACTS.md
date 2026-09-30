@@ -146,6 +146,14 @@ priced with that default: `TradeCollector.add` uses `pnlFromPrices` from
 `src/lib/instruments/` (USD account, quantity = lots, fees subtracted, rounded
 to cents); a row that needs a conversion rate nobody supplied is skipped with
 "needs a GBPUSD rate". A P&L already present in the file is always trusted.
+In this generic fallback `getInstrument` is called with `{ useAliases: false }`:
+only exact table symbols and their broker endings (XAUUSD, XAUUSD.r, EURUSDm)
+count, NEVER bare aliases (GOLD, SILVER, WTI, BRENT ...), so a stock ticker such
+as GOLD or WTI keeps the shares maths. The MT5 adapter supplies its own P&L and
+resolves aliases. Forex quantity here means LOTS: a forex row whose quantity is
+1000 or more is read as units (IBKR style, e.g. 20000) and skipped with a plain
+message ("EURUSD quantity 20000 looks like units, not lots ..."), never guessed;
+the rule applies only when P&L is computed (no P&L column).
 `generic` maps common column names (symbol/ticker, side/direction,
 qty/quantity/size, entry/exit price, times). `TradeCollector` rows take an
 optional `assetClass`, passed into the checked trade shape.
@@ -171,6 +179,16 @@ table symbol from `getInstrument` (broker endings and aliases resolved);
 with no close time is an open position: skipped, counted in `openSkipped`
 (no error line). An unknown symbol (BTCUSD ...) skips that row with "symbol X is
 not supported yet"; a repeated Position keeps the first and reports the second.
+A saved History report (File > Save as report) has title rows above the table
+and Orders / Deals / summary sections below, maybe with blank spacer columns.
+`ingestCsv` (MT5 chosen, or auto-detect that would otherwise fall to generic,
+and only when row 1 is not already an MT5 header) calls `findMt5Table` on the
+raw records (`parseCsvRecords`): it scans the first 30 rows for the Positions
+header, reads rows until the next blank row or single-cell section title, and
+passes `ParseOptions.firstDataRow` so error row numbers are real file rows. A
+Deals header or semicolon header found in those rows is refused as before. Other
+adapters read files exactly as before.
+
 Times have no zone in the file; `parseMt5Time` parses the `YYYY.MM.DD HH:MM[:SS]`
 layout itself (never the machine zone) and converts with the chosen
 `ServerTime` (`ServerTimeSchema` in `types.ts`): `ny_close` (default; server =
