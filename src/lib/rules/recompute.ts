@@ -9,7 +9,7 @@
 // trades a rulebook applies to; day-context grouping happens inside the engine.
 
 import { prisma } from "@/lib/db";
-import type { Side, TradeSource, Severity, RuleType, TradeRecord } from "@/lib/types";
+import type { Side, TradeSource, Severity, RuleType, TradeRecord, AssetClass } from "@/lib/types";
 import { evaluateTrades, etDayKey, type RuleLike, type EvalResult, type EvalContext } from "./engine";
 import { coerceConfig } from "./config";
 import { computeDisciplineScore } from "@/lib/discipline/score";
@@ -298,6 +298,7 @@ function toTradeRecord(t: {
   tags: string | null;
   source: string;
   externalId: string | null;
+  assetClass: string | null;
   isWin: boolean | null;
   complianceScore: number | null;
   violationCount: number;
@@ -322,6 +323,7 @@ function toTradeRecord(t: {
     tags: t.tags,
     source: t.source as TradeSource,
     externalId: t.externalId,
+    assetClass: t.assetClass as AssetClass | null,
     isWin: t.isWin,
     complianceScore: t.complianceScore,
     violationCount: t.violationCount,

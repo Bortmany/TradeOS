@@ -9,7 +9,8 @@ import { rateLimit } from "@/lib/rate-limit";
 import { recomputeCompliance } from "@/lib/rules/recompute-compliance";
 import { apiErrorResponse } from "@/lib/api-error";
 import type { Broker } from "@/lib/types";
-import { BROKERS } from "@/lib/types";
+import { BROKERS, ServerTimeSchema } from "@/lib/types";
+import { mt5AccountCurrencyProblem } from "@/lib/ingestion/adapters/mt5";
 
 import { MAX_CSV_CHARS, importRowLimit } from "@/lib/import-limits";
 
@@ -17,6 +18,8 @@ const schema = z.object({
   accountId: z.string().min(1),
   csvText: z.string().min(1).max(MAX_CSV_CHARS, "That file is too large to import in one go (2 MB limit). Split it and try again."),
   broker: z.enum(BROKERS).optional(),
+  // Which clock an MT5 file's times use. Other formats ignore it.
+  serverTime: ServerTimeSchema.optional(),
 });
 
 export const POST = withUser(async (user, req: Request) => {
@@ -30,7 +33,7 @@ export const POST = withUser(async (user, req: Request) => {
   }
 
   try {
-    const { accountId, csvText, broker } = schema.parse(await req.json());
+    const { accountId, csvText, broker, serverTime } = schema.parse(await req.json());
 
     const account = await prisma.tradingAccount.findFirst({
       where: { id: accountId, userId: user.id },
@@ -39,7 +42,17 @@ export const POST = withUser(async (user, req: Request) => {
       return NextResponse.json({ ok: false, error: "Account not found." }, { status: 404 });
     }
 
-    const result = ingestCsv(csvText, broker as Broker | undefined);
+    const result = ingestCsv(csvText, broker as Broker | undefined, { serverTime });
+
+    // A whole-file problem (wrong MT5 table, semicolons): say so plainly, save nothing.
+    if (result.refusal) {
+      return NextResponse.json({ ok: false, error: result.refusal }, { status: 400 });
+    }
+    // MT5 profit is taken as dollars, so only a USD account can receive it.
+    if (result.broker === "mt5") {
+      const problem = mt5AccountCurrencyProblem(account.currency);
+      if (problem) return NextResponse.json({ ok: false, error: problem }, { status: 400 });
+    }
 
     // Feature gate: cap the number of parsed rows BEFORE any insert. The plan's
     // own limit applies when it has one; otherwise a fixed ceiling.
@@ -91,6 +104,7 @@ export const POST = withUser(async (user, req: Request) => {
             tags: t.tags ?? null,
             source: "csv",
             externalId: t.externalId ?? null,
+            assetClass: t.assetClass ?? null,
             importBatchId: batch.id,
             isWin: t.exitTime ? (t.pnl ?? 0) > 0 : null,
           },
@@ -132,6 +146,9 @@ export const POST = withUser(async (user, req: Request) => {
       imported,
       skipped,
       errors,
+      // MT5 only: how the file's times were read, and how many open positions were left out.
+      ...(result.timesReadAs ? { timesReadAs: result.timesReadAs } : {}),
+      ...(result.openSkipped !== undefined ? { openSkipped: result.openSkipped } : {}),
     });
   } catch (err) {
     // Never echo a raw error message to the client — the shared helper maps it

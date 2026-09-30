@@ -84,7 +84,7 @@ model TradingAccount {
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   name        String
-  broker      String   @default("manual") // topstepx | tradovate | ninjatrader | rithmic | ibkr | manual | csv
+  broker      String   @default("manual") // topstepx | tradovate | ninjatrader | rithmic | ibkr | mt5 | manual | csv
   // kind: live | funded | evaluation | demo
   kind        String   @default("live")
   currency    String   @default("USD")
@@ -124,6 +124,8 @@ model Trade {
   fees        Float    @default(0)
   pnl         Float    @default(0)   // realized, net of fees; computed if absent
   pnlGross    Float?                 // gross before fees (optional)
+  // assetClass: futures | forex | cfd (null = futures, as for every older trade)
+  assetClass  String?
 
   strategyTag String?
   notes       String?

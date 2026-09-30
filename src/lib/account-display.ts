@@ -15,6 +15,7 @@ export const BROKER_LABELS: Readonly<Record<string, string>> = {
   ninjatrader: "NinjaTrader",
   rithmic: "Rithmic",
   ibkr: "Interactive Brokers",
+  mt5: "MetaTrader 5",
   generic: "Generic CSV",
   manual: "Manual",
 };

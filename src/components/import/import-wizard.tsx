@@ -35,6 +35,21 @@ interface ImportResult {
   imported: number;
   skipped: number;
   errors: string[];
+  // MT5 files only: how the times were read, and how many open positions were left out.
+  timesReadAs?: string;
+  openSkipped?: number;
+}
+
+type ServerTimeMode = "ny_close" | "utc" | "offset";
+
+const OFFSET_MESSAGE = "Enter a whole number of hours between -12 and +14.";
+
+// Whole hours only, -12 to +14 ("+2", "-5", "3"). Anything else is null.
+function parseOffsetHours(text: string): number | null {
+  const t = text.trim();
+  if (!/^[+-]?\d{1,2}$/.test(t)) return null;
+  const n = Number(t);
+  return n >= -12 && n <= 14 ? n : null;
 }
 
 // Shared honest-status panels — errors are never buried in plain text.
@@ -100,6 +115,13 @@ function CsvImport({
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [result, setResult] = React.useState<ImportResult | null>(null);
+  // Which clock an MT5 file's times use. Only shown (and sent) for MT5 / Auto-detect.
+  const [serverMode, setServerMode] = React.useState<ServerTimeMode>("ny_close");
+  const [offsetText, setOffsetText] = React.useState("");
+  const [offsetTouched, setOffsetTouched] = React.useState(false);
+  const showServerTime = broker === "auto" || broker === "mt5";
+  const offsetHours = parseOffsetHours(offsetText);
+  const offsetInvalid = serverMode === "offset" && offsetHours === null;
 
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -114,6 +136,10 @@ function CsvImport({
     setResult(null);
     if (!accountId) return setError("Select a target account.");
     if (!csvText.trim()) return setError("Paste CSV text or choose a file first.");
+    if (showServerTime && offsetInvalid) {
+      setOffsetTouched(true);
+      return setError(OFFSET_MESSAGE);
+    }
     setBusy(true);
     try {
       const res = await fetch("/api/import", {
@@ -123,6 +149,14 @@ function CsvImport({
           accountId,
           csvText,
           ...(broker !== "auto" ? { broker } : {}),
+          ...(showServerTime
+            ? {
+                serverTime:
+                  serverMode === "offset"
+                    ? { mode: "offset", hours: offsetHours }
+                    : { mode: serverMode },
+              }
+            : {}),
         }),
       });
       const json = await res.json();
@@ -135,6 +169,8 @@ function CsvImport({
         imported: json.imported,
         skipped: json.skipped,
         errors: json.errors ?? [],
+        timesReadAs: json.timesReadAs,
+        openSkipped: json.openSkipped,
       });
       router.refresh();
     } catch {
@@ -188,6 +224,59 @@ function CsvImport({
                 </SelectContent>
               </Select>
             </div>
+
+            {showServerTime && (
+              <>
+                <div className="space-y-1.5">
+                  <Label>Broker server time</Label>
+                  <Select
+                    value={serverMode}
+                    onValueChange={(v) => setServerMode(v as ServerTimeMode)}
+                  >
+                    <SelectTrigger title="Which clock the times in your MT5 file use">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ny_close">
+                        Most brokers (GMT+2 winter / GMT+3 summer, New York close)
+                      </SelectItem>
+                      <SelectItem value="utc">UTC</SelectItem>
+                      <SelectItem value="offset">Fixed offset</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {serverMode === "offset" && (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="mt5-offset">Hours from UTC</Label>
+                    <Input
+                      id="mt5-offset"
+                      type="number"
+                      inputMode="decimal"
+                      step={1}
+                      min={-12}
+                      max={14}
+                      value={offsetText}
+                      onChange={(e) => setOffsetText(e.target.value)}
+                      onBlur={() => setOffsetTouched(true)}
+                      placeholder="+2"
+                      aria-invalid={offsetTouched && offsetInvalid}
+                      className={cn(
+                        offsetTouched && offsetInvalid && "border-loss focus-visible:ring-loss"
+                      )}
+                    />
+                    {offsetTouched && offsetInvalid && (
+                      <p className="text-2xs text-loss">{OFFSET_MESSAGE}</p>
+                    )}
+                  </div>
+                )}
+
+                <p className="text-2xs text-muted-foreground sm:col-span-2">
+                  MetaTrader shows your broker&apos;s clock, not yours. Only used for MT5 files.
+                  Not sure? Compare the Market Watch clock in MT5 with UTC.
+                </p>
+              </>
+            )}
           </div>
 
           <div className="space-y-1.5">
@@ -213,6 +302,12 @@ function CsvImport({
                 className="hidden"
               />
             </label>
+            {showServerTime && (
+              <p className="text-2xs text-muted-foreground">
+                MT5 export: Toolbox, then History. Choose Positions, right-click, Report, save,
+                open in Excel, then Save as CSV (comma delimited).
+              </p>
+            )}
           </div>
 
           <div className="space-y-1.5">
@@ -232,18 +327,28 @@ function CsvImport({
 
           {error && <ErrorPanel message={error} />}
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
             <Button onClick={onImport} disabled={busy} className="gap-1.5">
               <UploadCloud className="h-4 w-4" />
               {busy ? "Importing…" : "Import"}
             </Button>
-            <a
-              href="/samples/topstepx-sample.csv"
-              download
-              className="flex items-center gap-1.5 text-sm text-primary hover:underline"
-            >
-              <Download className="h-3.5 w-3.5" /> Download sample CSV
-            </a>
+            <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
+              <a
+                href="/samples/topstepx-sample.csv"
+                download
+                className="flex items-center gap-1.5 text-sm text-primary hover:underline"
+              >
+                <Download className="h-3.5 w-3.5" /> Download sample CSV
+              </a>
+              <a
+                href="/samples/mt5-sample.csv"
+                download
+                title="A small example MetaTrader 5 Positions file to try"
+                className="flex items-center gap-1.5 text-sm text-primary hover:underline"
+              >
+                <Download className="h-3.5 w-3.5" /> Download MT5 sample
+              </a>
+            </div>
           </div>
 
           {result && (
@@ -304,6 +409,18 @@ function CsvImport({
                   </p>
                 </div>
               </div>
+              {(result.timesReadAs || (result.openSkipped ?? 0) > 0) && (
+                <div className="mt-3 space-y-1 text-sm">
+                  {result.timesReadAs && <p>Times were read as {result.timesReadAs}.</p>}
+                  {(result.openSkipped ?? 0) > 0 && (
+                    <p>
+                      {result.openSkipped === 1
+                        ? "1 open position was skipped — import again after it closes."
+                        : `${result.openSkipped} open positions were skipped — import again after they close.`}
+                    </p>
+                  )}
+                </div>
+              )}
               {result.errors.length > 0 && (
                 <div className="mt-3 space-y-1.5 border-t border-border pt-3">
                   <p className="text-2xs uppercase tracking-wide text-warning">
@@ -331,7 +448,8 @@ function CsvImport({
         <CardContent className="space-y-2">
           <p className="text-sm text-muted-foreground">
             Auto-detect inspects your CSV headers and picks the right parser. Override it
-            above if detection guesses wrong.
+            above if detection guesses wrong. MetaTrader 5 needs the Positions table, not
+            Deals.
           </p>
           <ul className="space-y-1.5 pt-1">
             {brokers.map((b) => (

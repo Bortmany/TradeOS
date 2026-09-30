@@ -34,3 +34,12 @@ server can never be pointed at a private, loopback or link-local address.
    directly — no UI change needed.
 4. Run `npm test`: `test/connector-firms.test.ts` checks every entry is https
    and on the allow-list.
+
+## MetaTrader 5 is a file import, not a connector
+
+MetaTrader 5 (MT5) is not in `FIRMS` and TradeOS never connects to it. A trader
+saves the MT5 "Positions" history table as a comma CSV and uploads it on the Import
+page; `src/lib/ingestion/adapters/mt5.ts` reads the file. There is no login, no
+outbound call, and nothing that can place, change or cancel an order. A live,
+read-only MT5 connector is a later step. See `docs/CONTRACTS.md` (Package C) for
+the file format and how each column maps to a trade.

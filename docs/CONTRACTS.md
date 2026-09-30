@@ -13,6 +13,12 @@ at the boundary.
 The canonical trade shape passed to pure functions is `TradeRecord` (in
 `types.ts`). Open trades have `exitTime === null` / `exitPrice === null` and are
 excluded from realized-P&L math. `pnl` is realized, net of fees.
+`TradeRecord` (and the normalized import shape) carry an optional
+`assetClass?: "futures" | "forex" | "cfd" | null` (`ASSET_CLASSES` in `types.ts`;
+stored as the plain-string column `Trade.assetClass`). `null`/absent means
+futures, exactly as for every trade saved before forex/CFD support. `data.ts`
+(`mapTrade`) and `rules/recompute.ts` copy it across; the rule engine and the
+discipline score never read it.
 
 Session classification (US futures, times in America/New_York):
 - `pre` 04:00–09:30, `rth_am` 09:30–12:00, `lunch` 12:00–13:00,
@@ -104,30 +110,110 @@ Explanations are human-readable and deterministic, e.g.
 
 ## Package C — Ingestion (`src/lib/ingestion/`)
 Files: `csv.ts` (RFC-4180 parser: `parseCsv(text): { headers: string[]; rows: string[][] }`),
-`adapters/{topstepx,tradovate,ninjatrader,rithmic,ibkr,generic}.ts`, `index.ts`.
+`adapters/{topstepx,tradovate,ninjatrader,rithmic,ibkr,mt5,generic}.ts`, `index.ts`.
 
 Adapter interface:
 ```ts
 export interface BrokerAdapter {
   key: Broker; label: string;
   detect(headers: string[]): boolean;           // heuristic header match
-  parse(headers: string[], rows: string[][]): { trades: NormalizedTrade[];
-    skipped: number; errors: string[] };
+  parse(headers: string[], rows: string[][], options?: { serverTime?: ServerTime }): {
+    trades: NormalizedTrade[]; skipped: number; errors: string[];
+    refusal?: string;       // whole-file refusal, plain English (nothing imported)
+    openSkipped?: number;   // MT5 only
+    timesReadAs?: string;   // MT5 only, e.g. "UTC+3"
+  };
 }
 ```
+The optional third argument is ignored by every adapter except `mt5`.
 Registry + orchestrator in `index.ts`:
 - `ADAPTERS: BrokerAdapter[]`
 - `detectAdapter(headers): BrokerAdapter | null`
-- `ingestCsv(text: string, brokerKey?: Broker): { broker: Broker;
-   trades: NormalizedTrade[]; skipped: number; errors: string[] }`
+- `ingestCsv(text: string, brokerKey?: Broker, options?: { serverTime?: ServerTime }): { broker: Broker;
+   trades: NormalizedTrade[]; skipped: number; errors: string[]; refusal?: string;
+   openSkipped?: number; timesReadAs?: string }`
 Validate each row with `NormalizedTradeSchema`. Every numeric field is `.finite()`
 and bounded (`MAX_TRADE_PRICE`/`MAX_TRADE_QUANTITY`/`MAX_TRADE_FEES`/`MAX_TRADE_PNL`
 in `src/lib/types.ts`) so an overflow row that computes to `Infinity` is rejected
 and reported as a row error, never silently dropped at insert time. Compute `pnl`
-when the file lacks it: long = (exit−entry)×qty×mult − fees; short = (entry−exit)×qty×mult − fees;
-use a per-symbol point multiplier table (ES=50, MES=5, NQ=20, MNQ=2, default 1)
-in a `symbols.ts` helper; equities default mult 1. `generic` maps common column
-names (symbol/ticker, side/direction, qty/quantity/size, entry/exit price, times).
+when the file lacks it: **futures** (and any symbol the instruments table does
+not know) long = (exit−entry)×qty×mult − fees; short = (entry−exit)×qty×mult − fees;
+with the futures point multiplier table (ES=50, MES=5, NQ=20, MNQ=2, RTY=50,
+M2K=5, YM=5, MYM=0.5, CL=1000, GC=100, MGC=10, default 1 — this default is
+right for shares only) now in `src/lib/instruments/futures.ts`; `symbols.ts` is
+a one-line re-export. **Forex/CFD** symbols known to `getInstrument` are NOT
+priced with that default: `TradeCollector.add` uses `pnlFromPrices` from
+`src/lib/instruments/` (USD account, quantity = lots, fees subtracted, rounded
+to cents); a row that needs a conversion rate nobody supplied is skipped with
+"needs a GBPUSD rate". A P&L already present in the file is always trusted.
+`generic` maps common column names (symbol/ticker, side/direction,
+qty/quantity/size, entry/exit price, times). `TradeCollector` rows take an
+optional `assetClass`, passed into the checked trade shape.
+
+**MetaTrader 5 adapter (`adapters/mt5.ts`, key `mt5`, label "MetaTrader 5")** — a
+FILE import of the MT5 "Positions" history table saved as comma CSV (not a live
+connector; see `docs/connectors.md`). Columns, in order:
+`Time, Position, Symbol, Type, Volume, Price, S / L, T / P, Time, Price,
+Commission, Swap, Profit`. Detect: has Position, Symbol, Volume, S / L, T / P
+(also claims the Deals table and a semicolon file so it can refuse them in plain
+English: `refusal`). Time and Price each appear twice; the adapter reads the
+open (first) and close (second) by column ORDER, never `headerIndex`. One row =
+one round trip (MT5 already matched fills). Mapping: quantity = Volume (lots);
+side buy→long, sell→short; `pnlGross` = Profit; `fees` = −(Commission + Swap)
+(a swap credit lowers fees; may be below zero); `pnl` = Profit + Commission +
+Swap (Profit is trusted: MT5 already converted it to the account currency, so
+the import route accepts only a USD target account, else 400 "MT5 import
+supports USD accounts for now. This account is set to EUR."); `externalId` =
+`mt5:<Position>` (dedupe by the unique [accountId, externalId]); `symbol` =
+table symbol from `getInstrument` (broker endings and aliases resolved);
+`assetClass` from the table (forex, or cfd for metals/energy/indices);
+`source` csv. Comment and account name/number are never read or stored. A row
+with no close time is an open position: skipped, counted in `openSkipped`
+(no error line). An unknown symbol (BTCUSD ...) skips that row with "symbol X is
+not supported yet"; a repeated Position keeps the first and reports the second.
+Times have no zone in the file; `parseMt5Time` parses the `YYYY.MM.DD HH:MM[:SS]`
+layout itself (never the machine zone) and converts with the chosen
+`ServerTime` (`ServerTimeSchema` in `types.ts`): `ny_close` (default; server =
+New York + 7 h year-round, via `etWallToUtc`: `2026.09.14 09:15:00` →
+`2026-09-14T06:15:00Z`, `2026.12.10 09:15:00` → `07:15:00Z`), `utc`, or
+`offset` (whole hours −12..+14). `timesReadAs` reports the choice.
+
+`POST /api/import` body gains an optional, zod-validated `serverTime`
+(`{mode:"ny_close"} | {mode:"utc"} | {mode:"offset",hours}`); its response gains
+optional `timesReadAs` and `openSkipped` (MT5 only). A `refusal` is returned as
+`400 {ok:false,error}` with nothing saved. Limits unchanged.
+
+## Package F — Instruments (`src/lib/instruments/`)
+Forex/CFD symbol table and maths, plus the futures point multipliers. Pure and
+deterministic, no DB, no live prices, no outbound calls. Plain JS numbers; money
+rounds to cents (`Math.round(n*100)/100`, like `backtest/simulate.ts`), pips to
+1 decimal, pip values to 4. Files: `table.ts` (38 rows, each with a source note
+and check date; aliases in `INSTRUMENT_ALIASES`, upper-case keys), `maths.ts`,
+`futures.ts`, `index.ts` (barrel).
+
+Exports (exact names; the position-size calculator consumes these):
+- `getInstrument(symbol): InstrumentRow | null` — copes with broker endings
+  (`EURUSD.r`, `EURUSDm`, `.pro`, `#`, trailing `.`) and aliases (`GOLD`, `USOIL`/`WTI`,
+  `NAS100`/`USTEC`, `US30`/`DJ30`, `GER40`/`DE40`, `US500`/`SPX500`, `JP225`/`JPN225`).
+- `pipSize(symbol)`, `pipValue(symbol, lots, accountCurrency, rate?)`,
+  `pnlFromPrices({symbol, side, lots, entryPrice, exitPrice, accountCurrency, rate?})`
+  (before fees), `pipsFromPrices(symbol, side, entryPrice, exitPrice)`,
+  `neededConversionPair(symbol, accountCurrency)` (`null` = none needed from the caller).
+- `pointMultiplier(symbol)`, `rootSymbol(symbol)`, `FUTURES_ROOTS` — futures, values unchanged.
+- `InstrumentError` (`code`: `unknown_symbol | bad_input | needs_rate`; `pair` set for `needs_rate`).
+
+Conversion-rate rule (no price feed): quote currency = account currency → none;
+account currency is the pair's base (USDJPY, USDCHF, USDCAD in USD) → the trade's own
+exit price is the rate (for `pipValue`, which has no price, the caller supplies it);
+otherwise (EURGBP, GBPJPY, GER40, UK100, JP225 in USD) the caller must supply the
+conversion pair's market price as quoted (GBPUSD 1.30, USDJPY 150.00) or the call is
+refused naming the pair ("needs a GBPUSD rate"). A supplied rate always beats the
+trade's own price; the code decides multiply or divide. Every number must be finite
+and above zero within `MAX_TRADE_PRICE` / `MAX_TRADE_QUANTITY`, and results within
+`MAX_TRADE_PNL`, else `InstrumentError`. Golden rule: no table symbol or alias may
+equal a futures root (ES, MES, NQ, MNQ, RTY, M2K, YM, MYM, CL, GC, MGC) — tested.
+Trade page (`/journal/[id]`): forex/cfd trades show Pips and Lots; the replay's dollar
+readout is "—" for them.
 
 ## Package E — Backtesting (`src/lib/backtest/`)
 Pure, deterministic, no DB access — persistence lives in `/api/backtests*` and

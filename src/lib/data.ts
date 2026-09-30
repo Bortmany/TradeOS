@@ -5,7 +5,7 @@
 import "server-only";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import type { TradeRecord, Side, TradeSource, Severity, RuleType } from "@/lib/types";
+import type { TradeRecord, AssetClass, Side, TradeSource, Severity, RuleType } from "@/lib/types";
 import {
   computeMetrics,
   buildEquityCurve,
@@ -47,6 +47,7 @@ export function mapTrade(t: any): TradeRecord {
     tags: t.tags ?? null,
     source: t.source as TradeSource,
     externalId: t.externalId ?? null,
+    assetClass: (t.assetClass ?? null) as AssetClass | null,
     isWin: t.isWin ?? null,
     complianceScore: t.complianceScore ?? null,
     violationCount: t.violationCount ?? 0,

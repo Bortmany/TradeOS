@@ -21,10 +21,26 @@ export const BROKERS = [
   "ninjatrader",
   "rithmic",
   "ibkr",
+  "mt5",
   "generic",
   "manual",
 ] as const;
 export type Broker = (typeof BROKERS)[number];
+
+// What kind of instrument a trade is. Stored as a plain string on Trade.assetClass;
+// null/absent means futures (every trade saved before forex/CFD support).
+export const ASSET_CLASSES = ["futures", "forex", "cfd"] as const;
+export type AssetClass = (typeof ASSET_CLASSES)[number];
+
+// Which clock the times in an MT5 file use (MetaTrader shows the broker's server
+// clock, not UTC). "ny_close" = GMT+2 winter / GMT+3 summer (New York close);
+// "offset" is a fixed whole number of hours from UTC.
+export const ServerTimeSchema = z.discriminatedUnion("mode", [
+  z.object({ mode: z.literal("ny_close") }),
+  z.object({ mode: z.literal("utc") }),
+  z.object({ mode: z.literal("offset"), hours: z.number().int().min(-12).max(14) }),
+]);
+export type ServerTime = z.infer<typeof ServerTimeSchema>;
 
 export const ACCOUNT_KINDS = ["live", "funded", "evaluation", "demo"] as const;
 export type AccountKind = (typeof ACCOUNT_KINDS)[number];
@@ -116,6 +132,7 @@ export const NormalizedTradeSchema = z.object({
   tags: z.string().nullable().optional(),
   source: z.enum(TRADE_SOURCES).default("csv"),
   externalId: z.string().nullable().optional(),
+  assetClass: z.enum(ASSET_CLASSES).nullable().optional(),
 });
 export type NormalizedTrade = z.infer<typeof NormalizedTradeSchema>;
 
@@ -142,6 +159,7 @@ export interface TradeRecord {
   tags?: string | null;
   source: TradeSource;
   externalId?: string | null;
+  assetClass?: AssetClass | null;
   isWin: boolean | null;
   complianceScore?: number | null;
   violationCount?: number;

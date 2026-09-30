@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { pointMultiplier } from "@/lib/ingestion/symbols";
+import { pipsFromPrices } from "@/lib/instruments";
 import {
   formatCurrency,
   formatNumber,
@@ -63,6 +64,17 @@ export default async function TradeDetailPage({
   const mult = pointMultiplier(trade.symbol);
   const grossPnl = trade.pnlGross ?? trade.pnl + trade.fees;
   const points = !open && mult > 0 && trade.quantity > 0 ? grossPnl / (trade.quantity * mult) : null;
+
+  // Forex / CFD trades are read in pips and lots; futures keep points and contracts.
+  const isFx = trade.assetClass === "forex" || trade.assetClass === "cfd";
+  let pips: number | null = null;
+  if (isFx && !open) {
+    try {
+      pips = pipsFromPrices(trade.symbol, trade.side, trade.entryPrice, trade.exitPrice as number);
+    } catch {
+      pips = null; // unknown symbol or odd prices: show a dash, never a guess
+    }
+  }
 
   // R-multiple approximation using a 1%-of-account risk convention (only
   // derivable when the account has a starting balance).
@@ -168,6 +180,7 @@ export default async function TradeDetailPage({
                     exitTime={trade.exitTime}
                     quantity={trade.quantity}
                     pnl={trade.pnl}
+                    assetClass={trade.assetClass}
                   />
                 </TabsContent>
               </Tabs>
@@ -186,7 +199,16 @@ export default async function TradeDetailPage({
                   value={open ? "Open" : formatNumber(trade.exitPrice as number, 2)}
                   sub={open ? "Position still open" : formatDateTime(trade.exitTime as Date, tz)}
                 />
-                <Fact label="Quantity" value={formatNumber(trade.quantity)} sub={`${mult}× point mult`} />
+                {isFx ? (
+                  <Fact
+                    label="Lots"
+                    value={formatNumber(trade.quantity, 2)}
+                    sub="1 lot = standard size"
+                    title="1.00 lot is the standard size, 0.10 is a mini, 0.01 is a micro"
+                  />
+                ) : (
+                  <Fact label="Quantity" value={formatNumber(trade.quantity)} sub={`${mult}× point mult`} />
+                )}
                 <Fact
                   label="Net P&L"
                   value={open ? "—" : formatCurrency(trade.pnl, { sign: true })}
@@ -195,11 +217,19 @@ export default async function TradeDetailPage({
                 <Fact label="Gross P&L" value={open ? "—" : formatCurrency(grossPnl, { sign: true })} />
                 <Fact label="Fees" value={formatCurrency(trade.fees)} />
                 <Fact label="Hold time" value={formatDuration(holdMinutes)} />
-                <Fact
-                  label="Points"
-                  value={points == null ? "—" : `${points >= 0 ? "+" : ""}${formatNumber(points, 2)}`}
-                  valueClass={points == null ? undefined : pnlColor(points)}
-                />
+                {isFx ? (
+                  <Fact
+                    label="Pips"
+                    value={pips == null ? "—" : `${pips >= 0 ? "+" : ""}${formatNumber(pips, 1)}`}
+                    valueClass={pips == null ? undefined : pnlColor(pips)}
+                  />
+                ) : (
+                  <Fact
+                    label="Points"
+                    value={points == null ? "—" : `${points >= 0 ? "+" : ""}${formatNumber(points, 2)}`}
+                    valueClass={points == null ? undefined : pnlColor(points)}
+                  />
+                )}
                 <Fact
                   label="R ≈ (1% risk)"
                   value={rMultiple == null ? "—" : `${rMultiple >= 0 ? "+" : ""}${formatNumber(rMultiple, 2)}R`}
@@ -302,14 +332,16 @@ function Fact({
   value,
   sub,
   valueClass,
+  title,
 }: {
   label: string;
   value: string;
   sub?: string;
   valueClass?: string;
+  title?: string;
 }) {
   return (
-    <div>
+    <div title={title}>
       <dt className="text-2xs uppercase tracking-wide text-muted-foreground">{label}</dt>
       <dd className={`mt-0.5 text-sm font-medium tabular ${valueClass ?? ""}`}>{value}</dd>
       {sub && <dd className="text-2xs text-muted-foreground">{sub}</dd>}

@@ -15,10 +15,13 @@
 import {
   NormalizedTradeSchema,
   type NormalizedTrade,
+  type AssetClass,
   type Broker,
+  type ServerTime,
   type Side,
 } from "@/lib/types";
 import { pointMultiplier } from "@/lib/ingestion/symbols";
+import { getInstrument, pnlFromPrices, InstrumentError } from "@/lib/instruments";
 import { isValidTradeTimeOrder } from "@/lib/validation";
 
 // --------------------------------------------------------------------------
@@ -29,13 +32,25 @@ export interface ParseResult {
   trades: NormalizedTrade[];
   skipped: number;
   errors: string[];
+  // Whole-file refusal in plain English (wrong table, semicolons ...). When set,
+  // nothing was imported and the import route answers with this message.
+  refusal?: string;
+  // MT5 only: rows skipped because the position is still open.
+  openSkipped?: number;
+  // MT5 only: how the file's times were read, e.g. "UTC+3".
+  timesReadAs?: string;
+}
+
+// Optional extras an import can pass down. Existing adapters ignore them.
+export interface ParseOptions {
+  serverTime?: ServerTime;
 }
 
 export interface BrokerAdapter {
   key: Broker;
   label: string;
   detect(headers: string[]): boolean;
-  parse(headers: string[], rows: string[][]): ParseResult;
+  parse(headers: string[], rows: string[][], options?: ParseOptions): ParseResult;
 }
 
 // Cap the number of human-readable error strings we surface so a broken file
@@ -175,6 +190,7 @@ export interface RawTradeFields {
   emotions?: string | null;
   tags?: string | null;
   externalId?: string | null;
+  assetClass?: AssetClass | null;
 }
 
 // Compute realized P&L from prices when the source lacks it. Open trades
@@ -222,17 +238,41 @@ export class TradeCollector {
       return this.fail(rowNumber, "exit time is before entry time");
     }
 
-    const pnl =
-      f.pnl != null
-        ? f.pnl
-        : computePnl({
+    let pnl: number;
+    if (f.pnl != null) {
+      pnl = f.pnl;
+    } else {
+      // A known forex/CFD symbol must not be priced with the futures default of
+      // 1 (that gives wildly wrong P&L). It goes through the instruments maths,
+      // in dollars; a row that needs a conversion rate we don't have is skipped
+      // with the pair named. Everything else (futures, shares) is unchanged.
+      const inst = exitPrice != null ? getInstrument(f.symbol) : null;
+      if (inst && exitPrice != null) {
+        try {
+          const gross = pnlFromPrices({
+            symbol: f.symbol,
             side: f.side,
+            lots: f.quantity,
             entryPrice: f.entryPrice,
             exitPrice,
-            quantity: f.quantity,
-            fees,
-            symbol: f.symbol,
+            accountCurrency: "USD",
           });
+          pnl = Math.round((gross - fees) * 100) / 100;
+        } catch (e) {
+          if (e instanceof InstrumentError) return this.fail(rowNumber, e.message);
+          throw e;
+        }
+      } else {
+        pnl = computePnl({
+          side: f.side,
+          entryPrice: f.entryPrice,
+          exitPrice,
+          quantity: f.quantity,
+          fees,
+          symbol: f.symbol,
+        });
+      }
+    }
 
     const parsed = NormalizedTradeSchema.safeParse({
       symbol: f.symbol,
@@ -251,6 +291,7 @@ export class TradeCollector {
       tags: f.tags ?? null,
       source: "csv",
       externalId: f.externalId ?? null,
+      assetClass: f.assetClass ?? null,
     });
 
     if (!parsed.success) {
