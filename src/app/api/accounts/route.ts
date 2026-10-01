@@ -6,6 +6,7 @@ import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { BROKERS, ACCOUNT_KINDS, type Plan } from "@/lib/types";
 import { withinLimit } from "@/lib/billing/plans";
 import { apiErrorResponse } from "@/lib/api-error";
+import { purgeStoredFiles } from "@/lib/attachments";
 
 const createSchema = z.object({
   name: z.string().min(1).max(80),
@@ -111,6 +112,7 @@ export async function DELETE(req: Request) {
     const existing = await prisma.tradingAccount.findFirst({ where: { id, userId: user.id } });
     if (!existing) return NextResponse.json({ ok: false, error: "Account not found." }, { status: 404 });
 
+    await purgeStoredFiles({ trade: { accountId: id } });
     await prisma.tradingAccount.delete({ where: { id } });
     return NextResponse.json({ ok: true });
   } catch (err) {

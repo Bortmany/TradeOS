@@ -26,6 +26,7 @@ const schema = z
     strategyTag: z.string().max(120).optional().nullable(),
     // Match the length caps the PATCH route already enforces.
     notes: z.string().max(5000).optional().nullable(),
+    whyEntered: z.string().max(2000).optional().nullable(),
     emotions: z.string().max(500).optional().nullable(),
     tags: z.string().max(500).optional().nullable(),
     // Optional caller-supplied dedupe token. Retrying the same create with the
@@ -86,6 +87,7 @@ export const POST = withUser(async (user, req: Request) => {
           pnl,
           strategyTag: d.strategyTag || null,
           notes: d.notes || null,
+          whyEntered: d.whyEntered?.trim() || null,
           emotions: d.emotions || null,
           tags: d.tags || null,
           source: "manual",

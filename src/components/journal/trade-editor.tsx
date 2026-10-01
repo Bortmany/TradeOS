@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Save, Trash2, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -18,17 +18,60 @@ import {
   DialogTrigger,
   DialogClose,
 } from "@/components/ui/dialog";
-import { parseTags } from "@/lib/utils";
+import { TradeChecklist } from "@/components/checklist/trade-checklist";
+import { DemoLine } from "@/components/checklist/api";
+import { SizeCheck } from "@/components/sizing/size-check";
+import { ScreenshotPicker } from "@/components/journal/screenshot-picker";
+import { cn, parseTags } from "@/lib/utils";
+
+const WHY_MAX = 2000;
 
 interface Props {
   tradeId: string;
   notes: string | null;
   emotions: string | null;
   strategyTag: string | null;
+  whyEntered: string | null;
+  /** For the size check and the picture descriptions. */
+  symbol: string;
+  side: string;
+  startingBalance: number | null;
+  accountCurrency: string;
+  quantity: number;
+  isOpen: boolean;
+  /** The seeded demo desk is look-around only: nothing saves. */
+  demo: boolean;
+  screenshotIds: string[];
+  screenshotsEnabled: boolean;
 }
 
-export function TradeEditor({ tradeId, notes, emotions, strategyTag }: Props) {
+export function TradeEditor({
+  tradeId,
+  notes,
+  emotions,
+  strategyTag,
+  whyEntered,
+  symbol,
+  side,
+  startingBalance,
+  accountCurrency,
+  quantity,
+  isOpen,
+  demo,
+  screenshotIds,
+  screenshotsEnabled,
+}: Props) {
   const router = useRouter();
+  const [whyVal, setWhyVal] = useState(whyEntered ?? "");
+  const whyRef = useRef<HTMLTextAreaElement>(null);
+  const [showDemo, setShowDemo] = useState(false);
+  // What was last saved, so "Unsaved changes" only appears when something differs.
+  const [base, setBase] = useState({
+    why: whyEntered ?? "",
+    notes: notes ?? "",
+    emotions: emotions ?? "",
+    strategy: strategyTag ?? "",
+  });
   const [notesVal, setNotesVal] = useState(notes ?? "");
   const [emotionsVal, setEmotionsVal] = useState(emotions ?? "");
   const [strategyVal, setStrategyVal] = useState(strategyTag ?? "");
@@ -38,7 +81,20 @@ export function TradeEditor({ tradeId, notes, emotions, strategyTag }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
+  // The "Why I entered" box starts three lines tall and grows to about eight.
+  useEffect(() => {
+    const el = whyRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  }, [whyVal]);
+
   async function save() {
+    if (demo) {
+      setShowDemo(true);
+      return;
+    }
+    setShowDemo(false);
     setSaving(true);
     setSaved(false);
     setError(null);
@@ -47,6 +103,7 @@ export function TradeEditor({ tradeId, notes, emotions, strategyTag }: Props) {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          whyEntered: whyVal,
           notes: notesVal,
           emotions: emotionsVal,
           strategyTag: strategyVal,
@@ -55,6 +112,7 @@ export function TradeEditor({ tradeId, notes, emotions, strategyTag }: Props) {
       const data = await res.json();
       if (!res.ok || !data.ok) throw new Error(data.error ?? "Save failed.");
       setSaved(true);
+      setBase({ why: whyVal, notes: notesVal, emotions: emotionsVal, strategy: strategyVal });
       router.refresh();
       setTimeout(() => setSaved(false), 2000);
     } catch (err) {
@@ -80,9 +138,55 @@ export function TradeEditor({ tradeId, notes, emotions, strategyTag }: Props) {
   }
 
   const emotionTags = parseTags(emotionsVal);
+  const dirty =
+    whyVal !== base.why ||
+    notesVal !== base.notes ||
+    emotionsVal !== base.emotions ||
+    strategyVal !== base.strategy;
+  const stripVisible = dirty || saved;
+  const atWhyLimit = whyVal.length >= WHY_MAX;
 
   return (
     <div className="space-y-4">
+      <div className="space-y-1.5">
+        <Label htmlFor="whyEntered" className="text-sm font-medium text-foreground">
+          Why I entered
+        </Label>
+        <p id="whyEntered-help" className="text-xs text-muted-foreground">
+          One or two lines: what did you see, and what was your plan?
+        </p>
+        <Textarea
+          id="whyEntered"
+          ref={whyRef}
+          value={whyVal}
+          maxLength={WHY_MAX}
+          onChange={(e) => setWhyVal(e.target.value.slice(0, WHY_MAX))}
+          aria-describedby="whyEntered-help whyEntered-count"
+          placeholder="e.g. Broke above the opening range on rising volume. Plan: stop under the range low, target 2R."
+          className="min-h-[96px] resize-none text-base md:text-sm"
+        />
+        <p
+          id="whyEntered-count"
+          className={cn(
+            "text-end text-2xs tabular",
+            whyVal.length >= 1800 ? "text-warning" : "text-muted-foreground"
+          )}
+        >
+          {atWhyLimit && <span className="me-2">That&apos;s the 2,000-character limit.</span>}
+          {whyVal.length.toLocaleString("en-US")} / 2,000
+        </p>
+      </div>
+
+      <TradeChecklist tradeId={tradeId} demo={demo} />
+
+      <SizeCheck
+        symbol={symbol}
+        startingBalance={startingBalance}
+        accountCurrency={accountCurrency}
+        tradedQuantity={quantity}
+        isOpen={isOpen}
+      />
+
       <div className="space-y-1.5">
         <Label
           htmlFor="strategyTag"
@@ -138,11 +242,20 @@ export function TradeEditor({ tradeId, notes, emotions, strategyTag }: Props) {
         />
       </div>
 
+      <ScreenshotPicker
+        tradeId={tradeId}
+        label={`${symbol} ${side}`}
+        initialIds={screenshotIds}
+        enabled={screenshotsEnabled}
+        demo={demo}
+      />
+
       {error && (
         <p className="rounded-md border border-loss/30 bg-loss-muted px-3 py-2 text-sm text-loss">
           {error}
         </p>
       )}
+      {showDemo && <DemoLine />}
 
       <div className="flex items-center justify-between gap-2">
         <Button onClick={save} disabled={saving}>
@@ -185,6 +298,22 @@ export function TradeEditor({ tradeId, notes, emotions, strategyTag }: Props) {
           </DialogContent>
         </Dialog>
       </div>
+
+      {/* Phone only: a Save strip just above the bottom bar while there are unsaved changes. */}
+      {stripVisible && (
+        <>
+          <div className="h-14 md:hidden" aria-hidden="true" />
+          <div className="fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-30 flex items-center justify-between border-t border-border bg-surface/95 px-4 py-2 md:hidden">
+            <p role="status" aria-live="polite" className="text-xs text-muted-foreground">
+              {saved && !dirty ? "Saved" : "Unsaved changes"}
+            </p>
+            <Button onClick={save} disabled={saving} className="h-11">
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              Save journal
+            </Button>
+          </div>
+        </>
+      )}
     </div>
   );
 }

@@ -13,7 +13,7 @@ export default function PrivacyPage() {
     <article className="space-y-8">
       <header>
         <h1 className="text-3xl font-semibold tracking-tight">Privacy Policy</h1>
-        <p className="mt-2 text-sm text-muted-foreground">Last updated: September 28, 2026</p>
+        <p className="mt-2 text-sm text-muted-foreground">Last updated: October 1, 2026</p>
       </header>
 
       <div className="rounded-lg border border-warning/40 bg-warning-muted p-4 text-sm">
@@ -44,8 +44,24 @@ export default function PrivacyPage() {
           </li>
           <li>
             <strong>Journal content</strong> — the notes, emotion tags and labels you attach
-            to trades, the written answers you save in a weekly review, and any notes
-            you add to a saved strategy test.
+            to trades, the &quot;Why I entered&quot; text you write for a trade, the written
+            answers you save in a weekly review, and any notes you add to a saved
+            strategy test.
+          </li>
+          <li>
+            <strong>Pre-trade checklists</strong> — the checklist questions you write, and
+            each run you save (the wording of the questions, which ones you ticked, and when
+            you saved it), including which trade you linked it to.
+          </li>
+          <li>
+            <strong>Trade screenshots</strong> — the PNG, JPEG or WebP pictures you add to a
+            trade (up to 5 per trade, 5 MB each, 200 pictures and 500 MB per person). They
+            are kept in private storage that has no public links; only you can open them,
+            and each time the app checks it is you. Before a JPEG is saved, its hidden
+            metadata (including any GPS location a phone adds) is removed without changing
+            the picture. PNG and WebP files are stored as you upload them. A screenshot can
+            show things like account numbers or balances, so crop out anything you don&apos;t
+            want stored.
           </li>
           <li>
             <strong>Broker connection (optional)</strong> — if you link a TopstepX account:
@@ -79,7 +95,9 @@ export default function PrivacyPage() {
       <Section title="Who processes data for us">
         <p>
           Your data lives in our hosting provider&apos;s database. If paid billing is enabled,
-          Paddle processes payments. If error tracking is enabled, crash reports
+          Paddle processes payments. Your trade screenshots are stored with our private
+          file-storage provider (Cloudflare R2), which holds the files for us and never
+          makes them public. If error tracking is enabled, crash reports
           (technical details about an error, with credentials automatically redacted) may
           be sent to Sentry so problems can be fixed. These providers process data only to
           provide their service to us.
@@ -92,7 +110,7 @@ export default function PrivacyPage() {
             <strong>Export</strong> — download a copy of your profile, trading accounts,
             trades, rulebooks, prop-firm data, weekly reviews and saved strategy tests
             (plus the name and date range of each uploaded price-data file) as a JSON
-            file from
+            file (your &quot;Why I entered&quot; text is included; screenshot pictures are not) from
             Settings → Data &amp; privacy. (Derived records the app computes for
             you — alerts, rule evaluations, score history and import logs — are
             not included, and broker connections are never exported because
@@ -100,7 +118,9 @@ export default function PrivacyPage() {
           </li>
           <li>
             <strong>Delete</strong> — permanently delete your account and all of its data
-            from the same place. Deletion is immediate and cannot be undone.
+            from the same place, including your stored screenshots. Deletion is immediate
+            and cannot be undone. You can also delete a single screenshot, or a whole
+            trade with its screenshots, in the app at any time.
           </li>
           <li>
             <strong>Edit</strong> — trades, journal entries, rules and profile details can

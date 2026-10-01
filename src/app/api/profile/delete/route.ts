@@ -11,6 +11,7 @@ import { withUser, verifyPassword, clearSessionCookie } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { rateLimit } from "@/lib/rate-limit";
 import { apiErrorResponse } from "@/lib/api-error";
+import { purgeStoredFiles } from "@/lib/attachments";
 
 const schema = z.object({ password: z.string().min(1) });
 
@@ -36,6 +37,8 @@ export const POST = withUser(async (user, req: Request) => {
       return NextResponse.json({ ok: false, error: "Incorrect password." }, { status: 403 });
     }
 
+    // Stored screenshots go too (the rows go with the account).
+    await purgeStoredFiles({ trade: { userId: user.id } });
     await prisma.user.delete({ where: { id: user.id } });
     await clearSessionCookie();
 

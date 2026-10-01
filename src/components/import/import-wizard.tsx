@@ -484,6 +484,7 @@ function ManualEntry({ accounts }: { accounts: AccountOption[] }) {
     strategyTag: "",
     emotions: "",
     notes: "",
+    whyEntered: "",
   };
   const [form, setForm] = React.useState(empty);
   const [busy, setBusy] = React.useState(false);
@@ -522,6 +523,7 @@ function ManualEntry({ accounts }: { accounts: AccountOption[] }) {
           strategyTag: form.strategyTag || null,
           emotions: form.emotions || null,
           notes: form.notes || null,
+          whyEntered: form.whyEntered || null,
           idempotencyKey: idempotencyKey.current,
         }),
       });
@@ -549,6 +551,29 @@ function ManualEntry({ accounts }: { accounts: AccountOption[] }) {
       </CardHeader>
       <CardContent>
         <form onSubmit={onSubmit} className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="m-why">Why I entered</Label>
+            <p className="text-xs text-muted-foreground">
+              One or two lines: what did you see, and what was your plan? (optional)
+            </p>
+            <Textarea
+              id="m-why"
+              value={form.whyEntered}
+              onChange={(e) => set("whyEntered", e.target.value.slice(0, 2000))}
+              placeholder="e.g. Broke above the opening range on rising volume. Plan: stop under the range low, target 2R."
+              maxLength={2000}
+              className="min-h-[72px]"
+            />
+            <p
+              className={cn(
+                "text-end text-2xs tabular",
+                form.whyEntered.length >= 1800 ? "text-warning" : "text-muted-foreground"
+              )}
+            >
+              {form.whyEntered.length.toLocaleString("en-US")} / 2,000
+            </p>
+          </div>
+
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <div className="space-y-1.5">
               <Label>Account</Label>

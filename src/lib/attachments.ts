@@ -1,0 +1,55 @@
+// TradeOS — trade screenshots: the limits and the clean-up helper, in one place.
+// Every attachment is reached through its trade, and a trade belongs to one user,
+// so "owned by this user" always means `trade: { userId }`.
+
+import "server-only";
+import type { Prisma } from "@prisma/client";
+import { prisma } from "@/lib/db";
+import { getStorage } from "@/lib/storage";
+
+export const MAX_SCREENSHOTS_PER_TRADE = 5;
+export const MAX_SCREENSHOTS_PER_USER = 200;
+export const MAX_USER_STORAGE_BYTES = 500 * 1024 * 1024; // 500 MB
+/** Uploads per person per 10 minutes, on top of the general write limit. */
+export const UPLOAD_RATE_LIMIT = { limit: 20, windowMs: 10 * 60_000 } as const;
+
+export async function userScreenshotUsage(userId: string): Promise<{ count: number; bytes: number }> {
+  const agg = await prisma.attachment.aggregate({
+    where: { kind: "screenshot", trade: { userId } },
+    _count: { _all: true },
+    _sum: { sizeBytes: true },
+  });
+  return { count: agg._count._all, bytes: agg._sum.sizeBytes ?? 0 };
+}
+
+/**
+ * Remove the stored files for every attachment matching `where`. Call it BEFORE
+ * deleting the trade, account or user (the rows go with them), so no file is left
+ * behind. Best effort: a storage hiccup never blocks the delete the user asked for.
+ */
+export async function purgeStoredFiles(where: Prisma.AttachmentWhereInput): Promise<void> {
+  const storage = getStorage();
+  if (!storage) return;
+  const rows = await prisma.attachment.findMany({ where, select: { url: true } });
+  for (const row of rows) {
+    try {
+      await storage.delete(row.url);
+    } catch {
+      /* best-effort */
+    }
+  }
+}
+
+// One upload at a time per person (the app runs as one process), so two quick
+// uploads can't both slip under the 5-per-trade or storage caps.
+const chains = new Map<string, Promise<unknown>>();
+export function serializePerUser<T>(userId: string, job: () => Promise<T>): Promise<T> {
+  const prev = chains.get(userId) ?? Promise.resolve();
+  const next = prev.then(job, job);
+  const tail = next.catch(() => undefined);
+  chains.set(userId, tail);
+  void tail.then(() => {
+    if (chains.get(userId) === tail) chains.delete(userId);
+  });
+  return next;
+}

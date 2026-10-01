@@ -6,6 +6,9 @@ import { getTradeDetail } from "@/lib/journal";
 import { TradeContextChart } from "@/components/journal/trade-context-chart";
 import { TradeReplay } from "@/components/journal/trade-replay";
 import { TradeEditor } from "@/components/journal/trade-editor";
+import { WhyReadout } from "@/components/journal/why-readout";
+import { isDemoDesk } from "@/lib/demo-desk";
+import { storageEnabled } from "@/lib/storage";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
@@ -50,7 +53,7 @@ export default async function TradeDetailPage({
   const detail = await getTradeDetail(user.id, id);
   if (!detail) notFound();
 
-  const { trade, account, evaluations } = detail;
+  const { trade, account, evaluations, whyEntered, screenshots } = detail;
   const shownAccount = account ? accountDisplay(account) : null;
   // Display zone only — the rule verdicts below keep the engine's own "ET".
   const tz = resolveTimeZone(user.timezone);
@@ -131,6 +134,8 @@ export default async function TradeDetailPage({
           </div>
         </div>
       </div>
+
+      <WhyReadout text={whyEntered} />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Left column — the chart workspace */}
@@ -318,6 +323,16 @@ export default async function TradeDetailPage({
                 notes={trade.notes}
                 emotions={trade.emotions}
                 strategyTag={trade.strategyTag}
+                whyEntered={whyEntered}
+                symbol={trade.symbol}
+                side={trade.side}
+                startingBalance={account?.startingBalance ?? null}
+                accountCurrency={account?.currency ?? "USD"}
+                quantity={trade.quantity}
+                isOpen={trade.exitTime === null}
+                demo={isDemoDesk(user.email)}
+                screenshotIds={screenshots.map((s) => s.id)}
+                screenshotsEnabled={storageEnabled()}
               />
             </CardContent>
           </Card>
