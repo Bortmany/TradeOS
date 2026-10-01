@@ -14,6 +14,8 @@ import {
   Settings,
   Upload,
   Activity,
+  ListChecks,
+  Calculator,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -23,6 +25,8 @@ const NAV = [
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/backtest", label: "Backtesting", icon: FlaskConical },
   { href: "/rules", label: "Rule Engine", icon: ShieldCheck },
+  { href: "/checklist", label: "Checklist", icon: ListChecks },
+  { href: "/size", label: "Position size", icon: Calculator },
   { href: "/accounts", label: "Accounts", icon: Wallet },
   { href: "/prop", label: "Prop Firm", icon: Trophy },
   { href: "/reports", label: "Reports", icon: FileText },

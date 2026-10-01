@@ -336,3 +336,31 @@ try/catch) so evaluations + discipline snapshots exist. Log a summary.
 DO NOT edit files outside your package. Keep code clean, typed, and commented
 sparingly where logic is non-obvious. Do not run `npm`/`prisma` unless verifying
 your own file compiles conceptually — the orchestrator handles builds.
+
+## Package G — Pre-trade checklist and position size (`src/lib/checklist/`, `src/lib/sizing/`)
+
+Reminders and arithmetic only. **Nothing here reads or changes the rule engine, the discipline score, or any broker; nothing places, changes or cancels an order.** A test greps the code and the score/rule files to keep it that way.
+
+### Tables (additive; plain-String/Boolean/Int, SQLite + Postgres)
+- `ChecklistTemplate` — `userId`, `name`, `ruleBookId?` (SetNull), `isActive`, `order`. Max 10 per user.
+- `ChecklistItem` — `templateId` (cascade), `text` (max 140), `order`. 1 to 20 per template.
+- `ChecklistRun` — `userId`, `templateId?` (SetNull), `templateName`, `answers` (JSON string `[{text, checked}]`, its own copy of the wording), `checkedCount`, `totalCount`, `tradeId?` (**unique**, SetNull: a trade has at most one run; deleting the trade keeps the run), `createdAt` (the saved time). Max 5,000 per user.
+- "Ticked before entry" vs "Filled in after entry" is computed: `run.createdAt <= trade.entryTime`. No stored flag.
+
+### Routes (all session-checked, zod on every input, every query filtered by the signed-in user; another user's id answers 404 exactly like a missing one)
+| Route | Does | Limiter |
+|---|---|---|
+| `GET /api/checklists` | list templates | `checklists:read` (`USER_READ_LIMIT`) |
+| `POST /api/checklists` | create template (`name`, `ruleBookId?`, `items[]`) | `checklists:write` (`USER_WRITE_LIMIT`) |
+| `PATCH/DELETE /api/checklists/[id]` | edit (name, rulebook, on/off, items, `move: up/down`) / delete | `checklists:write` |
+| `GET /api/checklists/runs?limit&offset&unlinked=1` | recent runs | `checklists:read` |
+| `POST /api/checklists/runs` | save a run (`templateId`, `ticked[]` item ids, optional `tradeId` to link at once); 409 if the trade already has one | `checklists:write` |
+| `PATCH/DELETE /api/checklists/runs/[id]` | link (`tradeId`) / unlink (`null`) / delete a run | `checklists:write` |
+| `GET /api/checklists/suggestion?tradeId` | `{linked, suggestion, suggestionCount, entryTime, hasTemplates}`; the suggestion is the closest unlinked run saved 0 to 4 hours before the trade's entry; never links by itself | `checklists:read` |
+
+### Sizing (`src/lib/sizing/index.ts`, pure)
+`calculatePositionSize({symbol, accountSize, riskPercent, stopDistance, accountCurrency?, dollarsPerPoint?})` returns `{ok:true,...}` or `{ok:false, code, field, message}`; it never throws.
+- Money in whole cents, lots in hundredths, contracts integer; integer divide re-checked. **Always rounds down, never up**: if one contract (0.01 lot) already risks more than the limit the size is 0 with the reason.
+- Futures use `pointMultiplier` but only for symbols in the futures table (an unknown symbol is refused, never priced at 1; "Other futures" needs the typed `dollarsPerPoint`). Forex/CFD use `pipValue(symbol, 1, "USD")` from `src/lib/instruments`; **USD accounts only**, a non-USD account or a pair needing a conversion price is refused with a plain message.
+- Ranges: account $100 to $100,000,000; risk 0.01% to 100% (warning above 5%); stop above zero.
+- Golden: MES $50,000 / 1% / 8 pts = 12 contracts, real risk $480.00 (0.96%); EURUSD $10,000 / 1% / 20 pips = 0.50 lots.

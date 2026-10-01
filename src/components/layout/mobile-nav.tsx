@@ -17,6 +17,8 @@ import {
   CreditCard,
   Upload,
   ChevronRight,
+  ListChecks,
+  Calculator,
 } from "lucide-react";
 import { Dialog, DialogOverlay, DialogPortal, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
@@ -31,6 +33,8 @@ const ITEMS = [
 
 /** Pages reached through "More" (Import is also a top-bar button). */
 const MORE_ITEMS = [
+  { href: "/checklist", label: "Checklist", icon: ListChecks },
+  { href: "/size", label: "Position size", icon: Calculator },
   { href: "/reports", label: "Reports", icon: FileText },
   { href: "/accounts", label: "Accounts", icon: Wallet },
   { href: "/settings", label: "Settings", icon: Settings },
@@ -38,7 +42,7 @@ const MORE_ITEMS = [
   { href: "/import", label: "Import", icon: Upload },
 ] as const;
 
-const MORE_PREFIXES = ["/reports", "/accounts", "/settings", "/import"];
+const MORE_PREFIXES = ["/checklist", "/size", "/reports", "/accounts", "/settings", "/import"];
 
 function matches(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(href + "/");
@@ -121,7 +125,7 @@ export function MobileNav() {
         <DialogOverlay className={cn("bottom-auto top-0 md:hidden", ABOVE_BAR)} />
         <DialogPrimitive.Content
           aria-describedby={undefined}
-          // Opening moves focus to the first row (Reports); closing returns it
+          // Opening moves focus to the first row (Checklist); closing returns it
           // to the More button (Radix does that part).
           onOpenAutoFocus={(e) => {
             e.preventDefault();

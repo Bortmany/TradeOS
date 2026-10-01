@@ -59,6 +59,8 @@ model User {
   weeklyReviews   WeeklyReview[]
   backtestRuns    BacktestRun[]
   marketDatasets  MarketDataset[]
+  checklistTemplates ChecklistTemplate[]
+  checklistRuns   ChecklistRun[]
 
   @@index([email])
   @@index([paddleSubscriptionId])
@@ -148,6 +150,7 @@ model Trade {
 
   evaluations RuleEvaluation[]
   attachments Attachment[]
+  checklistRun ChecklistRun?
 
   @@unique([accountId, externalId])
   @@index([userId, entryTime])
@@ -186,6 +189,7 @@ model RuleBook {
   updatedAt   DateTime @updatedAt
 
   rules       Rule[]
+  checklistTemplates ChecklistTemplate[]
 
   @@index([userId])
 }
@@ -444,4 +448,56 @@ model Alert {
   createdAt   DateTime @default(now())
 
   @@index([userId, status])
+}
+
+// Pre-trade checklists — the user's own short lists of questions to answer
+// before a trade. They only remind: no rule, score or order ever reads them.
+model ChecklistTemplate {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name       String
+  // Optional tie to one rulebook (pre-picked when that rulebook applies).
+  ruleBookId String?
+  ruleBook   RuleBook? @relation(fields: [ruleBookId], references: [id], onDelete: SetNull)
+  isActive   Boolean  @default(true)
+  order      Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  items      ChecklistItem[]
+  runs       ChecklistRun[]
+
+  @@index([userId])
+}
+
+model ChecklistItem {
+  id         String   @id @default(cuid())
+  templateId String
+  template   ChecklistTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  text       String
+  order      Int      @default(0)
+
+  @@index([templateId])
+}
+
+// One saved tick-through. Keeps its own copy of the wording (answers) so later
+// edits to the checklist never change history. tradeId is set once linked
+// (a trade has at most one run, a run belongs to at most one trade).
+model ChecklistRun {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  templateId   String?
+  template     ChecklistTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  templateName String
+  // JSON string: [{ "text": "...", "checked": true }]
+  answers      String
+  checkedCount Int
+  totalCount   Int
+  tradeId      String?  @unique
+  trade        Trade?   @relation(fields: [tradeId], references: [id], onDelete: SetNull)
+  createdAt    DateTime @default(now())
+
+  @@index([userId, createdAt])
 }

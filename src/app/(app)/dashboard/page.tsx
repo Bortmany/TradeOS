@@ -37,6 +37,8 @@ import {
 } from "@/components/ui/tooltip";
 import { collapseViolations } from "@/lib/violation-rows";
 import { isDemoDesk } from "@/lib/demo-desk";
+import { getLastRun, listTemplates, rulebookIdsForAccount } from "@/lib/checklist/data";
+import { BeforeYouTradeCard } from "@/components/checklist/before-you-trade-card";
 
 export const dynamic = "force-dynamic";
 
@@ -57,6 +59,13 @@ export default async function DashboardPage({
 
   const activeAccount = account ? accounts.find((a) => a.id === account) : null;
   const m = data.metrics;
+
+  // "Before you trade" card. A failed load shows a line inside the card, never
+  // breaks the dashboard; the checklist never feeds the score.
+  let checklist: Awaited<ReturnType<typeof loadChecklistCard>> | null = null;
+  if (data.tradeCount > 0) {
+    checklist = await loadChecklistCard(user.id, activeAccount?.id ?? null);
+  }
 
   if (data.tradeCount === 0) {
     return (
@@ -147,6 +156,16 @@ export default async function DashboardPage({
           </div>
         </CardContent>
       </Card>
+
+      {checklist && (
+        <BeforeYouTradeCard
+          templates={checklist.templates}
+          preselectId={checklist.preselectId}
+          lastRun={checklist.lastRun}
+          demo={isDemoDesk(user.email)}
+          loadFailed={checklist.loadFailed}
+        />
+      )}
 
       {/* KPI row — compact, secondary to the score */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -338,6 +357,29 @@ export default async function DashboardPage({
       </p>
     </div>
   );
+}
+
+async function loadChecklistCard(userId: string, accountId: string | null) {
+  try {
+    const [all, last, bookIds] = await Promise.all([
+      listTemplates(userId),
+      getLastRun(userId),
+      rulebookIdsForAccount(userId, accountId),
+    ]);
+    const templates = all.filter((t) => t.isActive);
+    const preselectId =
+      templates.find((t) => t.ruleBookId && bookIds.includes(t.ruleBookId))?.id ?? null;
+    return {
+      templates,
+      preselectId,
+      lastRun: last
+        ? { checkedCount: last.checkedCount, totalCount: last.totalCount, createdAt: last.createdAt }
+        : null,
+      loadFailed: false,
+    };
+  } catch {
+    return { templates: [], preselectId: null, lastRun: null, loadFailed: true };
+  }
 }
 
 function Kpi({
