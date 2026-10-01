@@ -6,7 +6,8 @@
 // position (EXIF and XMP live in APP1 segments; IPTC in APP13). The picture data
 // itself is copied byte for byte, so nothing is re-compressed. The one thing we
 // keep is the EXIF "orientation" flag, rewritten as a tiny EXIF block holding only
-// that number, so portrait photos still show upright.
+// that number, so portrait photos still show upright. PNGs lose their eXIf and text
+// (XMP) chunks and WebPs their EXIF and XMP chunks the same lossless way.
 
 import type { ImageExtension } from "./keys";
 
@@ -133,4 +134,78 @@ export function stripJpegMetadata(buf: Buffer): Buffer | null {
     }
   }
   return null;
+}
+
+/**
+ * Remove location-bearing metadata from a PNG: the eXIf chunk and every text chunk
+ * (iTXt / tEXt / zTXt — XMP lives in iTXt, and some tools tuck EXIF into the others).
+ * Every other chunk is copied byte for byte; anything after IEND is dropped.
+ * Returns null when the bytes are not a well-formed PNG (the upload is refused).
+ */
+export function stripPngMetadata(buf: Buffer): Buffer | null {
+  if (buf.length < 33 || !PNG_SIGNATURE.every((b, i) => buf[i] === b)) return null;
+  const parts: Buffer[] = [buf.subarray(0, 8)];
+  const DROP = new Set(["eXIf", "iTXt", "tEXt", "zTXt"]);
+  let pos = 8;
+  let first = true;
+  while (pos + 12 <= buf.length) {
+    const length = buf.readUInt32BE(pos);
+    const type = ascii(buf, pos + 4, pos + 8);
+    const end = pos + 12 + length; // length + type + data + CRC
+    if (length > 0x7fffffff || end > buf.length) return null;
+    if (!/^[A-Za-z]{4}$/.test(type)) return null;
+    if (first && (type !== "IHDR" || length !== 13)) return null;
+    first = false;
+    if (!DROP.has(type)) parts.push(buf.subarray(pos, end));
+    pos = end;
+    if (type === "IEND") return Buffer.concat(parts);
+  }
+  return null; // no IEND: cut off or not a whole picture
+}
+
+/**
+ * Remove EXIF and XMP from a WebP (RIFF container) without touching the picture.
+ * The EXIF / XMP chunks are dropped, the matching "has EXIF" / "has XMP" flags in
+ * the VP8X header are cleared, and the RIFF size is rewritten to match. All other
+ * chunks (and their padding) are copied byte for byte.
+ * Returns null when the bytes are not a well-formed WebP (the upload is refused).
+ */
+export function stripWebpMetadata(buf: Buffer): Buffer | null {
+  if (buf.length < 20 || ascii(buf, 0, 4) !== "RIFF" || ascii(buf, 8, 12) !== "WEBP") return null;
+  const riffEnd = 8 + buf.readUInt32LE(4);
+  if (riffEnd > buf.length || riffEnd < 20) return null;
+  const parts: Buffer[] = [];
+  let pos = 12;
+  let index = 0;
+  let sawPicture = false;
+  while (pos < riffEnd) {
+    if (pos + 8 > riffEnd) return null;
+    const fourcc = ascii(buf, pos, pos + 4);
+    const length = buf.readUInt32LE(pos + 4);
+    const dataEnd = pos + 8 + length;
+    if (dataEnd > riffEnd) return null;
+    const end = dataEnd + (length & 1); // chunks are padded to an even size
+    if (end > riffEnd) return null;
+    if (index === 0 && !["VP8 ", "VP8L", "VP8X"].includes(fourcc)) return null;
+    if (index > 0 && fourcc === "VP8X") return null;
+    if (fourcc === "VP8 " || fourcc === "VP8L" || fourcc === "ANMF") sawPicture = true;
+
+    if (fourcc === "EXIF" || fourcc === "XMP ") {
+      // dropped
+    } else if (fourcc === "VP8X") {
+      if (length < 10) return null;
+      const chunk = Buffer.from(buf.subarray(pos, end));
+      chunk[8] &= ~(0x08 | 0x04); // clear the EXIF and XMP flags
+      parts.push(chunk);
+    } else {
+      parts.push(buf.subarray(pos, end));
+    }
+    pos = end;
+    index++;
+  }
+  if (!sawPicture) return null;
+  const body = Buffer.concat(parts);
+  const head = Buffer.from("RIFF\0\0\0\0WEBP", "latin1");
+  head.writeUInt32LE(body.length + 4, 4);
+  return Buffer.concat([head, body]);
 }

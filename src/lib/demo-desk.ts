@@ -6,6 +6,9 @@
 
 export const DEMO_EMAIL = "demo@tradeos.app";
 
+/** Shown when someone tries to sign up with the demo desk's email. Says nothing about why. */
+export const RESERVED_EMAIL_ERROR = "That email address can't be used. Please try a different one.";
+
 export function isDemoDesk(email: string | null | undefined): boolean {
   return (email ?? "").trim().toLowerCase() === DEMO_EMAIL;
 }

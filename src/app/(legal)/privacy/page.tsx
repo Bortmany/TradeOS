@@ -57,9 +57,9 @@ export default function PrivacyPage() {
             <strong>Trade screenshots</strong> — the PNG, JPEG or WebP pictures you add to a
             trade (up to 5 per trade, 5 MB each, 200 pictures and 500 MB per person). They
             are kept in private storage that has no public links; only you can open them,
-            and each time the app checks it is you. Before a JPEG is saved, its hidden
-            metadata (including any GPS location a phone adds) is removed without changing
-            the picture. PNG and WebP files are stored as you upload them. A screenshot can
+            and each time the app checks it is you. Before a JPEG, PNG or WebP is
+            saved, its hidden metadata (including any GPS location a phone adds) is removed
+            without changing the picture. A screenshot can
             show things like account numbers or balances, so crop out anything you don&apos;t
             want stored.
           </li>

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { registerUser } from "@/lib/auth";
 import { rateLimit, anonymousRateKey, socketAddress } from "@/lib/rate-limit";
+import { RESERVED_EMAIL_ERROR, isDemoDesk } from "@/lib/demo-desk";
 import { EMAIL_ERROR, EMAIL_TAKEN_ERROR, isPossibleEmail } from "@/lib/validation";
 import {
   isValidInviteCode,
@@ -62,6 +63,11 @@ export async function POST(req: Request) {
         );
       }
       return NextResponse.json({ ok: false, error: SIGNUP_INVITE_ERROR }, { status: 403 });
+    }
+
+    // The demo desk's email can never be registered, seeded here or not.
+    if (isDemoDesk(email)) {
+      return NextResponse.json({ ok: false, error: RESERVED_EMAIL_ERROR }, { status: 400 });
     }
 
     // A new account is created AND signed in (session cookie set) in one step.

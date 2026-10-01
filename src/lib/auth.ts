@@ -11,7 +11,7 @@ import { SignJWT, jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
 import { TRIAL_DAYS } from "@/lib/billing/plans";
-import { DEMO_EMAIL } from "@/lib/demo-desk";
+import { DEMO_EMAIL, RESERVED_EMAIL_ERROR, isDemoDesk } from "@/lib/demo-desk";
 
 const COOKIE_NAME = "tradeos_session";
 
@@ -111,6 +111,9 @@ export async function registerUser(
   password: string,
   displayName?: string
 ): Promise<{ created: boolean }> {
+  // The demo desk's email is never open for sign-up, even where the demo isn't
+  // seeded (otherwise anyone could claim it and sit behind the one-tap demo login).
+  if (isDemoDesk(email)) throw new Error(RESERVED_EMAIL_ERROR);
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) {
     // Spend the same time hashing/verifying as the "new account" branch below,
