@@ -385,3 +385,21 @@ Both are the trader's own record. **Neither changes the rule engine or the disci
 | `DELETE /api/attachments/[id]` | removes the stored file, then the row, then recomputes compliance | `attachments:write` |
 
 Errors are `{ ok:false, code, error }` with a plain-English `error`. Deleting a trade, a trading account or the whole user removes their stored files first (`purgeStoredFiles`).
+
+## Package I — First five minutes (demo desk, "not scored yet", import, sample trades)
+
+### Discipline score: the explicit "not scored yet" state (`src/lib/discipline/score.ts`)
+`DisciplineScore` gains two fields, display-only:
+- `ruleChecks: number` = how many rule evaluations applied to a trade (pass or fail; `not_applicable` does not count).
+- `scored: boolean` = `ruleChecks > 0`.
+
+**Every stored number is unchanged.** With no applicable evaluations `ruleAdherence` still reads 100 and `overall` is computed exactly as before (the stored `DisciplineSnapshot` rows are the same); screens must read `scored` and show "Not scored yet" instead of the overall number (dashboard: dashed ring, "Define your rulebook" when the trader has no active rule, "Not scored yet" with a note when rules exist but none has been checked; Rule adherence meter shows "Not scored yet"). Never "0", never "91". `DashboardData.activeRuleCount` tells the two cases apart. The scoring maths stay deterministic and AI-free. Pinned by `test/discipline-score-state.test.ts` (same fixtures, same numbers).
+
+### Demo desk is read-only (`src/lib/demo-desk.ts`, `src/lib/demo-guard.ts`)
+- `POST /api/auth/demo` signs in as `demo@tradeos.app`, takes no input, limited per visitor like login (10 per 15 minutes, `demo-login:ip:*`, 429 "Lots of people are looking around right now…").
+- Every write route (POST, PUT, PATCH, DELETE) calls `refuseDemo(user)` first and returns `403 { ok:false, code:"demo", error }` ("The demo desk is look-around only. Create a free account to save your own."). Exempt (not user writes): `auth/login`, `auth/register`, `auth/logout`, `auth/demo`, `billing/webhook`. `test/demo-read-only.test.ts` walks every `src/app/api/**/route.ts` and fails when a write handler lacks the guard.
+
+### Sign-up and import
+- `POST /api/auth/register` creates the account AND signs the user in. An email that already has an account answers `409 { ok:false, code:"email_taken", error:"That email already has an account. Sign in instead." }` (owner chose clarity over hiding it; the per-visitor sign-up limit stays).
+- `POST /api/import` takes either `accountId` or `newAccount: { name, startingBalance }` (exactly one). A new account is created only after the file proved to be a real broker CSV and fits the plan; it is user-scoped and counted against the plan's account limit (`accounts:write`, `USER_WRITE_LIMIT`). A file with no recognisable trade table answers `400 { code:"not_csv" }` and creates NO import record, NO account and NO trades (`IngestResult.notTradeFile`). The response gains `accountId`.
+- `Trade.source` gains the value `"sample"` (plain string, no migration) for trades made by "Load sample data". `DELETE /api/demo-data` removes only the signed-in user's `source = "sample"` trades (and their stored screenshots), never imported or hand-entered trades, accounts or rulebooks, then recomputes compliance. Limiter `demo-data:clear` (`USER_WRITE_LIMIT`).

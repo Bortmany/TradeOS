@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { registerUser } from "@/lib/auth";
 import { rateLimit, anonymousRateKey, socketAddress } from "@/lib/rate-limit";
-import { EMAIL_ERROR, isPossibleEmail } from "@/lib/validation";
+import { EMAIL_ERROR, EMAIL_TAKEN_ERROR, isPossibleEmail } from "@/lib/validation";
 import {
   isValidInviteCode,
   signupMode,
@@ -64,10 +64,17 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: SIGNUP_INVITE_ERROR }, { status: 403 });
     }
 
-    // registerUser never reveals whether the email already existed; we return
-    // the SAME success response whether or not a new account was created, so
-    // sign-up can't be used to probe which emails have accounts.
-    await registerUser(email.toLowerCase().trim(), password, displayName);
+    // A new account is created AND signed in (session cookie set) in one step.
+    // An email that already has an account gets a plain explanation: the owner
+    // chose clarity here, and the 5-per-hour-per-visitor limit above is what
+    // keeps this from being a free "which emails exist" probe.
+    const { created } = await registerUser(email.toLowerCase().trim(), password, displayName);
+    if (!created) {
+      return NextResponse.json(
+        { ok: false, code: "email_taken", error: EMAIL_TAKEN_ERROR },
+        { status: 409 }
+      );
+    }
     return NextResponse.json({ ok: true });
   } catch (err) {
     // Validation problems (e.g. weak/short password) are safe to spell out.

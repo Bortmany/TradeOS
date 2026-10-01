@@ -6,6 +6,7 @@ import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { effectivePlan, getFeatures, withinLimit } from "@/lib/billing/plans";
 import type { Plan } from "@/lib/types";
 import { apiErrorResponse } from "@/lib/api-error";
+import { refuseDemo } from "@/lib/demo-guard";
 
 const SCOPES = ["all", "strategy", "account"] as const;
 
@@ -46,6 +47,8 @@ async function recompute(userId: string) {
 export async function POST(req: Request) {
   const user = await auth();
   if (!user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  const demoRefused = refuseDemo(user);
+  if (demoRefused) return demoRefused;
   const limited = enforceUserRateLimit("rulebooks:write", user.id);
   if (limited) return limited;
   try {
@@ -86,6 +89,8 @@ export async function POST(req: Request) {
 export async function PATCH(req: Request) {
   const user = await auth();
   if (!user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  const demoRefused = refuseDemo(user);
+  if (demoRefused) return demoRefused;
   const limited = enforceUserRateLimit("rulebooks:write", user.id);
   if (limited) return limited;
   try {
@@ -112,6 +117,8 @@ export async function PATCH(req: Request) {
 export async function DELETE(req: Request) {
   const user = await auth();
   if (!user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  const demoRefused = refuseDemo(user);
+  if (demoRefused) return demoRefused;
   const limited = enforceUserRateLimit("rulebooks:write", user.id);
   if (limited) return limited;
   try {

@@ -139,7 +139,7 @@ export async function loadSampleData(
         strategyTag: STRATEGIES[Math.floor(rand() * STRATEGIES.length)],
         emotions: emo,
         notes: rand() < 0.25 ? "Sample trade — replace with your own imports." : null,
-        source: "manual",
+        source: "sample",
         isWin: pnl > 0,
       });
     }

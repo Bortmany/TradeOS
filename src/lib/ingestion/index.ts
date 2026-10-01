@@ -18,7 +18,7 @@ import type { Broker } from "@/lib/types";
 import type { NormalizedTrade } from "@/lib/types";
 import { parseCsv, parseCsvRecords } from "@/lib/ingestion/csv";
 import type { BrokerAdapter, ParseOptions } from "@/lib/ingestion/adapters/generic";
-import { genericAdapter } from "@/lib/ingestion/adapters/generic";
+import { genericAdapter, looksLikeTradeTable } from "@/lib/ingestion/adapters/generic";
 import { topstepxAdapter } from "@/lib/ingestion/adapters/topstepx";
 import { tradovateAdapter } from "@/lib/ingestion/adapters/tradovate";
 import { ninjatraderAdapter } from "@/lib/ingestion/adapters/ninjatrader";
@@ -54,6 +54,9 @@ export interface IngestResult {
   errors: string[];
   // Set when the whole file was refused (nothing imported), in plain English.
   refusal?: string;
+  // True when the file has no recognisable trade table (not a broker CSV at all).
+  // The import route answers with a plain error and creates no import record.
+  notTradeFile?: boolean;
   // MT5 only.
   openSkipped?: number;
   timesReadAs?: string;
@@ -63,7 +66,13 @@ export function ingestCsv(text: string, brokerKey?: Broker, options?: ParseOptio
   const { headers, rows } = parseCsv(text);
 
   if (headers.length === 0) {
-    return { broker: brokerKey ?? "generic", trades: [], skipped: 0, errors: ["Empty or unparseable CSV."] };
+    return {
+      broker: brokerKey ?? "generic",
+      trades: [],
+      skipped: 0,
+      errors: ["Empty or unparseable CSV."],
+      notTradeFile: true,
+    };
   }
 
   // Explicit broker override wins; otherwise auto-detect; generic is the floor.
@@ -104,6 +113,7 @@ export function ingestCsv(text: string, brokerKey?: Broker, options?: ParseOptio
     skipped,
     errors,
     ...(refusal ? { refusal } : {}),
+    ...(chosen.key === "generic" && !looksLikeTradeTable(useHeaders) ? { notTradeFile: true } : {}),
     ...(openSkipped !== undefined ? { openSkipped } : {}),
     ...(timesReadAs ? { timesReadAs } : {}),
   };

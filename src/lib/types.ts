@@ -12,7 +12,8 @@ import { z } from "zod";
 export const SIDES = ["long", "short"] as const;
 export type Side = (typeof SIDES)[number];
 
-export const TRADE_SOURCES = ["csv", "api", "manual", "broker"] as const;
+// "sample" = trades from the one-click "Load sample data", so they can be cleared on their own.
+export const TRADE_SOURCES = ["csv", "api", "manual", "broker", "sample"] as const;
 export type TradeSource = (typeof TRADE_SOURCES)[number];
 
 export const BROKERS = [
@@ -461,6 +462,17 @@ export interface DisciplineScore {
   riskDiscipline: number;
   emotionalDiscipline: number;
   consistency: number;
+  /**
+   * How many rule checks actually applied to a trade (passes plus fails; "not
+   * applicable" results don't count). 0 means nothing was graded against a rule.
+   */
+  ruleChecks: number;
+  /**
+   * False when `ruleChecks` is 0: the stored numbers are unchanged (rule
+   * adherence still reads 100 underneath) but screens must show "Not scored
+   * yet" instead of the overall number. True otherwise.
+   */
+  scored: boolean;
   breakdown: {
     label: string;
     score: number;

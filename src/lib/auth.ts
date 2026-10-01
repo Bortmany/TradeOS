@@ -11,6 +11,7 @@ import { SignJWT, jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
 import { TRIAL_DAYS } from "@/lib/billing/plans";
+import { DEMO_EMAIL } from "@/lib/demo-desk";
 
 const COOKIE_NAME = "tradeos_session";
 
@@ -148,6 +149,16 @@ export async function authenticate(email: string, password: string) {
   if (!ok) throw new Error("Invalid email or password.");
   await setSessionCookie(user.id);
   return user;
+}
+
+// One-tap sign-in to the seeded demo desk (no password typed). Returns false when
+// the demo desk has not been seeded here. Every write route refuses this user
+// (see src/lib/demo-guard.ts), so the shared access is look-around only.
+export async function signInDemo(): Promise<boolean> {
+  const user = await prisma.user.findUnique({ where: { email: DEMO_EMAIL }, select: { id: true } });
+  if (!user) return false;
+  await setSessionCookie(user.id);
+  return true;
 }
 
 export async function getCurrentUser(): Promise<SessionUser | null> {

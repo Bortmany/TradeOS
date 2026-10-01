@@ -11,12 +11,15 @@ import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { apiErrorResponse } from "@/lib/api-error";
 import { runPatchSchema } from "@/lib/checklist";
 import { getRun } from "@/lib/checklist/data";
+import { refuseDemo } from "@/lib/demo-guard";
 
 type Ctx = { params: Promise<{ id: string }> };
 
 const ALREADY = "This trade already has a checklist. Unlink it first.";
 
 export const PATCH = withUser(async (user, req: Request, { params }: Ctx) => {
+  const demoRefused = refuseDemo(user);
+  if (demoRefused) return demoRefused;
   const limited = enforceUserRateLimit("checklists:write", user.id);
   if (limited) return limited;
   try {
@@ -67,6 +70,8 @@ export const PATCH = withUser(async (user, req: Request, { params }: Ctx) => {
 });
 
 export const DELETE = withUser(async (user, _req: Request, { params }: Ctx) => {
+  const demoRefused = refuseDemo(user);
+  if (demoRefused) return demoRefused;
   const limited = enforceUserRateLimit("checklists:write", user.id);
   if (limited) return limited;
   try {

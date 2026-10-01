@@ -3,7 +3,7 @@ import { Reveal } from "@/components/marketing/reveal";
 
 export function DisciplineSection() {
   return (
-    <section id="discipline" className="border-b border-border">
+    <section id="discipline" className="scroll-mt-14 border-b border-border">
       <div className="container py-20">
         <Reveal>
           <div className="grid items-center gap-12 lg:grid-cols-2">

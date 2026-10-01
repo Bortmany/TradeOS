@@ -14,9 +14,9 @@ import { prisma } from "@/lib/db";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { recomputeCompliance } from "@/lib/rules/recompute-compliance";
 import { apiErrorResponse } from "@/lib/api-error";
-import { isDemoDesk } from "@/lib/demo-desk";
 import { getStorage, newStorageKey } from "@/lib/storage";
 import { MAX_IMAGE_BYTES, sniffImage, stripJpegMetadata } from "@/lib/storage/image";
+import { refuseDemo } from "@/lib/demo-guard";
 import {
   MAX_SCREENSHOTS_PER_TRADE,
   MAX_SCREENSHOTS_PER_USER,
@@ -37,15 +37,12 @@ export const POST = withUser(async (
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) => {
+  const demoRefused = refuseDemo(user);
+  if (demoRefused) return demoRefused;
   const limited = enforceUserRateLimit("attachments:write", user.id);
   if (limited) return limited;
   const uploadLimited = enforceUserRateLimit("attachments:upload", user.id, UPLOAD_RATE_LIMIT);
   if (uploadLimited) return uploadLimited;
-
-  // The demo desk has public sign-in details: it never stores anyone's pictures.
-  if (isDemoDesk(user.email)) {
-    return fail(403, "demo", "The demo desk is look-around only. Create a free account to save your own.");
-  }
 
   const storage = getStorage();
   if (!storage) return fail(503, "storage_off", "Screenshots aren't switched on yet.");

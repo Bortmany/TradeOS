@@ -12,10 +12,13 @@ import { prisma } from "@/lib/db";
 import { rateLimit } from "@/lib/rate-limit";
 import { apiErrorResponse } from "@/lib/api-error";
 import { purgeStoredFiles } from "@/lib/attachments";
+import { refuseDemo } from "@/lib/demo-guard";
 
 const schema = z.object({ password: z.string().min(1) });
 
 export const POST = withUser(async (user, req: Request) => {
+  const demoRefused = refuseDemo(user);
+  if (demoRefused) return demoRefused;
   // The password check makes this a guessing target — keep it as tight as login.
   const limit = rateLimit(`account-delete:${user.id}`, { limit: 5, windowMs: 15 * 60 * 1000 });
   if (!limit.ok) {

@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 export function Pricing({ ctas }: { ctas: SignupCtas }) {
   const plans = Object.values(PLAN_DEFINITIONS);
   return (
-    <section id="pricing" className="border-b border-border">
+    <section id="pricing" className="scroll-mt-14 border-b border-border">
       <div className="container py-20">
         <Reveal>
           <div className="mx-auto max-w-2xl text-center">

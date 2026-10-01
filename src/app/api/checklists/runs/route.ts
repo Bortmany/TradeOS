@@ -10,6 +10,7 @@ import { enforceUserRateLimit, USER_READ_LIMIT } from "@/lib/rate-limit";
 import { apiErrorResponse } from "@/lib/api-error";
 import { MAX_RUNS_PER_USER, buildAnswers, runCreateSchema, runListQuerySchema } from "@/lib/checklist";
 import { getRun, listRuns } from "@/lib/checklist/data";
+import { refuseDemo } from "@/lib/demo-guard";
 
 const ALREADY = "This trade already has a checklist. Unlink it first.";
 
@@ -31,6 +32,8 @@ export const GET = withUser(async (user, req: Request) => {
 });
 
 export const POST = withUser(async (user, req: Request) => {
+  const demoRefused = refuseDemo(user);
+  if (demoRefused) return demoRefused;
   const limited = enforceUserRateLimit("checklists:write", user.id);
   if (limited) return limited;
   try {

@@ -11,6 +11,7 @@ import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { recomputeCompliance } from "@/lib/rules/recompute-compliance";
 import { apiErrorResponse } from "@/lib/api-error";
 import { purgeStoredFiles } from "@/lib/attachments";
+import { refuseDemo } from "@/lib/demo-guard";
 
 const patchSchema = z.object({
   notes: z.string().max(5000).optional().nullable(),
@@ -25,6 +26,8 @@ export const PATCH = withUser(async (
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) => {
+  const demoRefused = refuseDemo(user);
+  if (demoRefused) return demoRefused;
   const limited = enforceUserRateLimit("trades:update", user.id);
   if (limited) return limited;
 
@@ -60,6 +63,8 @@ export const DELETE = withUser(async (
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) => {
+  const demoRefused = refuseDemo(user);
+  if (demoRefused) return demoRefused;
   const limited = enforceUserRateLimit("trades:delete", user.id);
   if (limited) return limited;
 

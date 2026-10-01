@@ -4,8 +4,11 @@ import { withUser } from "@/lib/auth";
 import { syncConnection } from "@/lib/connectors/sync";
 import { ConnectorError } from "@/lib/connectors/topstepx";
 import { enforceUserRateLimit, USER_EXTERNAL_LIMIT } from "@/lib/rate-limit";
+import { refuseDemo } from "@/lib/demo-guard";
 
 export const POST = withUser(async (user, req: Request) => {
+  const demoRefused = refuseDemo(user);
+  if (demoRefused) return demoRefused;
   // Tight limit: each sync calls the broker's API and pulls fills. Guards both
   // the broker's rate limits and our own worker from a hammering client.
   const limited = enforceUserRateLimit("connectors:sync", user.id, USER_EXTERNAL_LIMIT);

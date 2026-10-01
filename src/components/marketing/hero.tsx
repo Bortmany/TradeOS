@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { DemoDeskButton } from "@/components/demo-desk-button";
 import { GradeDemo } from "@/components/marketing/grade-demo";
 import type { SignupCtas } from "@/components/marketing/signup-cta";
 
@@ -31,9 +32,7 @@ export function Hero({ ctas }: { ctas: SignupCtas }) {
                 </Link>
               </Button>
               {ctas.mode !== "closed" && (
-                <Button asChild size="lg" variant="secondary">
-                  <Link href="/login">Explore the demo desk</Link>
-                </Button>
+                <DemoDeskButton size="lg" />
               )}
             </div>
             <p className="mt-3 text-xs text-muted-foreground">

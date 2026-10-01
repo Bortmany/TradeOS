@@ -9,6 +9,7 @@ import { syncConnection } from "@/lib/connectors/sync";
 import { withinLimit } from "@/lib/billing/plans";
 import type { Plan } from "@/lib/types";
 import { enforceUserRateLimit, USER_EXTERNAL_LIMIT } from "@/lib/rate-limit";
+import { refuseDemo } from "@/lib/demo-guard";
 
 // The gateway address is never taken from the request: the client sends a firm
 // id from the registry and the server looks up the URL itself. A stray
@@ -56,6 +57,8 @@ export const GET = withUser(async (user) => {
 });
 
 export const POST = withUser(async (user, req: Request) => {
+  const demoRefused = refuseDemo(user);
+  if (demoRefused) return demoRefused;
   // Tight limit: both actions reach out to the broker's API (login / account
   // search / initial sync), so each request is slow and network-bound.
   const limited = enforceUserRateLimit("connectors:write", user.id, USER_EXTERNAL_LIMIT);
@@ -155,6 +158,8 @@ export const POST = withUser(async (user, req: Request) => {
 });
 
 export const DELETE = withUser(async (user, req: Request) => {
+  const demoRefused = refuseDemo(user);
+  if (demoRefused) return demoRefused;
   const limited = enforceUserRateLimit("connectors:delete", user.id);
   if (limited) return limited;
 

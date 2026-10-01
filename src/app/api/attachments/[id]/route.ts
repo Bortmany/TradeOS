@@ -11,6 +11,7 @@ import { enforceUserRateLimit, USER_READ_LIMIT } from "@/lib/rate-limit";
 import { recomputeCompliance } from "@/lib/rules/recompute-compliance";
 import { apiErrorResponse } from "@/lib/api-error";
 import { getStorage, isValidStorageKey } from "@/lib/storage";
+import { refuseDemo } from "@/lib/demo-guard";
 
 export const runtime = "nodejs";
 
@@ -64,6 +65,8 @@ export const DELETE = withUser(async (
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) => {
+  const demoRefused = refuseDemo(user);
+  if (demoRefused) return demoRefused;
   const limited = enforceUserRateLimit("attachments:write", user.id);
   if (limited) return limited;
 

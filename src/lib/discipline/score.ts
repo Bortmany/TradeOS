@@ -68,6 +68,10 @@ export function computeDisciplineScore(args: {
     riskDiscipline: risk.score,
     emotionalDiscipline: emo.score,
     consistency: cons.score,
+    // Explicit "no rule has been checked" state. Display only: every number
+    // above is exactly what it was before this field existed.
+    ruleChecks: rule.applicable,
+    scored: rule.applicable > 0,
     breakdown: [
       { label: "Rule adherence", score: rule.score, weight: WEIGHTS.ruleAdherence, detail: rule.detail },
       { label: "Risk discipline", score: risk.score, weight: WEIGHTS.riskDiscipline, detail: risk.detail },
@@ -81,7 +85,11 @@ export function computeDisciplineScore(args: {
 // Rule adherence — weighted pass rate over applicable evaluations
 // --------------------------------------------------------------------------
 
-function ruleAdherence(evaluations: Record<string, EvalResult[]>): { score: number; detail: string } {
+function ruleAdherence(evaluations: Record<string, EvalResult[]>): {
+  score: number;
+  detail: string;
+  applicable: number;
+} {
   let passWeight = 0;
   let totalWeight = 0;
   let passCount = 0;
@@ -99,12 +107,13 @@ function ruleAdherence(evaluations: Record<string, EvalResult[]>): { score: numb
     }
   }
   if (applicable === 0) {
-    return { score: 100, detail: "No applicable rule evaluations — nothing to violate." };
+    return { score: 100, detail: "No applicable rule evaluations — nothing to violate.", applicable: 0 };
   }
   const score = round((100 * passWeight) / totalWeight);
   return {
     score,
     detail: `${passCount}/${applicable} rule checks passed (severity-weighted ${passWeight}/${totalWeight}).`,
+    applicable,
   };
 }
 

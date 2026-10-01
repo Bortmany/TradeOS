@@ -9,10 +9,13 @@ import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { apiErrorResponse } from "@/lib/api-error";
 import { templatePatchSchema } from "@/lib/checklist";
 import { getTemplate } from "@/lib/checklist/data";
+import { refuseDemo } from "@/lib/demo-guard";
 
 type Ctx = { params: Promise<{ id: string }> };
 
 export const PATCH = withUser(async (user, req: Request, { params }: Ctx) => {
+  const demoRefused = refuseDemo(user);
+  if (demoRefused) return demoRefused;
   const limited = enforceUserRateLimit("checklists:write", user.id);
   if (limited) return limited;
   try {
@@ -85,6 +88,8 @@ export const PATCH = withUser(async (user, req: Request, { params }: Ctx) => {
 });
 
 export const DELETE = withUser(async (user, _req: Request, { params }: Ctx) => {
+  const demoRefused = refuseDemo(user);
+  if (demoRefused) return demoRefused;
   const limited = enforceUserRateLimit("checklists:write", user.id);
   if (limited) return limited;
   try {

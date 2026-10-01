@@ -20,6 +20,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+const NEW_ACCOUNT = "__new__";
+
 interface AccountOption {
   id: string;
   name: string;
@@ -90,7 +92,18 @@ export function ImportWizard({
       </TabsContent>
 
       <TabsContent value="manual">
-        <ManualEntry accounts={accounts} />
+        {accounts.length === 0 ? (
+          <p className="rounded-lg border border-border bg-surface-raised px-4 py-3 text-sm text-muted-foreground">
+            Logging a trade by hand needs a trading account. Import a CSV first (the account is
+            created for you), or{" "}
+            <a href="/accounts" className="text-primary hover:underline">
+              add one under Accounts
+            </a>
+            .
+          </p>
+        ) : (
+          <ManualEntry accounts={accounts} />
+        )}
       </TabsContent>
     </Tabs>
   );
@@ -108,7 +121,12 @@ function CsvImport({
   brokers: BrokerOption[];
 }) {
   const router = useRouter();
-  const [accountId, setAccountId] = React.useState(accounts[0]?.id ?? "");
+  // "Import into": an existing account, or NEW (type a name and starting balance and
+  // the account is created as part of the import, no detour through Accounts).
+  const [accountId, setAccountId] = React.useState(accounts[0]?.id ?? NEW_ACCOUNT);
+  const [newName, setNewName] = React.useState("");
+  const [newBalance, setNewBalance] = React.useState("");
+  const creatingAccount = accountId === NEW_ACCOUNT;
   const [broker, setBroker] = React.useState<string>("auto");
   const [csvText, setCsvText] = React.useState("");
   const [fileName, setFileName] = React.useState<string | null>(null);
@@ -134,7 +152,10 @@ function CsvImport({
   async function onImport() {
     setError(null);
     setResult(null);
-    if (!accountId) return setError("Select a target account.");
+    if (creatingAccount && !newName.trim()) return setError("Give the new account a name.");
+    if (creatingAccount && newBalance.trim() && !(Number(newBalance) >= 0)) {
+      return setError("Starting balance must be a number, 0 or more.");
+    }
     if (!csvText.trim()) return setError("Paste CSV text or choose a file first.");
     if (showServerTime && offsetInvalid) {
       setOffsetTouched(true);
@@ -146,7 +167,14 @@ function CsvImport({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          accountId,
+          ...(creatingAccount
+            ? {
+                newAccount: {
+                  name: newName.trim(),
+                  startingBalance: newBalance.trim() ? Number(newBalance) : 0,
+                },
+              }
+            : { accountId }),
           csvText,
           ...(broker !== "auto" ? { broker } : {}),
           ...(showServerTime
@@ -163,6 +191,12 @@ function CsvImport({
       if (!res.ok || !json.ok) {
         setError(json.error ?? "Import failed.");
         return;
+      }
+      // The account made during this import is now a real one: keep it selected.
+      if (creatingAccount && json.accountId) {
+        setAccountId(json.accountId);
+        setNewName("");
+        setNewBalance("");
       }
       setResult({
         broker: json.broker,
@@ -193,7 +227,7 @@ function CsvImport({
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label>Target account</Label>
+              <Label>Import into</Label>
               <Select value={accountId} onValueChange={setAccountId}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select account" />
@@ -204,9 +238,38 @@ function CsvImport({
                       {a.name}
                     </SelectItem>
                   ))}
+                  <SelectItem value={NEW_ACCOUNT}>Create a new account</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+
+            {creatingAccount && (
+              <>
+                <div className="space-y-1.5">
+                  <Label htmlFor="new-account-name">New account name</Label>
+                  <Input
+                    id="new-account-name"
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                    maxLength={80}
+                    placeholder="e.g. Topstep 50K"
+                    autoComplete="off"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="new-account-balance">Starting balance</Label>
+                  <Input
+                    id="new-account-balance"
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    value={newBalance}
+                    onChange={(e) => setNewBalance(e.target.value)}
+                    placeholder="e.g. 50000"
+                  />
+                </div>
+              </>
+            )}
 
             <div className="space-y-1.5">
               <Label>Broker format</Label>
@@ -328,7 +391,7 @@ function CsvImport({
           {error && <ErrorPanel message={error} />}
 
           <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
-            <Button onClick={onImport} disabled={busy} className="gap-1.5">
+            <Button onClick={onImport} disabled={busy} className="w-full gap-1.5 sm:w-auto">
               <UploadCloud className="h-4 w-4" />
               {busy ? "Importing…" : "Import"}
             </Button>

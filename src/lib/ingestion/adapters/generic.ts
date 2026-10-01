@@ -353,6 +353,15 @@ const ID_ALIASES = ["id", "trade id", "tradeid", "order id", "orderid", "ref", "
 const STRATEGY_ALIASES = ["strategy", "setup", "strategytag", "tag"];
 const NOTES_ALIASES = ["notes", "note", "comment", "comments"];
 
+// True when the header row looks like a table of trades (a symbol column plus a
+// size or entry-price column). Used to tell "a CSV with no trades yet" from "a
+// file that isn't a broker CSV at all" before any import record is created.
+export function looksLikeTradeTable(headers: string[]): boolean {
+  const idx = headerIndex(headers);
+  const has = (aliases: string[]) => aliases.some((a) => idx.has(a));
+  return has(SYMBOL_ALIASES) && (has(QTY_ALIASES) || has(ENTRY_PRICE_ALIASES));
+}
+
 export const genericAdapter: BrokerAdapter = {
   key: "generic",
   label: "Generic CSV",

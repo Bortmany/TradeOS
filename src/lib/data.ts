@@ -313,6 +313,8 @@ export interface DashboardData {
   bySymbol: ReturnType<typeof bySymbol>;
   tradeCount: number;
   openCount: number;
+  /** Active rules across the trader's active rulebooks (0 = no rulebook yet). */
+  activeRuleCount: number;
   evaluations: Record<string, EvalResult[]>;
   /** Realized P&L per ET calendar day, oldest first (the analytics P&L calendar). */
   dailyPnl: ReturnType<typeof dailyPnlSeries>;
@@ -385,10 +387,16 @@ export async function getDashboardData(
     bySymbol: bySymbol(closed),
     tradeCount: trades.length,
     openCount: trades.length - closed.length,
+    activeRuleCount: rules.length,
     evaluations,
     dailyPnl: dailyPnlSeries(trades),
     recentViolations: recentViolationsOf(trades, evaluations),
   };
+}
+
+/** How many of this user's trades came from "Load sample data" (user-scoped). */
+export async function countSampleTrades(userId: string): Promise<number> {
+  return prisma.trade.count({ where: { userId, source: "sample" } });
 }
 
 export async function getOpenAlerts(userId: string) {

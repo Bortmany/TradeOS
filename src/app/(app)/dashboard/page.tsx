@@ -7,15 +7,15 @@ import {
   Activity,
   AlertTriangle,
   ChevronRight,
-  Info,
 } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth";
-import { getAccounts, getDashboardData, getOpenAlerts } from "@/lib/data";
+import { countSampleTrades, getAccounts, getDashboardData, getOpenAlerts } from "@/lib/data";
+import { SampleTradesStrip } from "@/components/sample-trades-strip";
 import { PageHeader } from "@/components/page-header";
 import { AccountSwitcher } from "@/components/account-switcher";
 import { EquityChart } from "@/components/charts/equity-chart";
 import { BucketBar } from "@/components/charts/bucket-bar";
-import { ScoreRing, ScoreMeter } from "@/components/charts/score-ring";
+import { ScoreRing, ScoreMeter, ProvisionalScoreRing } from "@/components/charts/score-ring";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -51,10 +51,11 @@ export default async function DashboardPage({
   if (!user) redirect("/login");
   const { account } = await searchParams;
 
-  const [accounts, data, alerts] = await Promise.all([
+  const [accounts, data, alerts, sampleCount] = await Promise.all([
     getAccounts(user.id),
     getDashboardData(user.id, account),
     getOpenAlerts(user.id),
+    countSampleTrades(user.id),
   ]);
 
   const activeAccount = account ? accounts.find((a) => a.id === account) : null;
@@ -107,12 +108,8 @@ export default async function DashboardPage({
 
   return (
     <div className="container max-w-7xl space-y-6 py-6">
-      {isDemoDesk(user.email) && (
-        <p className="flex items-center gap-2 rounded-md border border-border bg-surface-raised px-3 py-2 text-xs text-muted-foreground print:hidden">
-          <Info className="h-3.5 w-3.5 shrink-0" />
-          This is sample data. Import your own trades to replace it.
-        </p>
-      )}
+      {/* The demo desk's look-around-only notice is the banner in the app shell. */}
+      {sampleCount > 0 && !isDemoDesk(user.email) && <SampleTradesStrip />}
       <PageHeader
         title="Dashboard"
         description={
@@ -139,19 +136,40 @@ export default async function DashboardPage({
             it as a compact strip so nothing competes with the anchor metric. */}
         <CardContent className="space-y-5">
           <div className="flex flex-col items-center gap-1.5 py-2">
-            <ScoreRing
-              score={data.discipline.overall}
-              size={208}
-              strokeWidth={14}
-              label="Overall"
-            />
+            {data.discipline.scored ? (
+              <ScoreRing
+                score={data.discipline.overall}
+                size={208}
+                strokeWidth={14}
+                label="Overall"
+              />
+            ) : (
+              <ProvisionalScoreRing
+                size={208}
+                strokeWidth={14}
+                hasRules={data.activeRuleCount > 0}
+              />
+            )}
             <p className="text-2xs uppercase tracking-wide text-muted-foreground">
-              Out of 100 · {m.tradeCount} trades graded
+              {data.discipline.scored
+                ? `Out of 100 · ${m.tradeCount} trades graded`
+                : `Not scored yet · ${m.tradeCount} ${m.tradeCount === 1 ? "trade" : "trades"} imported`}
             </p>
           </div>
           <div className="grid grid-cols-2 gap-x-6 gap-y-4 border-t border-border pt-4 sm:grid-cols-4">
             {data.discipline.breakdown.map((b) => (
-              <ScoreMeter key={b.label} label={b.label} score={b.score} detail={b.detail} compact />
+              <ScoreMeter
+                key={b.label}
+                label={b.label}
+                score={b.score}
+                compact
+                unscored={!data.discipline.scored && b.label === "Rule adherence"}
+                detail={
+                  !data.discipline.scored && b.label === "Rule adherence"
+                    ? "Add a rule and this fills in."
+                    : b.detail
+                }
+              />
             ))}
           </div>
         </CardContent>

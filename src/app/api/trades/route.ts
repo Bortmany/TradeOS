@@ -9,6 +9,7 @@ import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { recomputeCompliance } from "@/lib/rules/recompute-compliance";
 import { apiErrorResponse } from "@/lib/api-error";
 import { isValidTradeTimeOrder, TRADE_TIME_ORDER_ERROR } from "@/lib/validation";
+import { refuseDemo } from "@/lib/demo-guard";
 
 const schema = z
   .object({
@@ -42,6 +43,8 @@ const schema = z
   });
 
 export const POST = withUser(async (user, req: Request) => {
+  const demoRefused = refuseDemo(user);
+  if (demoRefused) return demoRefused;
   const limited = enforceUserRateLimit("trades:create", user.id);
   if (limited) return limited;
 

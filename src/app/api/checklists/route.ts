@@ -8,6 +8,7 @@ import { enforceUserRateLimit, USER_READ_LIMIT } from "@/lib/rate-limit";
 import { apiErrorResponse } from "@/lib/api-error";
 import { MAX_TEMPLATES_PER_USER, templateCreateSchema } from "@/lib/checklist";
 import { getTemplate, listTemplates } from "@/lib/checklist/data";
+import { refuseDemo } from "@/lib/demo-guard";
 
 export const GET = withUser(async (user) => {
   const limited = enforceUserRateLimit("checklists:read", user.id, USER_READ_LIMIT);
@@ -20,6 +21,8 @@ export const GET = withUser(async (user) => {
 });
 
 export const POST = withUser(async (user, req: Request) => {
+  const demoRefused = refuseDemo(user);
+  if (demoRefused) return demoRefused;
   const limited = enforceUserRateLimit("checklists:write", user.id);
   if (limited) return limited;
   try {

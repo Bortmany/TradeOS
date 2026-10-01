@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { apiErrorResponse } from "@/lib/api-error";
 import { isAllowedTimeZone, TIME_ZONE_ERROR } from "@/lib/utils";
+import { refuseDemo } from "@/lib/demo-guard";
 
 const schema = z
   .object({
@@ -18,6 +19,8 @@ const schema = z
   });
 
 export const PATCH = withUser(async (user, req: Request) => {
+  const demoRefused = refuseDemo(user);
+  if (demoRefused) return demoRefused;
   const limited = enforceUserRateLimit("profile:write", user.id);
   if (limited) return limited;
 

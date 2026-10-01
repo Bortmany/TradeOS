@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { DemoDeskButton } from "@/components/demo-desk-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -19,7 +20,7 @@ type ErrorField = "email" | "password" | "inviteCode" | "both" | null;
 
 function fieldForError(message: string): ErrorField {
   const m = message.toLowerCase();
-  if (m.includes("already exists")) return "email";
+  if (m.includes("already exists") || m.includes("already has an account")) return "email";
   if (m.includes("invalid email or password")) return "both";
   if (m.includes("invite code")) return "inviteCode";
   if (m.includes("password")) return "password";
@@ -158,6 +159,14 @@ export function AuthForm({
                 className="rounded-md border border-loss/30 bg-loss-muted px-3 py-2 text-sm text-loss"
               >
                 {error}
+                {isRegister && error.toLowerCase().includes("already has an account") && (
+                  <>
+                    {" "}
+                    <Link href="/login" className="font-medium underline">
+                      Go to sign in
+                    </Link>
+                  </>
+                )}
               </p>
             )}
           </div>
@@ -239,9 +248,13 @@ export function AuthForm({
       </p>
 
       {!isRegister && (
-        <div className="mt-6 rounded-lg border border-border bg-surface-raised px-3 py-2.5 text-center text-xs text-muted-foreground">
-          Demo account — <span className="font-mono text-foreground">demo@tradeos.app</span> /{" "}
-          <span className="font-mono text-foreground">demo1234</span>
+        <div className="mt-6 space-y-4">
+          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+            <span className="h-px flex-1 bg-border" />
+            or
+            <span className="h-px flex-1 bg-border" />
+          </div>
+          <DemoDeskButton label="Try the demo desk" className="[&>button]:w-full" />
         </div>
       )}
     </div>

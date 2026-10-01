@@ -11,6 +11,7 @@ import { rateLimit } from "@/lib/rate-limit";
 import { hasFeature } from "@/lib/billing/plans";
 import { parseCandleCsv } from "@/lib/backtest";
 import type { Plan } from "@/lib/types";
+import { refuseDemo } from "@/lib/demo-guard";
 
 const MAX_CANDLES = 25000;
 const MAX_DATASETS_PER_USER = 20; // total storage cap — rate limits bound only the rate
@@ -23,6 +24,8 @@ const postSchema = z.object({
 });
 
 export const POST = withUser(async (user, req: Request) => {
+  const demoRefused = refuseDemo(user);
+  if (demoRefused) return demoRefused;
   // Uploads carry megabyte payloads — keep them occasional. 10 / 10 min.
   const rl = rateLimit(`backtests-datasets:${user.id}`, { limit: 10, windowMs: 10 * 60 * 1000 });
   if (!rl.ok) {
@@ -105,6 +108,8 @@ export const POST = withUser(async (user, req: Request) => {
 const deleteSchema = z.object({ id: z.string().min(1) });
 
 export const DELETE = withUser(async (user, req: Request) => {
+  const demoRefused = refuseDemo(user);
+  if (demoRefused) return demoRefused;
   // Its own bucket, so cleaning up old datasets never uses up the upload
   // allowance (and heavy uploading never blocks a delete). 30 / 10 min.
   const limited = rateLimit(`backtests-datasets-delete:${user.id}`, { limit: 30, windowMs: 10 * 60 * 1000 });

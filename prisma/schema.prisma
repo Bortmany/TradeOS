@@ -136,7 +136,7 @@ model Trade {
   emotions    String?  // comma-separated tags e.g. "fomo,confident"
   tags        String?  // free-form comma-separated
 
-  // source: csv | api | manual | broker
+  // source: csv | api | manual | broker | sample
   source      String   @default("manual")
   externalId  String?  // broker/order id for dedupe
   importBatchId String?

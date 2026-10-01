@@ -6,6 +6,7 @@ import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RULE_TYPES, SEVERITIES, RULE_CONFIG_SCHEMAS, type RuleType, type Plan } from "@/lib/types";
 import { effectivePlan, getFeatures, withinLimit } from "@/lib/billing/plans";
 import { apiErrorResponse } from "@/lib/api-error";
+import { refuseDemo } from "@/lib/demo-guard";
 
 const createSchema = z.object({
   ruleBookId: z.string().min(1),
@@ -54,6 +55,8 @@ function serializeConfig(type: RuleType, raw: unknown): string {
 export async function POST(req: Request) {
   const user = await auth();
   if (!user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  const demoRefused = refuseDemo(user);
+  if (demoRefused) return demoRefused;
   const limited = enforceUserRateLimit("rules:write", user.id);
   if (limited) return limited;
   try {
@@ -106,6 +109,8 @@ export async function POST(req: Request) {
 export async function PATCH(req: Request) {
   const user = await auth();
   if (!user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  const demoRefused = refuseDemo(user);
+  if (demoRefused) return demoRefused;
   const limited = enforceUserRateLimit("rules:write", user.id);
   if (limited) return limited;
   try {
@@ -141,6 +146,8 @@ export async function PATCH(req: Request) {
 export async function DELETE(req: Request) {
   const user = await auth();
   if (!user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  const demoRefused = refuseDemo(user);
+  if (demoRefused) return demoRefused;
   const limited = enforceUserRateLimit("rules:write", user.id);
   if (limited) return limited;
   try {

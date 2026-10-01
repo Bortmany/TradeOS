@@ -10,6 +10,7 @@ import {
 } from "@/lib/billing/paddle";
 import { BILLING_INTERVALS, PLANS } from "@/lib/types";
 import { enforceUserRateLimit, USER_EXTERNAL_LIMIT } from "@/lib/rate-limit";
+import { refuseDemo } from "@/lib/demo-guard";
 
 // `interval` is optional and defaults to monthly, so an older client that sends
 // only a plan keeps working unchanged.
@@ -29,6 +30,8 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ ok: false, message: "Unauthorized" }, { status: 401 });
   }
+  const demoRefused = refuseDemo(user);
+  if (demoRefused) return demoRefused;
 
   // Tight limit: each call creates a transaction at the payment provider.
   const limited = enforceUserRateLimit("billing:checkout", user.id, USER_EXTERNAL_LIMIT);
