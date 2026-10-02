@@ -28,6 +28,7 @@ import {
   type OpenState,
 } from "@/lib/risk/limits";
 import { loadLiveState, openStateFor } from "@/lib/live/state";
+import { notifyAlertSteps } from "@/lib/push/alerts";
 
 export type AlertMeasure =
   | "daily_loss"
@@ -385,6 +386,8 @@ async function generateAlertsNow(userId: string, now: Date): Promise<number> {
   }
 
   await reconcile(userId, specs, protectedKeys, now);
+  // Phone warning for each new alert / step up (never throws; off unless keyed).
+  await notifyAlertSteps(userId);
   return specs.length;
 }
 

@@ -496,3 +496,21 @@ an upsert by that key, never delete-and-recreate (so dismissals survive):
   was rejected or its sync is in error.
 - The poll needs a persistent server (Railway, VPS, Docker). On Vercel there is no
   long-running process, so near-live does not run there.
+
+### Phone warnings (Web Push, additive tables `PushSubscription`, `PushSent`)
+
+- `PushSubscription`: one row per person and device `{ userId, endpoint (unique), p256dh,
+  auth, createdAt, lastSuccessAt?, lastFailureAt? }`, max 5 per person, deleted with the
+  account, never exported or returned by any route. The endpoint comes from the browser, so
+  it is saved and called only when it is https on a host in `src/lib/push/hosts.ts`.
+- `PushSent`: `{ userId, alertId, step }` unique per `(alertId, step)`. At the end of every
+  alert pass `notifyAlertSteps` (`src/lib/push/alerts.ts`) announces each open, un-dismissed
+  auto alert at its current step once (new alert, or a step up). Repeats and self-clears send
+  nothing. The step is recorded even when nobody has alerts on (so enabling later does not
+  replay old warnings). Profit-target alerts never push. Step 0 = measures with no ladder.
+- Off unless `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`,
+  `NEXT_PUBLIC_VAPID_PUBLIC_KEY` are all set (`/api/health` shows `phoneWarnings`).
+- Routes (session, zod, `USER_WRITE_LIMIT`, demo refused): `POST /api/push/subscribe`
+  (503 `not_configured`, 409 `device_limit`), `POST /api/push/unsubscribe`,
+  `POST /api/push/test` (also 5 per hour per person, 429 `test_limit`; 410 `gone` removes
+  the device). A 404 or 410 from the push service deletes that subscription.

@@ -54,6 +54,8 @@ model User {
   importBatches   ImportBatch[]
   propAccounts    PropAccount[]
   alerts          Alert[]
+  pushSubscriptions PushSubscription[]
+  pushSent        PushSent[]
   sessions        Session[]
   brokerConnections BrokerConnection[]
   positionSnapshots PositionSnapshot[]
@@ -499,6 +501,8 @@ model Alert {
   dismissedAt DateTime?
   createdAt   DateTime @default(now())
 
+  pushSent    PushSent[]
+
   @@index([userId, status])
 }
 
@@ -552,4 +556,42 @@ model ChecklistRun {
   createdAt    DateTime @default(now())
 
   @@index([userId, createdAt])
+}
+
+// --------------------------------------------------------------------------
+// Phone warnings (Web Push) — optional, per user and per device
+// --------------------------------------------------------------------------
+
+// One row per signed-in device that turned alerts on. The endpoint is typed by the
+// browser, so it is checked against a fixed list of push-service hosts before it
+// is saved (src/lib/push/hosts.ts). The two keys are the device's own public
+// encryption material; they are never shown again or exported. Max 5 per user.
+model PushSubscription {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint      String    @unique
+  p256dh        String
+  auth          String
+  createdAt     DateTime  @default(now())
+  lastSuccessAt DateTime?
+  lastFailureAt DateTime?
+
+  @@index([userId])
+}
+
+// Remembers which alert step has already been pushed (or deliberately skipped
+// because nobody had alerts on), so a step is announced exactly once.
+model PushSent {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  alertId   String
+  alert     Alert    @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  // 50 | 80 | 100, or 0 for measures with no ladder
+  step      Int
+  createdAt DateTime @default(now())
+
+  @@unique([alertId, step])
+  @@index([userId])
 }

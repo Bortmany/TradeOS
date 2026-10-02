@@ -82,6 +82,16 @@ export default function PrivacyPage() {
             your account removes the saved snapshot and balance.
           </li>
           <li>
+            <strong>Phone warnings (optional)</strong> — if you press &quot;Enable alerts&quot; in
+            Settings: your browser&apos;s push address for that device and its two public
+            encryption keys, plus the time of the last send. They are used only to send you
+            your own risk warnings and the test message you ask for, through your browser
+            maker&apos;s push service (Google, Mozilla, Apple or Microsoft), which sees the
+            address and the delivery but not a readable message. They are removed when you
+            turn alerts off on that device, when the push service says the device is gone, or
+            when you delete your account, and they are not part of your data export.
+          </li>
+          <li>
             <strong>Billing</strong> — if paid subscriptions are enabled, payments are
             processed by Paddle, which acts as the reseller and merchant of record. We
             store a Paddle customer reference, a subscription reference, and your plan

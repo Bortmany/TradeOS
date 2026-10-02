@@ -8,6 +8,7 @@ import { TimeZoneProvider } from "@/components/time-zone-provider";
 import { resolveTimeZone } from "@/lib/utils";
 import { isDemoDesk } from "@/lib/demo-desk";
 import { DemoBanner } from "@/components/demo-banner";
+import { ServiceWorkerRegister } from "@/components/live/service-worker-register";
 
 export default async function AppLayout({
   children,
@@ -31,6 +32,7 @@ export default async function AppLayout({
   // zone themselves, client pieces read it from this provider.
   return (
     <TimeZoneProvider timeZone={resolveTimeZone(user.timezone)}>
+    <ServiceWorkerRegister />
     <div className="flex min-h-screen">
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">

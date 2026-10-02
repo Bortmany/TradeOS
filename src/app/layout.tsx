@@ -14,6 +14,15 @@ export const metadata: Metadata = {
     "TradeOS is the trading journal that keeps you honest. Import your trades, grade every one against your own rules, and get a warning at 50%, 80% and 100% of a limit. You decide what to do.",
   applicationName: "TradeOS",
   manifest: "/manifest.webmanifest",
+  // iPhone home-screen icons must be PNG (the SVG icon is used everywhere else).
+  icons: {
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+  },
   keywords: [
     "trading journal",
     "day trading analytics",

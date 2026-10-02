@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { isBillingConfigured } from "@/lib/billing/paddle";
 import { signupMode } from "@/lib/signup-mode";
+import { isPushConfigured } from "@/lib/push/config";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +22,8 @@ export async function GET() {
   checks.billing = isBillingConfigured() ? "configured" : "dev-mode";
   checks.aiCoaching = process.env.AI_COACHING_ENABLED === "true" ? "enabled" : "disabled";
   checks.errorTracking = process.env.SENTRY_DSN ? "configured" : "dormant";
+  // Phone warnings (Web Push): "configured" once all four VAPID keys are set.
+  checks.phoneWarnings = isPushConfigured() ? "configured" : "dormant";
   // Who can create an account right now: "open" | "invite" | "closed".
   checks.signups = signupMode();
 

@@ -47,6 +47,7 @@ Notes:
 - `LIVE_POLL_INTERVAL_SEC` (default 60, never below 60) — the near-live read of open positions and balance for TopstepX connections (read-only, about 100 broker calls a minute at most). Runs on Railway/VPS/Docker only, not on Vercel.
 - AI coaching (`AI_COACHING_ENABLED`, `ANTHROPIC_API_KEY`) — hard-disabled in code (future phase). Nothing to do.
 - `PRIVACY_CONTACT_EMAIL` — the contact address shown on the Terms, Privacy and Refunds pages. Optional: leave it unset and the pages show the owner's address (`naeljam@hotmail.com`); set it if you ever want a different mailbox.
+- **Phone warnings (Web Push), optional.** Off until you set four variables on Railway: run `npx web-push generate-vapid-keys` on your Mac, then set `VAPID_PUBLIC_KEY` (public key), `VAPID_PRIVATE_KEY` (private key, keep secret), `VAPID_SUBJECT` (`mailto:` plus your email) and `NEXT_PUBLIC_VAPID_PUBLIC_KEY` (the public key again), then redeploy. `/api/health` shows `phoneWarnings: configured`. On iPhone it works only from the Home Screen icon (iOS 16.4+). Test it: Settings, Phone warnings, Enable alerts, Send me a test.
 - No email provider is wired.
 
 ## Security note
