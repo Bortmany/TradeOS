@@ -48,3 +48,7 @@ In Paddle you'll later create 2 new prices, and only for Elite: monthly $59 and 
 5. Two new Elite prices in Paddle.
 6. Railway: `TRUST_PROXY=true`, `PROXY_HOPS=1`, `CRON_SECRET`.
 7. A database backup right before shipping.
+
+## Owner answer (2 Oct 2026)
+
+"Continue" — taken as all suggested defaults for E, F and G above.
