@@ -18,6 +18,24 @@ server can never be pointed at a private, loopback or link-local address.
   "This broker address is no longer allowed; reconnect this account to continue
   syncing." and the connection shows a sync error until the user reconnects.
 
+## Read-only, always, and what is called
+
+Every connection is read-only. The connector may call only the paths on
+`ALLOWED_PATHS` in `src/lib/connectors/topstepx.ts`: `Auth/loginKey`, `Account/search`
+(balance), `Trade/search` (fills), `Position/searchOpen` (open positions) and
+`History/retrieveBars` (the latest 1-minute price, only to estimate an open position's
+value when the gateway sends none). The HTTP helper refuses any other path and any host
+that is not in the registry. There is no function that places, changes or cancels an
+order or closes a position, and `test/live-safety.test.ts` proves it. Testers use
+recorded fixtures only (`test/fixtures/projectx.ts`): never a funded or personal account.
+
+Two timers read each connection: the 30-minute fill sync (`src/lib/auto-sync.ts`) and the
+near-live read of positions and balance every 60 seconds (`src/lib/live/poller.ts`, per
+connection switch "Near-live updates", on by default). The 60-second floor is enforced in
+code (`LIVE_POLL_INTERVAL_SEC`, anything under 60 becomes 60), the server-wide budget is
+about 100 calls a minute with back-off on HTTP 429, a login is reused for a day, and each
+timer has its own single-runner lock. See `docs/CONTRACTS.md` (Package J).
+
 ## Adding a firm
 
 1. Add one entry to `FIRMS` in `src/lib/connectors/firms.ts`, for example:
@@ -32,7 +50,10 @@ server can never be pointed at a private, loopback or link-local address.
    `test/` (core guarantee — see `docs/CONVENTIONS.md`).
 3. The dropdown in `src/components/import/broker-connect.tsx` reads `FIRMS`
    directly — no UI change needed.
-4. Run `npm test`: `test/connector-firms.test.ts` checks every entry is https
+4. Any new gateway path must be added to the connector's `ALLOWED_PATHS` allow-list and
+   be a READ. Never add a path that places, changes or cancels an order or closes a
+   position; the safety tests fail if one appears.
+5. Run `npm test`: `test/connector-firms.test.ts` checks every entry is https
    and on the allow-list.
 
 ## MetaTrader 5 is a file import, not a connector

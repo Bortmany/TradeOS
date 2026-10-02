@@ -48,3 +48,16 @@ export function pointMultiplier(symbol: string): number {
   const root = rootSymbol(symbol);
   return POINT_MULTIPLIERS[root] ?? 1;
 }
+
+/**
+ * The dollar value of a one-point move, or `null` when this contract is NOT in
+ * the table. Live open P&L uses this (never `pointMultiplier`) so a contract we
+ * have no value for (for example MCL, NG, SI) is shown as "not priced" instead
+ * of being guessed with the default of 1.
+ */
+export function knownPointValue(symbol: string): number | null {
+  const root = rootSymbol(symbol);
+  return Object.prototype.hasOwnProperty.call(POINT_MULTIPLIERS, root)
+    ? POINT_MULTIPLIERS[root]
+    : null;
+}

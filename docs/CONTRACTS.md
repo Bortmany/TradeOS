@@ -403,3 +403,96 @@ Errors are `{ ok:false, code, error }` with a plain-English `error`. Deleting a 
 - `POST /api/auth/register` creates the account AND signs the user in. An email that already has an account answers `409 { ok:false, code:"email_taken", error:"That email already has an account. Sign in instead." }` (owner chose clarity over hiding it; the per-visitor sign-up limit stays).
 - `POST /api/import` takes either `accountId` or `newAccount: { name, startingBalance }` (exactly one). A new account is created only after the file proved to be a real broker CSV and fits the plan; it is user-scoped and counted against the plan's account limit (`accounts:write`, `USER_WRITE_LIMIT`). A file with no recognisable trade table answers `400 { code:"not_csv" }` and creates NO import record, NO account and NO trades (`IngestResult.notTradeFile`). The response gains `accountId`.
 - `Trade.source` gains the value `"sample"` (plain string, no migration) for trades made by "Load sample data". `DELETE /api/demo-data` removes only the signed-in user's `source = "sample"` trades (and their stored screenshots), never imported or hand-entered trades, accounts or rulebooks, then recomputes compliance. Limiter `demo-data:clear` (`USER_WRITE_LIMIT`).
+
+## Package J — Live links: honest alerts and TopstepX near-live (read-only)
+
+Everything here is READ-ONLY toward brokers. No module in `src/lib/connectors/` or
+`src/lib/live/` exports a function that places, changes or cancels an order or
+closes a position, no source file names such an address, and the connector's HTTP
+helper refuses any path that is not on `ALLOWED_PATHS` (`test/live-safety.test.ts`).
+
+### One shared limit calculation (`src/lib/risk/limits.ts`, pure, Node-safe)
+
+`computeLimitFigures({ startingBalance, trades, now, open?, livePeakEquity? })` is the
+ONLY place "today's loss" and "drawdown used" are worked out. The alert generator
+(`src/lib/alerts/generate.ts`) and the Prop page (`src/lib/prop.ts`) both call it, so
+the dashboard alert and the Prop-page buffer always show the same figure.
+- The day is midnight to midnight New York time (ET) for both.
+- Open P&L (from a fresh live read) is added to today's P&L and to equity, so it moves
+  both the daily loss and the drawdown. Profit-target progress (`netProfit`) ignores it.
+- Drawdown peak = the highest of the closed-trade peak, `BrokerConnection.livePeakEquity`
+  (highest equity, open profit included, seen at any live read) and the current equity.
+- A live read is "fresh" for 3 minutes (`LIVE_FRESH_MS`); older, the figures fall back to
+  closed trades only and say so.
+- `stepFor(used, limit)` gives the shared 50 / 80 / 100 steps. Prop-page bars use the
+  same steps: green under 50% used, amber 50 to under 80%, red from 80%.
+- `priceOpenPosition`: long = (last - average) x size x point value, short the reverse.
+  A contract with no entry in the point-value table (`knownPointValue` returns null; for
+  example MCL, NG, SI) or with no price is NOT guessed: `openPnl` is null with a reason
+  (`no_point_value` | `no_price`) and it is left out of totals ("not priced").
+
+### Alerts (`Alert`, additive column `dismissedAt DateTime?`)
+
+Identity is `meta.key`, "one live alert per account per measure". Generating alerts is
+an upsert by that key, never delete-and-recreate (so dismissals survive):
+- keys: `daily_loss:<propId>`, `drawdown:<propId>`, `profit_target:<propId>`,
+  `overtrading:<accountId>` (today's ET count over 10), `rule_violation:user`.
+- A step change updates the same row in place. When the condition ends the row becomes
+  `status = "resolved"` (with `meta.resolvedAt`). A later recurrence makes a new row.
+  Resolved auto alerts older than 30 days are deleted in the same pass. Hand-made alerts
+  (no `meta.auto`) are never touched.
+- `Alert.meta` JSON for auto alerts: `{ auto: true, key, measure, step: 50|80|100|null,
+  value, limit, left, usedPct, asAt (ISO), source: "live"|"closed", liveLinked,
+  openCount, openEstimated, unpricedCount, dismissedStep?, resolvedAt? }`.
+  `value` is the headline number (loss, drawdown, profit or trade count), `left` is what
+  remains before the limit (or to the target), `asAt` is the live read time or when it
+  was worked out. `title` and `message` keep their plain-English wording.
+- Dismiss: `POST /api/alerts/[id]/dismiss` sets `dismissedAt` and `meta.dismissedStep`.
+  It stays hidden while the step is the same or lower; a higher step clears `dismissedAt`
+  in place. User-scoped (another user's id answers 404), `USER_WRITE_LIMIT`, demo refused.
+- A failed or stale live read never clears or lowers a warning that open P&L raised (for
+  up to a day); only a good read, or closed trades alone when the account is not live,
+  can end it.
+- `GET /api/alerts` (`USER_READ_LIMIT`, user-scoped): `{ ok, alerts[], accounts[], positions[], now }`.
+  `accounts[]` is the freshness of each live link (`health`: live | stale | waiting |
+  rejected | off, `lastLiveAt`, `lastError`); `positions[]` is the latest snapshot.
+
+### Near-live reads (`src/lib/live/`, `src/lib/connectors/topstepx.ts`)
+
+- New columns on `BrokerConnection` (all additive): `nearLive Boolean @default(true)`,
+  `lastBalance Float?` (shown only, never used in limit maths), `lastLiveAt DateTime?`
+  (last GOOD read), `lastLiveError String?` (fixed plain-English text), `liveStatus String
+  @default("ok")` (`ok | unreachable | rejected`), `livePeakEquity Float?`. Live failures
+  never touch `status` / `lastError` (the 30-minute fill sync's own state).
+- New table `PositionSnapshot` (current open positions per connection, replaced on each
+  read, no history): `contractId, symbol, side (long|short), size, avgPrice, lastPrice?,
+  priceSource? (broker|bar), openPnl?, notPricedReason? (no_point_value|no_price), readAt`.
+  Cascades with the connection and the user. Not in "Download my data".
+- Allowed gateway paths (`ALLOWED_PATHS`): `Auth/loginKey`, `Account/search`,
+  `Trade/search`, `Position/searchOpen`, `History/retrieveBars` (only to estimate a price).
+  Only registry hosts (`isAllowedBaseUrl`), POST only.
+- Price: the position's own current price if the gateway sends one; else the latest
+  1-minute bar via `History/retrieveBars` (one call per open contract per read, counted in
+  the budget, labelled "Estimated"); else the position is "not priced".
+- `runLiveTick()` (`poller.ts`): every `LIVE_POLL_INTERVAL_SEC` (default 60, floor 60
+  enforced in `config.ts`; any smaller or junk value becomes 60), plus a per-connection
+  floor (a connection read under about a minute ago is skipped). Groups connections by the
+  trader's key (one login and one `Account/search` per key), stalest first. Server-wide
+  budget about 100 calls a minute (`budget.ts`) asked before EVERY call; when it is used
+  up the round stops and the rest go first next tick. On 429: `Retry-After` honoured,
+  else 30s / 60s / 120s, capped at 5 minutes. A rejected key marks `liveStatus =
+  "rejected"` and reads stop until the trader reconnects. After a good read for a trader
+  the alert pass runs for that trader only.
+- Session tokens (`connectors/session.ts`) live in memory only, reused for 23 hours (also
+  by the 30-minute sync), replaced by one fresh login on a 401. Never stored or logged.
+- Single runner: `src/lib/single-runner.ts` uses a transaction-scoped Postgres advisory
+  lock (`pg_try_advisory_xact_lock` inside a pinned transaction). The old session-level
+  lock could be unlocked on a different pooled session and stay stuck, which at a 60
+  second rhythm would silently stop polling. Keys: 4927001 (30-minute fill sweep),
+  4927002 (live poll). SQLite just runs the work.
+- `PATCH /api/connectors` `{ id, nearLive }`: `USER_WRITE_LIMIT`, user-scoped, demo refused;
+  a rejected connection cannot be switched on (409 "Reconnect first"). `POST /api/connectors`
+  `connect` on an already-connected account revives it with a fresh key only when its key
+  was rejected or its sync is in error.
+- The poll needs a persistent server (Railway, VPS, Docker). On Vercel there is no
+  long-running process, so near-live does not run there.

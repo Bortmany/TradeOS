@@ -8,7 +8,13 @@ import { FIRM_IDS, getFirm } from "@/lib/connectors/firms";
 import { syncConnection } from "@/lib/connectors/sync";
 import { withinLimit } from "@/lib/billing/plans";
 import type { Plan } from "@/lib/types";
-import { enforceUserRateLimit, USER_EXTERNAL_LIMIT } from "@/lib/rate-limit";
+import {
+  enforceUserRateLimit,
+  USER_EXTERNAL_LIMIT,
+  USER_WRITE_LIMIT,
+} from "@/lib/rate-limit";
+import { healthOf } from "@/lib/live/state";
+import { sessionKey, dropSessionToken } from "@/lib/connectors/session";
 import { refuseDemo } from "@/lib/demo-guard";
 
 // The gateway address is never taken from the request: the client sends a firm
@@ -32,7 +38,13 @@ const connectSchema = z.object({
   externalAccountName: z.string().max(200).optional(),
 });
 
+const nearLiveSchema = z.object({
+  id: z.string().min(1).max(100),
+  nearLive: z.boolean(),
+});
+
 export const GET = withUser(async (user) => {
+  const now = new Date();
   const rows = await prisma.brokerConnection.findMany({
     where: { userId: user.id },
     include: { account: { select: { name: true } } },
@@ -52,6 +64,12 @@ export const GET = withUser(async (user) => {
       status: c.status,
       lastSyncAt: c.lastSyncAt ? c.lastSyncAt.toISOString() : null,
       lastError: c.lastError,
+      // Near-live (read-only positions and balance). Never the key, never a token.
+      nearLive: c.nearLive,
+      lastBalance: c.lastBalance,
+      lastLiveAt: c.lastLiveAt ? c.lastLiveAt.toISOString() : null,
+      lastLiveError: c.lastLiveError,
+      liveHealth: healthOf(c, now),
     })),
   });
 });
@@ -104,6 +122,32 @@ export const POST = withUser(async (user, req: Request) => {
       const existing = await prisma.brokerConnection.findFirst({
         where: { userId: user.id, broker: firm.id, externalAccountId: d.externalAccountId },
       });
+      // Reconnect: a connection whose key was rejected (or failed to sync with an
+      // auth error) can be revived with a fresh key; nothing else about it changes.
+      if (existing && (existing.liveStatus === "rejected" || existing.status === "error")) {
+        await pxLogin(baseUrl, d.username, d.apiKey); // validate before saving
+        dropSessionToken(sessionKey(existing.baseUrl, existing.username, d.apiKey));
+        await prisma.brokerConnection.update({
+          where: { id: existing.id },
+          data: {
+            username: d.username,
+            apiKeyEnc: encryptSecret(d.apiKey),
+            baseUrl,
+            status: "connected",
+            lastError: null,
+            liveStatus: "ok",
+            lastLiveError: null,
+            nearLive: true,
+          },
+        });
+        const result = await syncConnection(existing.id, user.id);
+        return NextResponse.json({
+          ok: true,
+          connectionId: existing.id,
+          accountId: existing.accountId,
+          imported: result.imported,
+        });
+      }
       if (existing) {
         return NextResponse.json(
           { ok: false, error: "That broker account is already connected." },
@@ -170,6 +214,41 @@ export const DELETE = withUser(async (user, req: Request) => {
     // Remove only the connection — the TradingAccount and its trades remain.
     await prisma.brokerConnection.delete({ where: { id: conn.id } });
     return NextResponse.json({ ok: true });
+  } catch {
+    return NextResponse.json({ ok: false, error: "Invalid request." }, { status: 400 });
+  }
+});
+
+// Near-live switch for one connection. Behind USER_WRITE_LIMIT; the lookup is
+// filtered by the signed-in user. Turning it off stops the 60-second reads at
+// the next tick (the 30-minute fill sync is unaffected). A connection whose key
+// was rejected cannot be switched on until the trader reconnects.
+export const PATCH = withUser(async (user, req: Request) => {
+  const demoRefused = refuseDemo(user);
+  if (demoRefused) return demoRefused;
+  const limited = enforceUserRateLimit("connectors:nearlive", user.id, USER_WRITE_LIMIT);
+  if (limited) return limited;
+
+  try {
+    const d = nearLiveSchema.parse(await req.json());
+    const conn = await prisma.brokerConnection.findFirst({
+      where: { id: d.id, userId: user.id },
+      select: { id: true, liveStatus: true },
+    });
+    if (!conn) {
+      return NextResponse.json({ ok: false, error: "Connection not found." }, { status: 404 });
+    }
+    if (d.nearLive && conn.liveStatus === "rejected") {
+      return NextResponse.json(
+        { ok: false, error: "Reconnect first. Live updates stay off until TradeOS has a working key." },
+        { status: 409 }
+      );
+    }
+    await prisma.brokerConnection.updateMany({
+      where: { id: conn.id, userId: user.id },
+      data: { nearLive: d.nearLive },
+    });
+    return NextResponse.json({ ok: true, nearLive: d.nearLive });
   } catch {
     return NextResponse.json({ ok: false, error: "Invalid request." }, { status: 400 });
   }

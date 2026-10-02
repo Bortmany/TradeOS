@@ -401,8 +401,8 @@ export async function countSampleTrades(userId: string): Promise<number> {
 
 export async function getOpenAlerts(userId: string) {
   return prisma.alert.findMany({
-    where: { userId, status: "open" },
+    where: { userId, status: "open", dismissedAt: null },
     orderBy: { createdAt: "desc" },
-    take: 8,
+    take: 50,
   });
 }

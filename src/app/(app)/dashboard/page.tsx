@@ -9,7 +9,11 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth";
-import { countSampleTrades, getAccounts, getDashboardData, getOpenAlerts } from "@/lib/data";
+import { countSampleTrades, getAccounts, getDashboardData } from "@/lib/data";
+import { getLiveSnapshot } from "@/lib/live/snapshot";
+import { LiveProvider } from "@/components/live/live-provider";
+import { LiveAlerts } from "@/components/live/live-alerts";
+import { OpenPositionsCard } from "@/components/live/open-positions";
 import { SampleTradesStrip } from "@/components/sample-trades-strip";
 import { PageHeader } from "@/components/page-header";
 import { AccountSwitcher } from "@/components/account-switcher";
@@ -51,10 +55,10 @@ export default async function DashboardPage({
   if (!user) redirect("/login");
   const { account } = await searchParams;
 
-  const [accounts, data, alerts, sampleCount] = await Promise.all([
+  const [accounts, data, liveSnapshot, sampleCount] = await Promise.all([
     getAccounts(user.id),
     getDashboardData(user.id, account),
-    getOpenAlerts(user.id),
+    getLiveSnapshot(user.id),
     countSampleTrades(user.id),
   ]);
 
@@ -107,6 +111,7 @@ export default async function DashboardPage({
   const tz = resolveTimeZone(user.timezone);
 
   return (
+    <LiveProvider initial={liveSnapshot}>
     <div className="container max-w-7xl space-y-6 py-6">
       {/* The demo desk's look-around-only notice is the banner in the app shell. */}
       {sampleCount > 0 && !isDemoDesk(user.email) && <SampleTradesStrip />}
@@ -118,6 +123,10 @@ export default async function DashboardPage({
       >
         <AccountSwitcher accounts={accounts} />
       </PageHeader>
+
+      {/* Open alerts sit directly under the header: a warning read under pressure
+          must not be below five screens of charts. Refreshes itself every minute. */}
+      <LiveAlerts />
 
       {/* Discipline hero — the score is the product's anchor metric */}
       <Card>
@@ -184,6 +193,9 @@ export default async function DashboardPage({
           loadFailed={checklist.loadFailed}
         />
       )}
+
+      {/* Only while something is open (or the last list is stale). Watch-only. */}
+      <OpenPositionsCard />
 
       {/* KPI row — compact, secondary to the score */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -335,45 +347,12 @@ export default async function DashboardPage({
         </Card>
       </div>
 
-      {/* Open alerts */}
-      {alerts.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Open Alerts</CardTitle>
-          </CardHeader>
-          <CardContent className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {alerts.map((a) => (
-              <div
-                key={a.id}
-                className="flex items-start gap-3 rounded-lg border border-border bg-surface-raised px-3 py-2.5"
-              >
-                <AlertTriangle
-                  className={`mt-0.5 h-4 w-4 shrink-0 ${
-                    a.severity === "high"
-                      ? "text-loss"
-                      : a.severity === "medium"
-                        ? "text-warning"
-                        : "text-muted-foreground"
-                  }`}
-                />
-                <div className="min-w-0">
-                  <p className="text-sm font-medium">{a.title}</p>
-                  <p className="text-2xs text-muted-foreground">{a.message}</p>
-                  <p className="mt-0.5 text-2xs text-muted-foreground/60">
-                    {formatDateTime(a.createdAt, tz)}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      )}
-
       <p className="pt-2 text-center text-2xs text-muted-foreground">
         Avg hold {formatDuration(m.avgHoldMinutes)} · Largest win{" "}
         {formatCurrency(m.largestWin)} · Largest loss {formatCurrency(m.largestLoss)}
       </p>
     </div>
+    </LiveProvider>
   );
 }
 

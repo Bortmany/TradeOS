@@ -13,7 +13,7 @@ export default function PrivacyPage() {
     <article className="space-y-8">
       <header>
         <h1 className="text-3xl font-semibold tracking-tight">Privacy Policy</h1>
-        <p className="mt-2 text-sm text-muted-foreground">Last updated: October 1, 2026</p>
+        <p className="mt-2 text-sm text-muted-foreground">Last updated: October 2, 2026</p>
       </header>
 
       <div className="rounded-lg border border-warning/40 bg-warning-muted p-4 text-sm">
@@ -67,8 +67,19 @@ export default function PrivacyPage() {
             <strong>Broker connection (optional)</strong> — if you link a TopstepX account:
             your broker username and API key. The key is encrypted at rest with
             AES-256-GCM, is never shown again, never appears in logs or exports, and is
-            used only for <em>read-only</em> requests that fetch your fills. TradeOS never
-            places, changes, or cancels orders.
+            used only for <em>read-only</em> requests that fetch your fills, your open
+            positions and your account balance. TradeOS never places, changes, or cancels
+            orders. With &quot;Near-live updates&quot; on (the default, and you can switch it
+            off per account), TradeOS reads your open positions and balance about once a
+            minute while a server is running. It keeps only the latest snapshot: the
+            current open positions (contract, long or short, size, average price, the latest
+            price and the open profit or loss), your last balance, and the time of the last
+            read. Each new read replaces the old one and no history of positions is kept.
+            The short-lived login token for the broker is held in the server&apos;s memory
+            only and is never saved. The alerts you see (for example &quot;80% of today&apos;s
+            loss limit used&quot;) are worked out from your closed trades plus those open
+            positions, and you can dismiss any of them. Disconnecting a broker or deleting
+            your account removes the saved snapshot and balance.
           </li>
           <li>
             <strong>Billing</strong> — if paid subscriptions are enabled, payments are
@@ -114,7 +125,9 @@ export default function PrivacyPage() {
             Settings → Data &amp; privacy. (Derived records the app computes for
             you — alerts, rule evaluations, score history and import logs — are
             not included, and broker connections are never exported because
-            they contain your encrypted API key.)
+            they contain your encrypted API key. The live snapshot of open positions and
+            balance is current state, not part of your record, so it is not exported
+            either.)
           </li>
           <li>
             <strong>Delete</strong> — permanently delete your account and all of its data

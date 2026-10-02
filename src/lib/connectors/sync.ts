@@ -13,6 +13,13 @@
 import { prisma } from "@/lib/db";
 import { decryptSecret } from "@/lib/crypto";
 import {
+  getSessionToken,
+  setSessionToken,
+  dropSessionToken,
+  sessionKey,
+} from "@/lib/connectors/session";
+import { REJECTED_MESSAGE } from "@/lib/live/messages";
+import {
   pxLogin,
   pxSearchTrades,
   pairFills,
@@ -54,14 +61,32 @@ export async function syncConnection(
         "auth"
       );
     }
-    const token = await pxLogin(conn.baseUrl, conn.username, apiKey);
+    // Reuse the day's session token when there is one (it lives in memory only);
+    // a rejected token is replaced with one fresh login, once.
+    const tokenKey = sessionKey(conn.baseUrl, conn.username, apiKey);
+    let token = getSessionToken(tokenKey);
+    let freshLogin = false;
+    if (!token) {
+      token = await pxLogin(conn.baseUrl, conn.username, apiKey);
+      setSessionToken(tokenKey, token);
+      freshLogin = true;
+    }
     const start = new Date(Date.now() - WINDOW_DAYS * 86_400_000);
-    const fills = await pxSearchTrades(
-      conn.baseUrl,
-      token,
-      conn.externalAccountId,
-      start
-    );
+    const fetchFills = (t: string) =>
+      pxSearchTrades(conn.baseUrl, t, conn.externalAccountId, start);
+    let fills;
+    try {
+      fills = await fetchFills(token);
+    } catch (err) {
+      if (err instanceof ConnectorError && err.kind === "auth" && !freshLogin) {
+        dropSessionToken(tokenKey);
+        token = await pxLogin(conn.baseUrl, conn.username, apiKey);
+        setSessionToken(tokenKey, token);
+        fills = await fetchFills(token);
+      } else {
+        throw err;
+      }
+    }
     const trades = pairFills(fills);
 
     let imported = 0;
@@ -113,7 +138,14 @@ export async function syncConnection(
       err instanceof ConnectorError ? err.message : "Sync failed unexpectedly.";
     await prisma.brokerConnection.update({
       where: { id: conn.id },
-      data: { status: "error", lastError: message },
+      data: {
+        status: "error",
+        lastError: message,
+        // A rejected key also stops the live reads until the trader reconnects.
+        ...(err instanceof ConnectorError && err.kind === "auth"
+          ? { liveStatus: "rejected", lastLiveError: REJECTED_MESSAGE }
+          : {}),
+      },
     });
     throw err instanceof ConnectorError ? err : new ConnectorError(message);
   }

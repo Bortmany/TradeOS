@@ -10,6 +10,8 @@ import {
   CalendarClock,
   Scale,
   Landmark,
+  Loader2,
+  WifiOff,
 } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth";
 import { hasFeature } from "@/lib/billing/plans";
@@ -35,7 +37,14 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { formatCurrency, formatPercent, pnlColor, cn, clamp } from "@/lib/utils";
+import { formatCurrency, formatPercent, pnlColor, cn, clamp, resolveTimeZone } from "@/lib/utils";
+import { Hint } from "@/components/hint";
+import { StepMeter, usedTone } from "@/components/live/step-meter";
+import { LiveStatusChip } from "@/components/live/live-status-chip";
+import { AutoRefresh } from "@/components/live/auto-refresh";
+import { EstimatedBadge, PositionRows, WATCH_ONLY_LINE } from "@/components/live/open-positions";
+import { formatAsAt } from "@/lib/live/format";
+import { toPositionJson, type LiveAccountView } from "@/lib/alerts/view";
 
 export const dynamic = "force-dynamic";
 
@@ -61,12 +70,32 @@ const STATUS_META: Record<
   passed: { label: "Passed", badge: "info", iconClass: "text-info", icon: Trophy },
 };
 
-// Color a buffer by how much headroom is left. This is the trust signal.
-function bufferTone(pct: number): { text: string; bar: string } {
-  if (pct <= 0) return { text: "text-loss", bar: "bg-loss" };
-  if (pct < 0.25) return { text: "text-loss", bar: "bg-loss" };
-  if (pct < 0.5) return { text: "text-warning", bar: "bg-warning" };
-  return { text: "text-profit", bar: "bg-profit" };
+// Bar colour follows the SAME 50 / 80 / 100% steps as the alerts, so a bar and
+// its alert can never disagree: under 50% used = headroom (green), 50 to under
+// 80% = amber, 80% and over = red. (See usedTone in components/live/step-meter.)
+function usedPctOf(m: { used: number; limit: number } | null): number {
+  return m && m.limit > 0 ? clamp((m.used / m.limit) * 100, 0, 100) : 0;
+}
+
+const DAY_HINT =
+  "TradeOS counts a day from midnight to midnight New York time, so it matches your alerts. Topstep's own trading day starts at 6 PM New York time, so check Topstep for the official figure.";
+const PEAK_HINT =
+  "To stay on the cautious side, the peak counts open profit TradeOS saw at any update, not only closed trades.";
+const CLOSED_ONLY_HINT =
+  "TradeOS couldn't read your open positions recently, so this figure leaves them out. If you have an open loss it could be worse than shown.";
+
+function liveAccountsOf(statuses: PropStatus[]): LiveAccountView[] {
+  return statuses
+    .filter((s) => s.live.linked && s.live.health !== "none")
+    .map((s) => ({
+      accountId: s.accountId,
+      accountName: s.accountName,
+      nearLive: s.live.nearLive,
+      health: s.live.health === "none" ? "off" : s.live.health,
+      lastLiveAt: s.live.lastLiveAt ? s.live.lastLiveAt.toISOString() : null,
+      lastError: s.live.lastError,
+      lastSyncAt: null,
+    }));
 }
 
 export default async function PropPage() {
@@ -74,6 +103,8 @@ export default async function PropPage() {
   if (!user) redirect("/login");
 
   const [statuses, accounts] = await Promise.all([getPropStatus(user.id), getAccounts(user.id)]);
+  const tz = resolveTimeZone(user.timezone);
+  const now = new Date();
 
   // Accounts without a tracker, evaluation and funded first — every one of them
   // can be picked from "Add prop tracker".
@@ -117,8 +148,11 @@ export default async function PropPage() {
         title="Prop Firm Tracker"
         description="Live compliance cockpit for your evaluation and funded accounts."
       >
+        <LiveStatusChip accounts={liveAccountsOf(statuses)} />
         {accounts.length > 0 && addTracker}
       </PageHeader>
+      {/* Figures move on their own: the page re-reads about once a minute while visible. */}
+      <AutoRefresh />
 
       {statuses.length === 0 ? (
         <div className="mt-10">
@@ -175,24 +209,144 @@ export default async function PropPage() {
 
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
             {statuses.map((s) => (
-              <PropCard key={s.id} s={s} />
+              <PropCard key={s.id} s={s} tz={tz} now={now} />
             ))}
           </div>
+          {statuses.some((s) => s.live.linked && s.live.nearLive) && (
+            <div className="space-y-1 text-2xs text-muted-foreground">
+              <p>{WATCH_ONLY_LINE}</p>
+              {statuses.some((s) => s.live.estimated) && (
+                <p>
+                  Estimated: TopstepX didn&apos;t send a live price, so open P&amp;L uses the latest
+                  1-minute price.
+                </p>
+              )}
+            </div>
+          )}
         </>
       )}
     </div>
   );
 }
 
-function PropCard({ s }: { s: PropStatus }) {
+function OpenLine({ s, tz, now }: { s: PropStatus; tz: string; now: Date }) {
+  const l = s.live;
+  if (!l.linked || !l.nearLive) {
+    return <p className="text-2xs text-muted-foreground">Closed trades only.</p>;
+  }
+  if (l.includesOpen && l.lastLiveAt) {
+    const at = <span className="inline-block">{formatAsAt(l.lastLiveAt, tz, now)}</span>;
+    if (l.openCount === 0) {
+      return (
+        <p className="text-2xs tabular text-muted-foreground">
+          Closed trades only, nothing open. As at {at}.
+        </p>
+      );
+    }
+    const pnl = formatCurrency(l.openPnl, { sign: true });
+    if (l.unpricedCount > 0) {
+      return (
+        <p className="text-2xs tabular text-warning">
+          Includes all positions except {l.unpricedCount} we couldn&apos;t price, {pnl} as at {at}.
+        </p>
+      );
+    }
+    return (
+      <p className="flex flex-wrap items-center gap-x-1.5 text-2xs tabular text-muted-foreground">
+        <span>
+          Includes open positions, {pnl} as at {at}.
+        </span>
+        {l.estimated && <EstimatedBadge />}
+      </p>
+    );
+  }
+  // Linked and on, but no fresh read: closed trades only, said out loud.
+  return (
+    <Hint label={CLOSED_ONLY_HINT}>
+      <p tabIndex={0} className="text-2xs tabular text-warning focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        {l.lastLiveAt
+          ? `Closed trades only. Last live read ${formatAsAt(l.lastLiveAt, tz, now)}.`
+          : "Closed trades only. Waiting for the first live read."}
+      </p>
+    </Hint>
+  );
+}
+
+function OpenSection({ s, tz, now }: { s: PropStatus; tz: string; now: Date }) {
+  const l = s.live;
+  const positions = l.positions.map(toPositionJson);
+  const stale = l.health === "stale" || l.health === "rejected";
+  return (
+    <div className="space-y-2 border-t border-border pt-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-2xs uppercase tracking-wide text-muted-foreground">Open positions</p>
+        {l.linked && l.nearLive && l.lastLiveAt && positions.length > 0 && (
+          <span className="flex items-center gap-2">
+            {l.estimated && <EstimatedBadge />}
+            <span className={cn("text-2xs tabular", stale ? "text-warning" : "text-muted-foreground")}>
+              As at {formatAsAt(l.lastLiveAt, tz, now)}
+            </span>
+          </span>
+        )}
+      </div>
+      {!l.linked || !l.nearLive ? (
+        <p className="text-sm text-muted-foreground">
+          Open positions show here when Near-live updates are on for this account.{" "}
+          <Link href="/import" className="text-primary underline underline-offset-2">
+            Turn it on
+          </Link>
+        </p>
+      ) : l.health === "waiting" && positions.length === 0 ? (
+        <p className="flex min-h-[52px] items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Waiting for the first update…
+        </p>
+      ) : (
+        <>
+          {l.health === "rejected" && (
+            <p className="flex items-start gap-1.5 text-xs text-warning">
+              <WifiOff className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>
+                TopstepX rejected your key, so this list stopped updating
+                {l.lastLiveAt ? ` at ${formatAsAt(l.lastLiveAt, tz, now)}` : ""}.{" "}
+                <Link href="/import" className="text-primary underline underline-offset-2">
+                  Reconnect
+                </Link>
+              </span>
+            </p>
+          )}
+          {l.health === "stale" && l.lastLiveAt && (
+            <p className="flex items-start gap-1.5 text-xs text-warning">
+              <WifiOff className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>
+                Can&apos;t reach TopstepX. This is the list as at {formatAsAt(l.lastLiveAt, tz, now)} and may
+                be out of date.
+              </span>
+            </p>
+          )}
+          {positions.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No open positions right now. Flat is a fine place to be.
+            </p>
+          ) : (
+            <PositionRows positions={positions} />
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function PropCard({ s, tz, now }: { s: PropStatus; tz: string; now: Date }) {
   const meta = STATUS_META[s.status];
   const StatusIcon = meta.icon;
   // Name, status and broker come from the account itself (same helper as the
   // Accounts page and trade header); the tracker's phase is only "Eval progress".
   const shown = accountDisplay({ name: s.accountName, kind: s.accountKind, broker: s.accountBroker });
 
-  const ddTone = s.drawdown ? bufferTone(s.drawdown.bufferPct) : bufferTone(1);
-  const dailyTone = s.dailyLoss ? bufferTone(s.dailyLoss.bufferPct) : bufferTone(1);
+  const ddUsedPct = usedPctOf(s.drawdown);
+  const dailyUsedPct = usedPctOf(s.dailyLoss);
+  const ddTone = usedTone(ddUsedPct);
+  const dailyTone = usedTone(dailyUsedPct);
 
   return (
     <Card className={cn(s.status === "breached" && "border-loss/40")}>
@@ -247,18 +401,30 @@ function PropCard({ s }: { s: PropStatus }) {
                   Equity <span className="tabular text-foreground">{formatCurrency(s.currentEquity, { compact: true })}</span>
                 </p>
                 <p className="mt-0.5">
-                  Peak <span className="tabular text-foreground">{formatCurrency(s.peakEquity, { compact: true })}</span>
+                  <Hint label={PEAK_HINT}>
+                    <span tabIndex={0} className="cursor-help rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                      Peak
+                    </span>
+                  </Hint>{" "}
+                  <span className="tabular text-foreground">{formatCurrency(s.peakEquity, { compact: true })}</span>
                 </p>
               </div>
             </div>
             <div className="mt-3">
-              <Progress
-                value={clamp((s.drawdown.used / s.drawdown.limit) * 100, 0, 100)}
+              <StepMeter
+                usedPct={ddUsedPct}
                 indicatorClassName={ddTone.bar}
+                label="Drawdown used"
               />
               <div className="mt-1.5 flex justify-between text-2xs text-muted-foreground">
                 <span className="tabular">{formatCurrency(s.currentDrawdown)} used</span>
                 <span className="tabular">{formatCurrency(s.maxDrawdown ?? 0)} limit</span>
+              </div>
+              <div className="mt-1 space-y-0.5">
+                <OpenLine s={s} tz={tz} now={now} />
+                <p className="text-2xs text-muted-foreground">
+                  Peak includes the highest open profit seen at any update.
+                </p>
               </div>
             </div>
           </div>
@@ -274,6 +440,7 @@ function PropCard({ s }: { s: PropStatus }) {
                 <span className={pnlColor(s.netProfit)}>{formatPercent(clamp(s.profitTargetPct, 0, 2))}</span>
               }
               value={clamp(s.profitTargetPct * 100, 0, 100)}
+              ticks
               barClass={s.profitTargetPct >= 1 ? "bg-info" : "bg-primary"}
               left={`${formatCurrency(s.netProfit, { sign: true })}`}
               right={`of ${formatCurrency(s.profitTarget)}`}
@@ -285,11 +452,26 @@ function PropCard({ s }: { s: PropStatus }) {
             <Guardrail
               icon={Scale}
               label="Daily Loss · Buffer"
+              labelHint={DAY_HINT}
+              badge={
+                s.dailyLoss.breached ? <Badge variant="loss">Limit reached</Badge> : undefined
+              }
               headline={
                 <span className={dailyTone.text}>{formatCurrency(Math.max(0, s.dailyLossBuffer))}</span>
               }
-              value={clamp((s.dailyLoss.used / s.dailyLoss.limit) * 100, 0, 100)}
+              value={dailyUsedPct}
+              ticks
               barClass={dailyTone.bar}
+              notes={
+                <>
+                  <OpenLine s={s} tz={tz} now={now} />
+                  <Hint label={DAY_HINT}>
+                    <p tabIndex={0} className="cursor-help text-2xs text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                      Day = midnight to midnight New York time (ET).
+                    </p>
+                  </Hint>
+                </>
+              }
               left={
                 <span className={pnlColor(s.todayPnl)}>Today {formatCurrency(s.todayPnl, { sign: true })}</span>
               }
@@ -337,6 +519,8 @@ function PropCard({ s }: { s: PropStatus }) {
           )}
         </div>
 
+        <OpenSection s={s} tz={tz} now={now} />
+
         <p className="border-t border-border pt-3 text-2xs text-muted-foreground">
           {s.tradeCount} closed trade{s.tradeCount === 1 ? "" : "s"} · Worst day{" "}
           <span className="tabular text-loss">{formatCurrency(-s.worstDayLoss)}</span> · Net{" "}
@@ -355,6 +539,10 @@ function Guardrail({
   barClass,
   left,
   right,
+  ticks = false,
+  labelHint,
+  badge,
+  notes,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
@@ -363,22 +551,46 @@ function Guardrail({
   barClass?: string;
   left: React.ReactNode;
   right: React.ReactNode;
+  /** Draw the 50% and 80% step marks on the bar (the alert steps). */
+  ticks?: boolean;
+  labelHint?: string;
+  badge?: React.ReactNode;
+  /** Extra small lines under the left/right pair (what the figure includes). */
+  notes?: React.ReactNode;
 }) {
   return (
     <div className="rounded-lg border border-border bg-surface-raised/60 p-3">
-      <div className="flex items-center justify-between">
-        <p className="flex items-center gap-1.5 text-2xs uppercase tracking-wide text-muted-foreground">
-          <Icon className="h-3.5 w-3.5" />
-          {label}
-        </p>
+      <div className="flex items-center justify-between gap-2">
+        {labelHint ? (
+          <Hint label={labelHint}>
+            <p
+              tabIndex={0}
+              className="flex cursor-help items-center gap-1.5 rounded-sm text-2xs uppercase tracking-wide text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <Icon className="h-3.5 w-3.5" />
+              {label}
+            </p>
+          </Hint>
+        ) : (
+          <p className="flex items-center gap-1.5 text-2xs uppercase tracking-wide text-muted-foreground">
+            <Icon className="h-3.5 w-3.5" />
+            {label}
+          </p>
+        )}
+        {badge}
       </div>
       <p className="mt-1 text-2xl font-semibold tabular">{headline}</p>
       <div className="mt-2">
-        <Progress value={value} indicatorClassName={barClass} />
+        {ticks ? (
+          <StepMeter usedPct={value} indicatorClassName={barClass} label={label} />
+        ) : (
+          <Progress value={value} indicatorClassName={barClass} />
+        )}
         <div className="mt-1.5 flex justify-between text-2xs text-muted-foreground">
           <span className="tabular">{left}</span>
           <span className="tabular">{right}</span>
         </div>
+        {notes && <div className="mt-1 space-y-0.5">{notes}</div>}
       </div>
     </div>
   );

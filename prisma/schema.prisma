@@ -56,6 +56,7 @@ model User {
   alerts          Alert[]
   sessions        Session[]
   brokerConnections BrokerConnection[]
+  positionSnapshots PositionSnapshot[]
   weeklyReviews   WeeklyReview[]
   backtestRuns    BacktestRun[]
   marketDatasets  MarketDataset[]
@@ -373,10 +374,52 @@ model BrokerConnection {
   status      String   @default("connected")
   lastSyncAt  DateTime?
   lastError   String?
+
+  // Near-live (read-only positions + balance, about every 60 seconds). All
+  // additive. Live failures never touch status/lastError (those belong to the
+  // 30-minute fill sync).
+  nearLive      Boolean   @default(true)
+  lastBalance   Float?    // shown to the trader only; never used in limit maths
+  lastLiveAt    DateTime? // last SUCCESSFUL live read
+  lastLiveError String?   // plain-English reason the last live read failed
+  // liveStatus: ok | unreachable | rejected  (rejected = stop polling until reconnect)
+  liveStatus    String    @default("ok")
+  // Highest equity (start + closed P&L + open P&L) seen at any live read;
+  // lets the drawdown peak include open profit (cautious choice).
+  livePeakEquity Float?
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  positionSnapshots PositionSnapshot[]
+
   @@index([userId])
+}
+
+// The CURRENT open positions on a connected broker account, replaced on every
+// live read (no history kept). Live state, not part of the trader's record.
+model PositionSnapshot {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  connectionId String
+  connection   BrokerConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  contractId   String
+  symbol       String
+  side         String   // long | short
+  size         Float
+  avgPrice     Float
+  lastPrice    Float?   // broker's current price, or the latest 1-minute bar close
+  // priceSource: broker | bar  (null when no price could be found)
+  priceSource  String?
+  openPnl      Float?   // null when the position could not be priced
+  // notPricedReason: no_point_value | no_price  (null when priced)
+  notPricedReason String?
+  readAt       DateTime
+
+  @@index([userId])
+  @@index([connectionId])
 }
 
 // --------------------------------------------------------------------------
@@ -450,7 +493,10 @@ model Alert {
   message     String
   // status: open | acknowledged | resolved
   status      String   @default("open")
-  meta        String?  // serialized JSON
+  meta        String?  // serialized JSON (shape in docs/CONTRACTS.md, "Live alerts")
+  // Set when the trader dismisses the alert; cleared again (in place) when the
+  // measure climbs to a higher step. Additive, nullable.
+  dismissedAt DateTime?
   createdAt   DateTime @default(now())
 
   @@index([userId, status])
