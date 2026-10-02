@@ -149,9 +149,12 @@ describe("the fixed label table", () => {
     expect(timeZoneOptionLabel("Europe/London")).toBe("London (GMT/BST)");
   });
 
-  it("a zone outside the table falls back to the runtime's short name", () => {
+  it("a zone outside the table prints a hand-built UTC offset, the same on every machine", () => {
     const label = timeZoneLabel("Asia/Kolkata", SEP_FILL);
-    expect(label.length).toBeGreaterThan(0);
+    expect(label).toBe("UTC+5:30");
+    expect(sameEverywhere(() => timeZoneLabel("Asia/Kolkata", SEP_FILL))).toBe("UTC+5:30");
+    expect(timeZoneLabel("Asia/Kathmandu", SEP_FILL)).toBe("UTC+5:45");
+    expect(timeZoneLabel("America/St_Johns", SEP_FILL)).toBe("UTC-2:30");
     expect(formatDateTime(SEP_FILL, "Asia/Kolkata")).toBe(`Sep 15, 7:15${NB}PM${NB}${label}`);
   });
 });

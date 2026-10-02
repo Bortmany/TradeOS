@@ -2,6 +2,7 @@
 // Runs already saved keep their own copy of the wording, so neither action
 // changes history.
 
+import { routeIdSchema } from "@/lib/route-id";
 import { NextResponse } from "next/server";
 import { withUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
@@ -19,7 +20,7 @@ export const PATCH = withUser(async (user, req: Request, { params }: Ctx) => {
   const limited = enforceUserRateLimit("checklists:write", user.id);
   if (limited) return limited;
   try {
-    const { id } = await params;
+    const id = routeIdSchema.parse((await params).id);
     const existing = await prisma.checklistTemplate.findFirst({
       where: { id, userId: user.id },
       select: { id: true },
@@ -93,7 +94,7 @@ export const DELETE = withUser(async (user, _req: Request, { params }: Ctx) => {
   const limited = enforceUserRateLimit("checklists:write", user.id);
   if (limited) return limited;
   try {
-    const { id } = await params;
+    const id = routeIdSchema.parse((await params).id);
     const existing = await prisma.checklistTemplate.findFirst({
       where: { id, userId: user.id },
       select: { id: true },

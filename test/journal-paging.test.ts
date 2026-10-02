@@ -336,3 +336,19 @@ describe("bad cursors", () => {
     expect((await get("from=2026-02-30")).status).toBe(400);
   });
 });
+
+describe("rate limit", () => {
+  it("the 121st page request inside a minute answers 429 with Retry-After and a plain message", async () => {
+    // USER_READ_LIMIT is 120 per minute per person (limiter name "trades:page").
+    for (let i = 0; i < 120; i++) {
+      const ok = await get("limit=1");
+      expect(ok.status).toBe(200);
+    }
+    const last = await get("limit=1");
+    expect(last.status).toBe(429);
+    expect(Number(last.headers.get("Retry-After"))).toBeGreaterThan(0);
+    const json = await last.json();
+    expect(json.ok).toBe(false);
+    expect(json.error).toMatch(/too many requests/i);
+  });
+});

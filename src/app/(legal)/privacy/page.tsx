@@ -107,7 +107,23 @@ export default function PrivacyPage() {
             maker&apos;s push service (Google, Mozilla, Apple or Microsoft), which sees the
             address and the delivery but not a readable message. They are removed when you
             turn alerts off on that device, when the push service says the device is gone, or
-            when you delete your account, and they are not part of your data export.
+            when you delete your account, and they are not part of your data export. We also
+            keep a small note of which warning step we already sent for each alert, so the
+            same warning is not sent twice; it goes when the alert or your account does.
+          </li>
+          <li>
+            <strong>On your device</strong> — the position-size calculator remembers the last
+            account size and risk percentage you typed, in your browser&apos;s own storage on
+            that device only. It is never sent to us. The app also registers a small service
+            worker that only shows phone warnings; it stores none of your data. Clearing your
+            browser data removes both.
+          </li>
+          <li>
+            <strong>The demo desk</strong> — &quot;Explore the demo desk&quot; signs you in to a
+            shared look-around account filled with made-up trades. It is read-only: nothing
+            you do there is saved, and it collects no details from you. &quot;Load sample
+            data&quot; adds made-up trades to your own account, marked as samples, and you can
+            clear them in one click.
           </li>
           <li>
             <strong>Billing</strong> — if paid subscriptions are enabled, payments are
@@ -148,7 +164,8 @@ export default function PrivacyPage() {
         <ul className="list-disc space-y-1.5 pl-5">
           <li>
             <strong>Export</strong> — download a copy of your profile, trading accounts,
-            trades, rulebooks, prop-firm data, weekly reviews and saved strategy tests
+            trades, rulebooks, prop-firm data, pre-trade checklists and the runs you saved,
+            weekly reviews and saved strategy tests
             (plus the name and date range of each uploaded price-data file) as a JSON
             file (your &quot;Why I entered&quot; text is included; screenshot pictures are not) from
             Settings → Data &amp; privacy. (Derived records the app computes for

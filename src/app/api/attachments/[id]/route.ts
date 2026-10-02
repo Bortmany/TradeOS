@@ -4,6 +4,7 @@
 // confirm it exists). Nothing is ever served from a path the caller supplied: the
 // file is found by the key saved in our own database.
 
+import { routeIdSchema } from "@/lib/route-id";
 import { NextResponse } from "next/server";
 import { withUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
@@ -30,7 +31,7 @@ export const GET = withUser(async (
   if (limited) return limited;
 
   try {
-    const { id } = await params;
+    const id = routeIdSchema.parse((await params).id);
     const row = await prisma.attachment.findFirst({
       where: { id, kind: "screenshot", trade: { userId: user.id } },
       select: { url: true, mimeType: true },
@@ -71,7 +72,7 @@ export const DELETE = withUser(async (
   if (limited) return limited;
 
   try {
-    const { id } = await params;
+    const id = routeIdSchema.parse((await params).id);
     const row = await prisma.attachment.findFirst({
       where: { id, kind: "screenshot", trade: { userId: user.id } },
       select: { id: true, url: true },

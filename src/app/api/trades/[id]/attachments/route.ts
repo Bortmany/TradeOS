@@ -9,6 +9,7 @@
 // Afterwards the user's rule compliance is recomputed so a "screenshot required"
 // rule passes. The scoring engine itself is untouched.
 
+import { routeIdSchema } from "@/lib/route-id";
 import { NextResponse } from "next/server";
 import { withUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
@@ -84,7 +85,7 @@ export const POST = withUser(async (
   if (!storage) return fail(503, "storage_off", "Screenshots aren't switched on yet.");
 
   try {
-    const { id } = await params;
+    const id = routeIdSchema.parse((await params).id);
     const trade = await prisma.trade.findFirst({
       where: { id, userId: user.id },
       select: { id: true },

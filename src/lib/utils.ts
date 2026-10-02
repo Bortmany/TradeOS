@@ -202,7 +202,7 @@ function zoneOffsetMinutes(date: Date, zone: string): number {
 /**
  * The short label printed after a time in `zone` at this instant: the fixed
  * table first (GMT vs BST picked by whether daylight saving is in force at that
- * instant), then the runtime's own short name for zones outside the table.
+ * instant), then a hand-built "UTC+5"-style offset for zones outside the table.
  */
 export function timeZoneLabel(zone: string, at: Date): string {
   const tz = resolveTimeZone(zone);
@@ -214,11 +214,16 @@ export function timeZoneLabel(zone: string, at: Date): string {
     const jul = zoneOffsetMinutes(new Date(Date.UTC(year, 6, 1)), tz);
     return zoneOffsetMinutes(at, tz) > Math.min(jan, jul) ? entry.dst : entry.std;
   }
+  // Not in the table: print a hand-built offset ("UTC+5", "UTC+5:30"). The
+  // runtime's own short name ("GMT+5", "CST") can differ between server and
+  // browser, which would cause a hydration mismatch.
   try {
-    const part = new Intl.DateTimeFormat("en-US", { timeZone: tz, timeZoneName: "short" })
-      .formatToParts(at)
-      .find((p) => p.type === "timeZoneName");
-    return part?.value ?? tz;
+    const mins = zoneOffsetMinutes(at, tz);
+    const sign = mins < 0 ? "-" : "+";
+    const abs = Math.abs(mins);
+    const h = Math.floor(abs / 60);
+    const m = abs % 60;
+    return `UTC${sign}${h}${m ? `:${String(m).padStart(2, "0")}` : ""}`;
   } catch {
     return tz;
   }

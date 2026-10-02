@@ -79,10 +79,23 @@ interface DiscoveredAccount {
   canTrade?: boolean;
 }
 
-function relativeTime(iso: string, timeZone: string): string {
+// "3m ago" depends on the clock, so the server and the browser would print
+// different words and React would warn. Until the page has mounted we print the
+// exact date and time instead (same on both sides); the "ago" wording takes
+// over after mount, using a clock value kept in state.
+function useMountedNow(): number | null {
+  const [now, setNow] = React.useState<number | null>(null);
+  React.useEffect(() => {
+    setNow(Date.now());
+  }, []);
+  return now;
+}
+
+function relativeTime(iso: string, timeZone: string, now: number | null): string {
   const then = new Date(iso).getTime();
   if (!isFinite(then)) return "—";
-  const diffMin = Math.round((Date.now() - then) / 60_000);
+  if (now === null) return formatDateTime(iso, timeZone);
+  const diffMin = Math.round((now - then) / 60_000);
   if (diffMin < 1) return "just now";
   if (diffMin < 60) return `${diffMin}m ago`;
   const h = Math.floor(diffMin / 60);
@@ -327,6 +340,8 @@ function ConnectionRow({
     }
   }
 
+  const mountedNow = useMountedNow();
+
   return (
     <div
       className={cn(
@@ -349,7 +364,7 @@ function ConnectionRow({
         <p className="mt-0.5 truncate text-2xs text-muted-foreground">
           → {connection.accountName} · Last sync{" "}
           <span className="tabular">
-            {connection.lastSyncAt ? relativeTime(connection.lastSyncAt, timeZone) : "never"}
+            {connection.lastSyncAt ? relativeTime(connection.lastSyncAt, timeZone, mountedNow) : "never"}
           </span>
         </p>
         <LiveLine connection={connection} timeZone={timeZone} />

@@ -3,6 +3,7 @@
 // one trade and a trade has at most one run. Only the owner's rows are ever
 // touched; someone else's id looks exactly like a missing one.
 
+import { routeIdSchema } from "@/lib/route-id";
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { withUser } from "@/lib/auth";
@@ -23,7 +24,7 @@ export const PATCH = withUser(async (user, req: Request, { params }: Ctx) => {
   const limited = enforceUserRateLimit("checklists:write", user.id);
   if (limited) return limited;
   try {
-    const { id } = await params;
+    const id = routeIdSchema.parse((await params).id);
     const run = await prisma.checklistRun.findFirst({
       where: { id, userId: user.id },
       select: { id: true, tradeId: true },
@@ -75,7 +76,7 @@ export const DELETE = withUser(async (user, _req: Request, { params }: Ctx) => {
   const limited = enforceUserRateLimit("checklists:write", user.id);
   if (limited) return limited;
   try {
-    const { id } = await params;
+    const id = routeIdSchema.parse((await params).id);
     const run = await prisma.checklistRun.findFirst({
       where: { id, userId: user.id },
       select: { id: true },

@@ -55,7 +55,6 @@ export const viewport: Viewport = {
   ],
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
   // Lets the page reach under the phone's home indicator so
   // env(safe-area-inset-bottom) is real (the bottom bar pads by it).
   viewportFit: "cover",

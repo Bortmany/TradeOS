@@ -172,7 +172,11 @@ export interface TradePage {
   total: number;
 }
 
-/** Clamp a requested page size to 1..JOURNAL_PAGE_MAX (the server-side cap). */
+/**
+ * Clamp a requested page size to 1..JOURNAL_PAGE_MAX (the server-side cap).
+ * No size asked for means the cap (100); the journal route and page pass their
+ * own default (JOURNAL_PAGE_SIZE, 50) explicitly.
+ */
 export function clampPageSize(limit: number | undefined): number {
   if (limit === undefined || !Number.isFinite(limit)) return JOURNAL_PAGE_MAX;
   return Math.min(JOURNAL_PAGE_MAX, Math.max(1, Math.floor(limit)));

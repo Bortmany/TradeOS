@@ -18,6 +18,7 @@ import {
 import { healthOf } from "@/lib/live/state";
 import { sessionKey, dropSessionToken } from "@/lib/connectors/session";
 import { refuseDemo } from "@/lib/demo-guard";
+import { apiErrorResponse } from "@/lib/api-error";
 
 // The gateway address is never taken from the request: the client sends a firm
 // id from the registry and the server looks up the URL itself. A stray
@@ -261,7 +262,7 @@ export const PATCH = withUser(async (user, req: Request) => {
       data: { nearLive: d.nearLive },
     });
     return NextResponse.json({ ok: true, nearLive: d.nearLive });
-  } catch {
-    return NextResponse.json({ ok: false, error: "Invalid request." }, { status: 400 });
+  } catch (err) {
+    return apiErrorResponse(err, { validationMessage: "Invalid request." });
   }
 });

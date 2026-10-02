@@ -1,7 +1,7 @@
 // TradeOS — data export. Returns everything the signed-in user has stored, as
 // one downloadable JSON file: profile (minus the password hash), trading
 // accounts, trades, rulebooks + rules, prop-firm trackers, weekly reviews,
-// backtest runs, and market datasets (details only, not the raw price bars).
+// pre-trade checklists and saved runs, backtest runs, and market datasets (details only, not the raw price bars).
 // Broker connections are deliberately NOT included — they hold the encrypted API key,
 // and broker credentials never leave the server in any form.
 
@@ -29,6 +29,8 @@ export const GET = withUser(async (user) => {
     weeklyReviews,
     backtestRuns,
     marketDatasets,
+    checklists,
+    checklistRuns,
   ] = await Promise.all([
     prisma.user.findUnique({
       where: { id: user.id },
@@ -78,6 +80,13 @@ export const GET = withUser(async (user) => {
         createdAt: true,
       },
     }),
+    // The trader's own pre-trade checklists (questions) and each saved run.
+    prisma.checklistTemplate.findMany({
+      where: { userId: user.id },
+      include: { items: { orderBy: { order: "asc" } } },
+      orderBy: { createdAt: "asc" },
+    }),
+    prisma.checklistRun.findMany({ where: { userId: user.id }, orderBy: { createdAt: "asc" } }),
   ]);
 
   const filename = `tradeos-export-${new Date().toISOString().slice(0, 10)}.json`;
@@ -92,6 +101,8 @@ export const GET = withUser(async (user) => {
       weeklyReviews,
       backtestRuns,
       marketDatasets,
+      checklists,
+      checklistRuns,
     },
     { headers: { "Content-Disposition": `attachment; filename="${filename}"` } }
   );
