@@ -389,6 +389,12 @@ model BrokerConnection {
   // Highest equity (start + closed P&L + open P&L) seen at any live read;
   // lets the drawdown peak include open profit (cautious choice).
   livePeakEquity Float?
+  // A position closed (or shrank) between two live reads, so its open loss left the
+  // snapshot before the closed trade reached us. The loss that left (<= 0) is kept
+  // counted until the fill sync brings the closed trade (or 35 minutes pass), so a
+  // warning never drops in between. Cleared when the fills land.
+  pendingCloseLoss Float?
+  pendingCloseAt   DateTime?
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -422,6 +428,21 @@ model PositionSnapshot {
 
   @@index([userId])
   @@index([connectionId])
+}
+
+// "Only one server copy runs this job" lease (src/lib/single-runner.ts). One row
+// per job. A copy takes the lease with an atomic conditional update/insert,
+// renews it while it works and gives it back at the end; a crashed copy's lease
+// simply runs out. Plain rows, so it works on SQLite and Postgres and needs no
+// pinned database connection (safe behind PgBouncer with a pool of 1).
+model RunnerLease {
+  name      String    @id // e.g. "runner:4927002"
+  holder    String    // random id of the server copy that owns it
+  expiresAt DateTime
+  // Health of the last run, so a silently failing job is visible.
+  lastRunAt DateTime?
+  lastOkAt  DateTime?
+  lastError String?   // plain-English reason the last run failed (null = fine)
 }
 
 // --------------------------------------------------------------------------

@@ -52,7 +52,12 @@ export interface DiscoveredAccount {
 export class ConnectorError extends Error {
   constructor(
     message: string,
-    public readonly kind: "auth" | "network" | "api" | "rate_limit" = "api",
+    /**
+     * "key_rejected" = the login endpoint explicitly answered success:false (bad key):
+     * the only permanent refusal. "auth" = a bare 401/403 (could be an expired token or
+     * a hiccup): the caller retries, never treats it as a bad key.
+     */
+    public readonly kind: "auth" | "key_rejected" | "network" | "api" | "rate_limit" = "api",
     /** For kind "rate_limit": the broker's Retry-After, in seconds, if it sent one. */
     public readonly retryAfterSec?: number
   ) {
@@ -119,6 +124,8 @@ export async function pxPost<T>(
       },
       body: JSON.stringify(body),
       cache: "no-store",
+      // A redirect could send the key or token to another host: refuse every one.
+      redirect: "error",
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
   } catch (err) {
@@ -155,11 +162,16 @@ export async function pxLogin(
     success?: boolean;
     errorMessage?: string | null;
   }>(baseUrl, "/api/Auth/loginKey", { userName, apiKey });
-  if (!json.success || !json.token) {
+  if (json.success === false) {
+    // The gateway's explicit "no" to this key: the only permanent refusal.
     throw new ConnectorError(
       json.errorMessage || "Login failed — check your TopstepX username and API key.",
-      "auth"
+      "key_rejected"
     );
+  }
+  if (!json.success || !json.token) {
+    // An odd or empty answer is a gateway problem, not proof the key is bad.
+    throw new ConnectorError("The broker gave no session. Try again shortly.", "api");
   }
   return json.token;
 }

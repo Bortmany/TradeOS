@@ -60,6 +60,8 @@ export interface AlertMeta {
   openCount: number;
   openEstimated: boolean;
   unpricedCount: number;
+  /** Loss (<= 0) of a position that just closed, counted until its fills land (0 = none). */
+  pendingCloseLoss?: number;
   /** Set by the dismiss route: the step at which the trader dismissed it. */
   dismissedStep?: number;
   /** Set when the alert is resolved (ISO). */
@@ -86,9 +88,17 @@ const STALE_PROTECT_MS = DAY_MS;
 // read finishing together cannot both create the same alert.
 const chains = new Map<string, Promise<unknown>>();
 
-export function generateAlerts(userId: string, now: Date = new Date()): Promise<number> {
+/**
+ * `skipPush`: the caller (the live poller) sends the phone warnings itself, after
+ * its pass and outside its lock deadline, with notifyAlertSteps.
+ */
+export function generateAlerts(
+  userId: string,
+  now: Date = new Date(),
+  opts: { skipPush?: boolean } = {}
+): Promise<number> {
   const prev = chains.get(userId) ?? Promise.resolve();
-  const next = prev.catch(() => undefined).then(() => generateAlertsNow(userId, now));
+  const next = prev.catch(() => undefined).then(() => generateAlertsNow(userId, now, opts.skipPush === true));
   chains.set(userId, next);
   void next.then(
     () => chains.get(userId) === next && chains.delete(userId),
@@ -109,7 +119,7 @@ function parseMeta(raw: string | null): Partial<AlertMeta> | null {
 
 const pct = (n: number) => Math.min(100, Math.round(n * 100));
 
-async function generateAlertsNow(userId: string, now: Date): Promise<number> {
+async function generateAlertsNow(userId: string, now: Date, skipPush = false): Promise<number> {
   const [accounts, closedTrades, propAccounts, highFails, live] = await Promise.all([
     prisma.tradingAccount.findMany({ where: { userId } }),
     prisma.trade.findMany({
@@ -153,9 +163,12 @@ async function generateAlertsNow(userId: string, now: Date): Promise<number> {
       openCount: open?.openCount ?? 0,
       openEstimated: open?.estimated ?? false,
       unpricedCount: open?.unpricedCount ?? 0,
+      pendingCloseLoss: open?.pendingCloseLoss ?? 0,
       asAt: (open && conn?.lastLiveAt ? conn.lastLiveAt : now).toISOString(),
-      // A linked account without a fresh read: existing figures are never lowered by this pass.
-      stale: linked && !open,
+      // A live-switched-on account without a fresh read (including one whose key the
+      // broker REJECTED: its open figure is unknown): existing figures are never
+      // lowered by this pass, for up to 24 hours.
+      stale: !!conn && conn.nearLive && !open,
     };
   }
 
@@ -387,7 +400,7 @@ async function generateAlertsNow(userId: string, now: Date): Promise<number> {
 
   await reconcile(userId, specs, protectedKeys, now);
   // Phone warning for each new alert / step up (never throws; off unless keyed).
-  await notifyAlertSteps(userId);
+  if (!skipPush) await notifyAlertSteps(userId);
   return specs.length;
 }
 

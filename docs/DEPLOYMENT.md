@@ -24,7 +24,11 @@ and **Paddle** billing.
    kinds of URLs:
    - **Pooler / Transaction** (host `...pooler.supabase.com`, port `6543`) —
      use this for the running app. Append `?pgbouncer=true&connection_limit=1`.
-     Serverless functions on Vercel require a pooled connection.
+     Serverless functions on Vercel require a pooled connection. The background
+     jobs (live reads and the 30-minute sync) are safe with `connection_limit=1`:
+     their "only one copy runs" guard is a small lease row in the database, not a
+     lock that holds a connection (see `docs/CONTRACTS.md`, Package J). Check
+     `/api/health`: `liveReads` and `fillSweep` say `ok`, `failing` or `idle`.
    - **Direct** (host `db.[REF].supabase.co`, port `5432`) — use this for
      schema pushes / migrations if the pooler ever refuses a `db push`.
 4. Copy the pooler string, insert your database password where it says

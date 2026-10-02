@@ -43,6 +43,11 @@ export interface OpenState {
   unpricedCount: number;
   /** True when at least one priced position used the 1-minute bar estimate. */
   estimated: boolean;
+  /**
+   * Loss (< 0) of a position that just closed, already included in `openPnl`,
+   * kept counted until the closed trade arrives from the broker's fills.
+   */
+  pendingCloseLoss?: number;
 }
 
 export interface LimitInput {

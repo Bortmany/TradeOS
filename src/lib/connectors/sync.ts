@@ -34,10 +34,29 @@ export interface SyncResult {
   skipped: number;
 }
 
+/** Thrown by `beforeCall` when the shared call budget says "not now": nothing is recorded as an error. */
+export class SyncDeferred extends Error {
+  constructor(message = "Sync deferred: the broker call budget is used up or backing off.") {
+    super(message);
+    this.name = "SyncDeferred";
+  }
+}
+
+export interface SyncOptions {
+  /** Awaited before EVERY broker call (login or fills) so background jobs can count it in the shared budget. Throw SyncDeferred to stop. */
+  beforeCall?: () => Promise<void>;
+  /** The broker answered 429: lets the caller start the shared back-off. */
+  onRateLimit?: (retryAfterSec?: number) => void;
+}
+
 export async function syncConnection(
   connectionId: string,
-  userId: string
+  userId: string,
+  opts: SyncOptions = {}
 ): Promise<SyncResult> {
+  const gate = async () => {
+    await opts.beforeCall?.();
+  };
   const conn = await prisma.brokerConnection.findFirst({
     where: { id: connectionId, userId },
     include: { account: true },
@@ -49,7 +68,7 @@ export async function syncConnection(
     // only calls addresses on the firm registry's allow-list — anything else
     // (a private/loopback address, an unknown host) is refused, never fetched.
     if (!isAllowedBaseUrl(conn.baseUrl)) {
-      throw new ConnectorError(DISALLOWED_BASE_URL_MESSAGE, "auth");
+      throw new ConnectorError(DISALLOWED_BASE_URL_MESSAGE, "key_rejected");
     }
 
     let apiKey: string;
@@ -58,7 +77,7 @@ export async function syncConnection(
     } catch {
       throw new ConnectorError(
         "Stored credentials could not be decrypted (was AUTH_SECRET rotated?). Disconnect and reconnect this account.",
-        "auth"
+        "key_rejected"
       );
     }
     // Reuse the day's session token when there is one (it lives in memory only);
@@ -67,6 +86,7 @@ export async function syncConnection(
     let token = getSessionToken(tokenKey);
     let freshLogin = false;
     if (!token) {
+      await gate();
       token = await pxLogin(conn.baseUrl, conn.username, apiKey);
       setSessionToken(tokenKey, token);
       freshLogin = true;
@@ -76,12 +96,15 @@ export async function syncConnection(
       pxSearchTrades(conn.baseUrl, t, conn.externalAccountId, start);
     let fills;
     try {
+      await gate();
       fills = await fetchFills(token);
     } catch (err) {
       if (err instanceof ConnectorError && err.kind === "auth" && !freshLogin) {
         dropSessionToken(tokenKey);
+        await gate();
         token = await pxLogin(conn.baseUrl, conn.username, apiKey);
         setSessionToken(tokenKey, token);
+        await gate();
         fills = await fetchFills(token);
       } else {
         throw err;
@@ -134,6 +157,11 @@ export async function syncConnection(
 
     return { imported, skipped };
   } catch (err) {
+    // A budget "not now" is not a failure of the connection: record nothing.
+    if (err instanceof SyncDeferred) throw err;
+    if (err instanceof ConnectorError && err.kind === "rate_limit") {
+      opts.onRateLimit?.(err.retryAfterSec);
+    }
     const message =
       err instanceof ConnectorError ? err.message : "Sync failed unexpectedly.";
     await prisma.brokerConnection.update({
@@ -142,7 +170,7 @@ export async function syncConnection(
         status: "error",
         lastError: message,
         // A rejected key also stops the live reads until the trader reconnects.
-        ...(err instanceof ConnectorError && err.kind === "auth"
+        ...(err instanceof ConnectorError && err.kind === "key_rejected"
           ? { liveStatus: "rejected", lastLiveError: REJECTED_MESSAGE }
           : {}),
       },

@@ -193,6 +193,19 @@ describe("server-wide call budget and 429 back-off", () => {
   });
 });
 
+describe("a long Retry-After is honoured", () => {
+  it("a 20-minute Retry-After is waited out in full; anything past 30 minutes is capped", () => {
+    let t = 0;
+    const b = new CallBudget(100, () => t);
+    b.onRateLimited(20 * 60);
+    expect(b.backoffRemainingMs()).toBe(20 * 60_000);
+    b.onSuccess();
+    t += 20 * 60_000;
+    b.onRateLimited(3 * 3600);
+    expect(b.backoffRemainingMs()).toBe(30 * 60_000);
+  });
+});
+
 function alert(over: Partial<AlertView>): AlertView {
   return {
     id: "a1",
@@ -212,6 +225,7 @@ function alert(over: Partial<AlertView>): AlertView {
     source: "live",
     openCount: 1,
     openEstimated: true,
+    pendingCloseLoss: 0,
     unpricedCount: 0,
     stale: false,
     createdAt: "2026-10-02T18:00:00Z",

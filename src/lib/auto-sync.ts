@@ -12,8 +12,9 @@
 //                           is mainly useful in tests)
 
 import { prisma } from "@/lib/db";
-import { syncConnection } from "@/lib/connectors/sync";
-import { withSingleRunner } from "@/lib/single-runner";
+import { syncConnection, SyncDeferred } from "@/lib/connectors/sync";
+import { withSingleRunner, type RunContext, type RunnerOutcome } from "@/lib/single-runner";
+import { CallBudget, liveBudget } from "@/lib/live/budget";
 
 // Survive dev hot-reloads / duplicate register() calls with a global singleton.
 const globalScheduler = globalThis as unknown as {
@@ -33,45 +34,92 @@ function intervalMinutes(): number {
 // When TradeOS runs as several Railway instances, each one boots this same
 // scheduler, so without a guard every connection would be synced N times per
 // interval — wasted work and extra load on the broker's API. Whichever instance
-// takes the Postgres advisory lock runs the sweep; the rest skip this tick.
+// takes the lease (a row in the RunnerLease table) runs the sweep; the rest skip
+// this tick.
 //
 // The guard lives in src/lib/single-runner.ts, shared with the 60-second live
-// poller. It uses a transaction-scoped lock: the old session-level lock could be
-// "unlocked" on a different pooled database session, leaving it stuck on an idle
-// one, and every later sweep on another session would then skip silently.
-const AUTO_SYNC_LOCK_KEY = 4927001; // arbitrary but stable 32-bit key for the fill sweep
-// The sweep holds its lock for as long as it runs; never abandon it sooner than this.
-const SWEEP_MAX_RUN_MS = 2 * 60 * 60_000;
+// poller. It is a lease row, not a database lock: the old session-level lock got
+// stuck on pooled sessions, and the pinned-transaction version starved the work
+// behind PgBouncer's one-connection pool. A lease needs no pinned connection.
+export const AUTO_SYNC_LOCK_KEY = 4927001; // arbitrary but stable 32-bit key for the fill sweep
+// The sweep must stop on its own before the next one is due (the rest go first
+// next time: connections are worked oldest-sync first). Its lease is renewed
+// while it works, so this is a work limit, not a lock limit.
+const SWEEP_DEADLINE_MS = 25 * 60_000;
+const SWEEP_LEASE_MS = 2 * 60_000;
+// A sweep where at least this many connections were tried and ALL failed is a
+// failed run (a bad key for one trader is not).
+const SWEEP_ALL_FAILED_MIN = 3;
 
-async function sweepWork(): Promise<void> {
-  try {
-    const connections = await prisma.brokerConnection.findMany({
-      orderBy: { lastSyncAt: "asc" },
-      select: { id: true, userId: true, externalAccountName: true },
-    });
-    if (connections.length === 0) return;
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-    let imported = 0;
-    let failed = 0;
-    for (const conn of connections) {
-      try {
-        const r = await syncConnection(conn.id, conn.userId);
-        imported += r.imported;
-      } catch {
-        failed++; // recorded on the connection row by syncConnection
-      }
+/**
+ * Before every broker call the sweep asks the same server-wide budget the live
+ * poller uses. It waits briefly for room in the minute; when the broker is
+ * backing off (or the sweep's own deadline hit) it stops and the rest wait for
+ * the next sweep.
+ */
+function sweepGate(ctx: RunContext, budget: CallBudget): () => Promise<void> {
+  return async () => {
+    for (;;) {
+      if (ctx.expired() || budget.inBackoff()) throw new SyncDeferred();
+      if (budget.take()) return;
+      await sleep(1_000);
     }
-    console.log(
-      `[auto-sync] ${connections.length} connection(s) swept: +${imported} trades, ${failed} failed`
-    );
-  } catch (err) {
-    // Never let the scheduler take the server down.
-    console.error("[auto-sync] sweep error:", (err as Error).message);
+  };
+}
+
+async function sweepWork(ctx: RunContext, budget: CallBudget): Promise<void> {
+  const connections = await prisma.brokerConnection.findMany({
+    orderBy: { lastSyncAt: "asc" },
+    select: { id: true, userId: true, externalAccountName: true },
+  });
+  if (connections.length === 0) return;
+
+  let imported = 0;
+  let failed = 0;
+  let tried = 0;
+  const beforeCall = sweepGate(ctx, budget);
+  for (const conn of connections) {
+    if (ctx.expired()) break;
+    try {
+      const r = await syncConnection(conn.id, conn.userId, {
+        beforeCall,
+        onRateLimit: (s) => budget.onRateLimited(s),
+      });
+      tried++;
+      imported += r.imported;
+    } catch (err) {
+      if (err instanceof SyncDeferred) break; // budget used / backing off: resume next sweep
+      tried++;
+      failed++; // recorded on the connection row by syncConnection
+    }
+  }
+  const left = connections.length - tried;
+  console.log(
+    `[auto-sync] ${tried}/${connections.length} connection(s) swept: +${imported} trades, ${failed} failed` +
+      (left > 0 ? `, ${left} left for the next sweep` : "")
+  );
+  if (failed > 0 && failed === tried && tried >= SWEEP_ALL_FAILED_MIN) {
+    throw new Error(`every one of ${tried} connections failed to sync`);
   }
 }
 
-export async function runSweep(): Promise<void> {
-  await withSingleRunner(AUTO_SYNC_LOCK_KEY, "auto-sync", sweepWork, SWEEP_MAX_RUN_MS);
+let sweeping = false;
+
+export async function runSweep(budget: CallBudget = liveBudget): Promise<RunnerOutcome | "already-running"> {
+  if (sweeping) return "already-running";
+  sweeping = true;
+  try {
+    return await withSingleRunner(
+      AUTO_SYNC_LOCK_KEY,
+      "auto-sync",
+      (ctx) => sweepWork(ctx, budget),
+      { deadlineMs: SWEEP_DEADLINE_MS, leaseMs: SWEEP_LEASE_MS }
+    );
+  } finally {
+    sweeping = false;
+  }
 }
 
 export function startAutoSync(): void {

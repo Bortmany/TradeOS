@@ -107,6 +107,8 @@ export interface PropLive {
   openPnl: number;
   openCount: number;
   unpricedCount: number;
+  /** Loss (<= 0) of a position that just closed, counted until its fills land. */
+  pendingCloseLoss: number;
   estimated: boolean;
   /** The last known positions (shown even when stale). */
   positions: PositionView[];
@@ -345,6 +347,7 @@ export async function getPropStatus(userId: string): Promise<PropStatus[]> {
         openPnl: open?.openPnl ?? 0,
         openCount: open?.openCount ?? 0,
         unpricedCount: open?.unpricedCount ?? 0,
+        pendingCloseLoss: open?.pendingCloseLoss ?? 0,
         estimated: open?.estimated ?? false,
         positions: conn ? live.positions.filter((x) => x.connectionId === conn.connectionId) : [],
       },

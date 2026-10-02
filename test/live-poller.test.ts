@@ -18,6 +18,7 @@ import {
   MCL,
   ES,
   installFakeGateway,
+  fill,
 } from "./fixtures/projectx";
 import { addClosedTrade, cleanup, connect, makeTrader, metaOf, openAlerts } from "./fixtures/live-helpers";
 
@@ -35,6 +36,8 @@ beforeEach(async () => {
   await prisma.brokerConnection.deleteMany(); // the test DB is throwaway
   clearSessionTokens();
   logs = [];
+  vi.useFakeTimers({ toFake: ["Date"] }); // pretend clock = T0 (see live-fixes.test.ts)
+  vi.setSystemTime(T0);
   for (const m of ["log", "info", "warn", "error"] as const) {
     vi.spyOn(console, m).mockImplementation((...a: unknown[]) => {
       logs.push(a.map(String).join(" "));
@@ -44,6 +47,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   gw?.restore();
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
@@ -312,7 +316,7 @@ describe("alerts follow reads", () => {
   it("an open loss moves the daily-loss alert to 80% within the read, and it clears itself when flat", async () => {
     const t = await makeTrader();
     await connect(t);
-    await addClosedTrade(t, -700, T0);
+    await addClosedTrade(t, -700, at(-3600));
     gw = installFakeGateway({
       balances: { "123": 1 },
       positions: { "123": [{ contractId: MES, type: 1, size: 2, averagePrice: 5210.25 }] },
@@ -337,17 +341,28 @@ describe("alerts follow reads", () => {
     expect(dl[0].message).toContain("82% used");
     const firstId = dl[0].id;
 
-    // Position closed: the loss is -$700 closed only => 70%, a 50% step. Updated IN PLACE.
+    // Position closed but its closed trade has not arrived yet: the -$120 open loss stays
+    // counted (the warning must not drop in the gap). Same row, still 80%.
     gw.state.positions["123"] = [];
     await runLiveTick({ now: at(61), budget: budgetAt({ t: 61_000 }) });
     const mid = (await openAlerts(t.userId)).filter((a) => metaOf(a).measure === "daily_loss");
     expect(mid).toHaveLength(1);
     expect(mid[0].id).toBe(firstId);
-    expect(metaOf(mid[0]).step).toBe(50);
+    expect(metaOf(mid[0])).toMatchObject({ step: 80, value: 820, openCount: 0, pendingCloseLoss: -120 });
+
+    // The fills arrive (-$120 realized): the closed trade replaces the protected open loss.
+    gw.state.fills["123"] = [
+      fill(1, MES, 0, 2, 5210.25, at(-60)),
+      fill(2, MES, 1, 2, 5198.25, at(90), -120),
+    ];
+    await runLiveTick({ now: at(122), budget: budgetAt({ t: 122_000 }) });
+    const landed = (await openAlerts(t.userId)).filter((a) => metaOf(a).measure === "daily_loss");
+    expect(landed[0].id).toBe(firstId);
+    expect(metaOf(landed[0])).toMatchObject({ step: 80, value: 820, pendingCloseLoss: 0 });
 
     // The loss recovers below half: the alert closes itself.
-    await addClosedTrade(t, 400, at(100));
-    await runLiveTick({ now: at(122), budget: budgetAt({ t: 122_000 }) });
+    await addClosedTrade(t, 400, at(130));
+    await runLiveTick({ now: at(183), budget: budgetAt({ t: 183_000 }) });
     const end = (await openAlerts(t.userId)).filter((a) => metaOf(a).measure === "daily_loss");
     expect(end).toHaveLength(0);
     const resolved = await prisma.alert.findUniqueOrThrow({ where: { id: firstId } });

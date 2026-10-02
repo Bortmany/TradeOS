@@ -31,6 +31,58 @@ export interface ConnectionLive {
   lastBalance: number | null;
   lastSyncAt: Date | null;
   livePeakEquity: number | null;
+  /** Loss (<= 0) of a position that just closed whose fills have not landed yet; 0 when none. */
+  pendingCloseLoss: number;
+}
+
+/**
+ * How long a "position just closed" loss stays counted while we wait for the
+ * closed trade to arrive: one full 30-minute fill sweep plus a margin. After
+ * that the sweep has surely had its say and the protection lapses.
+ */
+export const PENDING_GONE_MAX_MS = 35 * 60_000;
+
+export function pendingLossOf(
+  c: { pendingCloseLoss: number | null; pendingCloseAt: Date | null },
+  now: Date
+): number {
+  if (c.pendingCloseLoss == null || !c.pendingCloseAt) return 0;
+  if (now.getTime() - c.pendingCloseAt.getTime() >= PENDING_GONE_MAX_MS) return 0;
+  return Math.min(0, c.pendingCloseLoss);
+}
+
+
+
+
+/**
+ * Has a closed trade arrived for this account since the position vanished
+ * (`pendingCloseAt` = the last read that still saw it open)? However it came:
+ * the poller's immediate fill sync, the 30-minute sweep, or a manual import.
+ */
+export async function pendingLanded(
+  userId: string,
+  accountId: string,
+  pendingCloseAt: Date
+): Promise<boolean> {
+  const n = await prisma.trade.count({
+    where: {
+      userId,
+      accountId,
+      exitTime: { gte: pendingCloseAt },
+    },
+  });
+  return n > 0;
+}
+
+/** The "position just closed" loss still to count right now (0 once its trade has landed or it lapsed). */
+async function pendingLossNow(
+  userId: string,
+  c: { accountId: string; pendingCloseLoss: number | null; pendingCloseAt: Date | null },
+  now: Date
+): Promise<number> {
+  const loss = pendingLossOf(c, now);
+  if (loss === 0 || !c.pendingCloseAt) return 0;
+  return (await pendingLanded(userId, c.accountId, c.pendingCloseAt)) ? 0 : loss;
 }
 
 export interface PositionView {
@@ -83,6 +135,7 @@ export async function loadLiveState(
       lastBalance: c.lastBalance,
       lastSyncAt: c.lastSyncAt,
       livePeakEquity: c.livePeakEquity,
+      pendingCloseLoss: await pendingLossNow(userId, c, now),
     });
     for (const p of c.positionSnapshots) {
       positions.push({
@@ -130,10 +183,13 @@ export function openStateFor(
       if (p.priceSource === "bar") estimated = true;
     }
   }
+  // A position that just closed: its loss stays counted until the closed trade lands.
+  const pending = conn.pendingCloseLoss;
   return {
-    openPnl: Math.round(openPnl * 100) / 100,
+    openPnl: Math.round((openPnl + pending) * 100) / 100,
     openCount: mine.length,
     unpricedCount: unpriced,
     estimated,
+    ...(pending < 0 ? { pendingCloseLoss: pending } : {}),
   };
 }

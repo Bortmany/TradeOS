@@ -8,13 +8,17 @@
 // (stalest first), so the budget is a hard ceiling and the round "stretches".
 //
 // Back-off on HTTP 429: honour Retry-After when the broker sent one, otherwise
-// 30s, 60s, 120s ... capped at 5 minutes. Never a tight retry loop.
+// 30s, 60s, 120s ... capped at 5 minutes (a Retry-After is honoured up to 30
+// minutes). The 30-minute fill sweep and the immediate fill sync draw from the
+// same budget and start the same back-off. Never a tight retry loop.
 // Pure and clock-injectable so tests need no real waiting.
 
 export const LIVE_CALLS_PER_MINUTE = 100;
 const WINDOW_MS = 60_000;
 const BACKOFF_START_MS = 30_000;
 const BACKOFF_CAP_MS = 5 * 60_000;
+// A Retry-After the broker sent is honoured up to this long (longer than our own ladder).
+const RETRY_AFTER_CAP_MS = 30 * 60_000;
 
 export class CallBudget {
   private stamps: number[] = [];
@@ -61,7 +65,7 @@ export class CallBudget {
     const escalating = Math.min(BACKOFF_START_MS * 2 ** (this.strikes - 1), BACKOFF_CAP_MS);
     const waitMs =
       retryAfterSec && retryAfterSec > 0
-        ? Math.min(retryAfterSec * 1000, BACKOFF_CAP_MS)
+        ? Math.min(retryAfterSec * 1000, RETRY_AFTER_CAP_MS)
         : escalating;
     this.backoffUntil = Math.max(this.backoffUntil, this.clock() + waitMs);
   }

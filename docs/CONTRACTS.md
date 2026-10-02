@@ -443,7 +443,9 @@ an upsert by that key, never delete-and-recreate (so dismissals survive):
   (no `meta.auto`) are never touched.
 - `Alert.meta` JSON for auto alerts: `{ auto: true, key, measure, step: 50|80|100|null,
   value, limit, left, usedPct, asAt (ISO), source: "live"|"closed", liveLinked,
-  openCount, openEstimated, unpricedCount, dismissedStep?, resolvedAt? }`.
+  openCount, openEstimated, unpricedCount, pendingCloseLoss?, dismissedStep?, resolvedAt? }`.
+  `pendingCloseLoss` (<= 0) is the loss of a position that just closed, still counted
+  (inside `value`) until its closed trade arrives.
   `value` is the headline number (loss, drawdown, profit or trade count), `left` is what
   remains before the limit (or to the target), `asAt` is the live read time or when it
   was worked out. `title` and `message` keep their plain-English wording.
@@ -452,7 +454,8 @@ an upsert by that key, never delete-and-recreate (so dismissals survive):
   in place. User-scoped (another user's id answers 404), `USER_WRITE_LIMIT`, demo refused.
 - A failed or stale live read never clears or lowers a warning that open P&L raised (for
   up to a day); only a good read, or closed trades alone when the account is not live,
-  can end it.
+  can end it. This includes an account whose key the broker REJECTED (its open figure is
+  unknown); the 24-hour cap applies to every case.
 - `GET /api/alerts` (`USER_READ_LIMIT`, user-scoped): `{ ok, alerts[], accounts[], positions[], now }`.
   `accounts[]` is the freshness of each live link (`health`: live | stale | waiting |
   rejected | off, `lastLiveAt`, `lastError`); `positions[]` is the latest snapshot.
@@ -462,8 +465,13 @@ an upsert by that key, never delete-and-recreate (so dismissals survive):
 - New columns on `BrokerConnection` (all additive): `nearLive Boolean @default(true)`,
   `lastBalance Float?` (shown only, never used in limit maths), `lastLiveAt DateTime?`
   (last GOOD read), `lastLiveError String?` (fixed plain-English text), `liveStatus String
-  @default("ok")` (`ok | unreachable | rejected`), `livePeakEquity Float?`. Live failures
+  @default("ok")` (`ok | unreachable | rejected`), `livePeakEquity Float?`,
+  `pendingCloseLoss Float?` + `pendingCloseAt DateTime?` (see "A position that closes
+  between reads" below). Live failures
   never touch `status` / `lastError` (the 30-minute fill sync's own state).
+- New table `RunnerLease` (`name` PK like `runner:4927002`, `holder`, `expiresAt`,
+  `lastRunAt?`, `lastOkAt?`, `lastError?`): the "only one server copy runs this job" guard
+  and the job's health flag (shown by `/api/health` as `liveReads` and `fillSweep`).
 - New table `PositionSnapshot` (current open positions per connection, replaced on each
   read, no history): `contractId, symbol, side (long|short), size, avgPrice, lastPrice?,
   priceSource? (broker|bar), openPnl?, notPricedReason? (no_point_value|no_price), readAt`.
@@ -479,17 +487,43 @@ an upsert by that key, never delete-and-recreate (so dismissals survive):
   floor (a connection read under about a minute ago is skipped). Groups connections by the
   trader's key (one login and one `Account/search` per key), stalest first. Server-wide
   budget about 100 calls a minute (`budget.ts`) asked before EVERY call; when it is used
-  up the round stops and the rest go first next tick. On 429: `Retry-After` honoured,
-  else 30s / 60s / 120s, capped at 5 minutes. A rejected key marks `liveStatus =
-  "rejected"` and reads stop until the trader reconnects. After a good read for a trader
-  the alert pass runs for that trader only.
+  up the round stops and the rest go first next tick. On 429: `Retry-After` honoured up
+  to 30 minutes, else 30s / 60s / 120s, capped at 5 minutes. The 30-minute fill sweep
+  and the immediate fill sync draw from the SAME budget, and a 429 they see starts the
+  same back-off. Only the login endpoint's explicit `success:false` answer
+  (`ConnectorError.kind = "key_rejected"`) marks `liveStatus = "rejected"` (reads stop
+  until the trader reconnects). A bare 401/403 (kind `auth`), a 5xx or a network failure
+  is `unreachable`: retried next tick, then with a growing wait (about 2, 4, 8 minutes,
+  max 10), never permanent. After a good read for a trader the alert pass runs for that
+  trader only; phone warnings for it are sent after the pass, outside the lease, capped
+  at 8 seconds. Every gateway request is sent with `redirect: "error"`.
+- A position that closes between reads: when a position disappears or shrinks, its open
+  loss would leave the snapshot before the closed trade reaches us. The poller then
+  (a) fetches the fills for that connection at once (`syncConnection`, each call asked of
+  the budget) and (b) keeps the loss that left in `pendingCloseLoss` (clock:
+  `pendingCloseAt` = the last read that still saw it open); `openStateFor` adds it to
+  open P&L until a closed trade with `exitTime >= pendingCloseAt` exists (from the
+  fills, the sweep or an import), or 35 minutes pass. Only losses are kept (never a
+  vanished profit). The next tick keeps asking for the fills while it waits.
+- Time limit: a live tick stops itself after 45 seconds (calls are also cut off at that
+  deadline); the sweep after 25 minutes (oldest-synced connections go first next time).
+  Neither is abandoned while still working, so the in-process "running" flags only clear
+  when the work has really ended.
 - Session tokens (`connectors/session.ts`) live in memory only, reused for 23 hours (also
   by the 30-minute sync), replaced by one fresh login on a 401. Never stored or logged.
-- Single runner: `src/lib/single-runner.ts` uses a transaction-scoped Postgres advisory
-  lock (`pg_try_advisory_xact_lock` inside a pinned transaction). The old session-level
-  lock could be unlocked on a different pooled session and stay stuck, which at a 60
-  second rhythm would silently stop polling. Keys: 4927001 (30-minute fill sweep),
-  4927002 (live poll). SQLite just runs the work.
+- Single runner: `src/lib/single-runner.ts` is a LEASE ROW in `RunnerLease`, taken with an
+  atomic conditional update (an expired lease only) or a first insert, renewed every
+  third of its length while the work runs, and given back at the end; a crashed copy's
+  lease just runs out (live poll lease 90 s, sweep 2 min). It needs no pinned
+  connection, so the work runs with `?pgbouncer=true&connection_limit=1` and works the
+  same on SQLite and Postgres. (History: the session-level advisory lock got stuck on
+  pooled sessions; the pinned-transaction lock starved the work behind a pool of one and
+  its errors were swallowed, so polling silently never ran.) The work receives a
+  `RunContext` (`expired()`, `remainingMs()`) and must stop by its deadline. A run that
+  throws is logged (`[label] run FAILED`), answered `"failed"` (never `"ran"`), and
+  recorded in `lastError` / `lastOkAt`. If the lease check itself fails the work runs
+  anyway (idempotent jobs). Keys: 4927001 (30-minute fill sweep), 4927002 (live poll).
+  A sweep where at least 3 connections were tried and ALL failed counts as a failed run.
 - `PATCH /api/connectors` `{ id, nearLive }`: `USER_WRITE_LIMIT`, user-scoped, demo refused;
   a rejected connection cannot be switched on (409 "Reconnect first"). `POST /api/connectors`
   `connect` on an already-connected account revives it with a fresh key only when its key

@@ -356,7 +356,7 @@ function Footer({ a, tz }: { a: AlertView; tz: string }) {
           </>
         );
       } else {
-        lead = "Closed trades only, nothing open. ";
+        lead = a.pendingCloseLoss < 0 ? "" : "Closed trades only, nothing open. ";
       }
     } else {
       lead = "Closed trades only. ";
@@ -365,6 +365,11 @@ function Footer({ a, tz }: { a: AlertView; tz: string }) {
   return (
     <p className="text-2xs tabular text-muted-foreground">
       {lead}
+      {a.source === "live" && a.pendingCloseLoss < 0 && (
+        <span className="text-warning">
+          A position just closed; its loss stays counted until the broker&apos;s trade record arrives.{" "}
+        </span>
+      )}
       <span className={cn("inline-block", timeClass)}>As at {at}.</span>
       {a.stale && <span className="text-warning"> Can&apos;t refresh.</span>}
     </p>

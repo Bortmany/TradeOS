@@ -23,7 +23,7 @@ export const POST = withUser(async (user, req: Request) => {
       return NextResponse.json({ ok: false, error: "Invalid request." }, { status: 400 });
     }
     const message = err instanceof ConnectorError ? err.message : "Sync failed.";
-    const status = err instanceof ConnectorError && err.kind === "auth" ? 401 : 400;
+    const status = err instanceof ConnectorError && (err.kind === "auth" || err.kind === "key_rejected") ? 401 : 400;
     return NextResponse.json({ ok: false, error: message }, { status });
   }
 });

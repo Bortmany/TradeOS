@@ -37,6 +37,8 @@ export interface AlertView {
   source: "live" | "closed";
   openCount: number;
   openEstimated: boolean;
+  /** Loss (<= 0) of a position that just closed, still counted until its fills land. */
+  pendingCloseLoss: number;
   unpricedCount: number;
   /** The account is live-linked but its last good read is old: "Can't refresh." */
   stale: boolean;
@@ -89,6 +91,7 @@ export function toAlertView(
     source: m.source === "live" ? "live" : "closed",
     openCount: typeof m.openCount === "number" ? m.openCount : 0,
     openEstimated: !!m.openEstimated,
+    pendingCloseLoss: typeof m.pendingCloseLoss === "number" ? m.pendingCloseLoss : 0,
     unpricedCount: typeof m.unpricedCount === "number" ? m.unpricedCount : 0,
     stale,
     createdAt: row.createdAt.toISOString(),

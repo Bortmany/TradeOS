@@ -236,6 +236,14 @@ function OpenLine({ s, tz, now }: { s: PropStatus; tz: string; now: Date }) {
   }
   if (l.includesOpen && l.lastLiveAt) {
     const at = <span className="inline-block">{formatAsAt(l.lastLiveAt, tz, now)}</span>;
+    if (l.openCount === 0 && l.pendingCloseLoss < 0) {
+      return (
+        <p className="text-2xs tabular text-warning">
+          A position just closed; its {formatCurrency(l.pendingCloseLoss, { sign: true })} stays counted until the
+          broker&apos;s trade record arrives. As at {at}.
+        </p>
+      );
+    }
     if (l.openCount === 0) {
       return (
         <p className="text-2xs tabular text-muted-foreground">

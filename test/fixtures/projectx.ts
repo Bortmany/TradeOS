@@ -29,8 +29,10 @@ export interface GatewayState {
   /** contractId -> latest 1-minute bar close (null = no bar) */
   bars: Record<string, number | null>;
   balances: Record<string, number>;
+  /** broker account id -> fills the Trade/search call returns (the 30-minute fill sync). */
+  fills: Record<string, Record<string, unknown>[]>;
   /** how the network behaves right now */
-  mode: "ok" | "network" | "rate-limit" | "reject-login" | "server-error";
+  mode: "ok" | "network" | "rate-limit" | "reject-login" | "server-error" | "login-401" | "data-401";
   retryAfter?: string;
   /** how many times the NEXT authenticated call answers 401 */
   expireTokenOnce?: boolean;
@@ -42,6 +44,7 @@ export interface RecordedCall {
   path: string;
   method: string;
   body: Record<string, unknown>;
+  redirect?: string;
 }
 
 export function installFakeGateway(initial: Partial<GatewayState> = {}) {
@@ -49,6 +52,7 @@ export function installFakeGateway(initial: Partial<GatewayState> = {}) {
     positions: {},
     bars: {},
     balances: {},
+    fills: {},
     mode: "ok",
     ...initial,
   };
@@ -65,7 +69,7 @@ export function installFakeGateway(initial: Partial<GatewayState> = {}) {
     const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
     const method = (init?.method ?? "GET").toUpperCase();
     const body = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : {};
-    calls.push({ url: url.href, host: url.hostname, path: url.pathname, method, body });
+    calls.push({ url: url.href, host: url.hostname, path: url.pathname, method, body, redirect: init?.redirect });
 
     if (!ALLOWED_HOSTS.has(url.hostname)) violations.push(`host ${url.hostname}`);
     if (method !== "POST") violations.push(`method ${method}`);
@@ -79,12 +83,15 @@ export function installFakeGateway(initial: Partial<GatewayState> = {}) {
     if (state.mode === "server-error") return json({}, 500);
 
     if (url.pathname === "/api/Auth/loginKey") {
+      // A bare 401 on login (NOT the gateway's explicit success:false answer).
+      if (state.mode === "login-401") return json({}, 401);
       if (state.mode === "reject-login") {
         return json({ token: null, success: false, errorCode: 3, errorMessage: "Invalid credentials" });
       }
       return json({ token: FAKE_TOKEN, success: true, errorCode: 0, errorMessage: null });
     }
 
+    if (state.mode === "data-401") return json({}, 401); // login worked, every data call is refused
     const auth = (init?.headers as Record<string, string> | undefined)?.Authorization;
     if (state.expireTokenOnce) {
       state.expireTokenOnce = false;
@@ -145,7 +152,7 @@ export function installFakeGateway(initial: Partial<GatewayState> = {}) {
       });
     }
     if (url.pathname === "/api/Trade/search") {
-      return json({ trades: [], success: true, errorCode: 0, errorMessage: null });
+      return json({ trades: state.fills[String(body.accountId)] ?? [], success: true, errorCode: 0, errorMessage: null });
     }
     return json({}, 404);
   });
@@ -153,4 +160,29 @@ export function installFakeGateway(initial: Partial<GatewayState> = {}) {
   vi.stubGlobal("fetch", fake);
   const count = (path: string) => calls.filter((c) => c.path === path).length;
   return { state, calls, violations, count, restore: () => vi.unstubAllGlobals() };
+}
+
+/** One half-turn fill as the gateway's Trade/search returns it (side 0 = buy, 1 = sell). */
+export function fill(
+  id: number,
+  contractId: string,
+  side: 0 | 1,
+  size: number,
+  price: number,
+  when: Date,
+  profitAndLoss: number | null = null,
+  accountId = 123
+) {
+  return {
+    id,
+    accountId,
+    contractId,
+    creationTimestamp: when.toISOString(),
+    price,
+    profitAndLoss,
+    fees: 0,
+    side,
+    size,
+    voided: false,
+  };
 }
