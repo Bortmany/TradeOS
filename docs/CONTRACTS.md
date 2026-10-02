@@ -447,7 +447,14 @@ an upsert by that key, never delete-and-recreate (so dismissals survive):
   value, limit, left, usedPct, asAt (ISO), source: "live"|"closed", liveLinked,
   openCount, openEstimated, unpricedCount, pendingCloseLoss?, dismissedStep?, resolvedAt? }`.
   `pendingCloseLoss` (<= 0) is the loss of a position that just closed, still counted
-  (inside `value`) until its closed trade arrives.
+  (inside `value`) until its closed trade arrives. Each closed position is tracked on its
+  own (`BrokerConnection.pendingCloseItems`, additive JSON text: `key`, optional `ext`,
+  `symbol`, `side`, `size`, `loss`, `at`) and leaves the pending figure only when ITS trade
+  has landed: the same MT5 position id (`ext` = `mt5:<positionId>`), or else the same symbol
+  and side, with sizes that add up. A trade for another position does not clear it; a trade
+  that covers only part of it clears that share of the loss. Rows without the list (older
+  rows) use the old rule: any closed trade since the read clears it. A pending item lapses
+  after 35 minutes.
   `value` is the headline number (loss, drawdown, profit or trade count), `left` is what
   remains before the limit (or to the target), `asAt` is the live read time or when it
   was worked out. `title` and `message` keep their plain-English wording.
@@ -556,9 +563,29 @@ an upsert by that key, never delete-and-recreate (so dismissals survive):
   USD. On any failure the bridge account is deleted before answering. Answers: 422
   `trading_rights` (with `clearPassword: true`), 422 `not_usd`, 401 `bad_login`, 400
   `server_not_found`, 502 `bridge_down`, 503 `busy`. The bridge's own text is never passed on.
-- Disconnect (`DELETE /api/connectors`) and `POST /api/profile/delete` delete the MetaApi
-  account first (`removeBridgeAccounts`); a failure answers 502 and keeps the link / the
-  account.
+- `POST /api/connectors/mt5` also takes an optional `accountId`: one of the trader's OWN
+  trading accounts (user-scoped, US dollars, not already linked to a broker). The link then
+  attaches to it instead of making a new "MT5 <login>" account, so trades from the MT5 file
+  import and the live link share `[accountId, externalId]` and dedupe on `mt5:<positionId>`.
+  Left out = a new account, as before. The answer carries `notes` (see below).
+- Disconnect (`DELETE /api/connectors`) deletes the MetaApi account first
+  (`removeBridgeAccounts`); a failure answers 502 and keeps the link. `POST
+  /api/profile/delete` tries every account (`removeBridgeAccountsReport`); if MetaApi does not
+  confirm, the profile is STILL deleted (the trader is not trapped) and the MetaApi account ids
+  are logged for the owner. With no `METAAPI_TOKEN`, "skipped" is logged with the ids too.
+- A plan that ENDS (moved to a free plan, or `billingStatus` `canceled`; `mt5PlanEnded`) stops
+  the read and removes the trader's bridge accounts and MT5 links (`removeMt5LinksForUser`, from
+  the billing webhook; the 30-minute sweep retries failures through `removeEndedMt5Links`).
+  `past_due` only pauses reading.
+- Creating the bridge account (`maProvisionAccount`) sends ONE `transaction-id` for every try.
+  If the answer is lost (timeout, dropped connection, 5xx, or six "still checking" 202s) it
+  asks again with the same id up to 3 times to learn the account id; the caller then runs the
+  investor check or deletes it. If the id stays unknown the account NAME (`TradeOS <8 hex>`,
+  never the password) is logged for the owner (`GO-LIVE.md`).
+- A link whose login can trade (found by the live read OR by `syncMt5` before it reads deals,
+  so links with near-live off are re-checked) has its bridge account DELETED
+  (`rejectMt5Link`) and is marked `liveStatus "rejected"`. `readableConnectionsWhere()` never
+  returns a rejected MT5 link; a sync of one is refused without a call.
 - Live read (`readMt5Group` in `poller.ts`): `account-information` (balance to `lastBalance`;
   the investor flag is re-checked, failing = `liveStatus "rejected"`) and `positions` (one
   `PositionSnapshot` per position: `contractId` = MetaApi position id, `symbol` tidied by the
@@ -567,15 +594,25 @@ an upsert by that key, never delete-and-recreate (so dismissals survive):
   position triggers the same immediate fill sync and pending-close protection as TopstepX.
 - Deals to trades (`mapDealsToTrades`, same shape as Package C's MT5 file import): group the
   `DEAL_TYPE_BUY` / `DEAL_TYPE_SELL` deals by `positionId`; `DEAL_ENTRY_IN` opens, `OUT` /
-  `OUT_BY` closes. One trade per FULLY closed position: `side` from the opening deal, entry =
-  volume-weighted average of the IN deals, exit = of the OUT deals, `quantity` = lots,
-  `entryTime` = first IN, `exitTime` = last OUT (the bridge's UTC `time`), `pnlGross` = sum of
-  the OUT deals' `profit` (else `pnlFromPrices` from `src/lib/instruments`), `fees` =
-  -(commission + swap over every deal of the position), `pnl` = profit + commission + swap,
-  `externalId = "mt5:<positionId>"`, `source "api"`, `assetClass` from the instrument table
-  (`forex` or `cfd`). Not made into trades, only counted and named: positions still open or
-  part-closed, positions opened before the 90-day window, reversals in one deal
-  (`DEAL_ENTRY_INOUT`), symbols not in the table. Balance and other non-trade deals are ignored.
+  `OUT_BY` closes. One trade per CLOSE, so a partial close is a trade as soon as it happens
+  (a 2-lot position closed 1 lot at -$400 gives a trade for that lot, and the rest later). All
+  OUT deals sharing one `time` are one close. A close takes the oldest open lots first (FIFO):
+  `side` from the opening deal, entry = volume-weighted average of the lots it consumed, exit
+  = of its OUT deals, `quantity` = lots closed, `entryTime` = the first lot consumed,
+  `exitTime` = the close's time (the bridge's UTC `time`), `pnlGross` = sum of its OUT deals'
+  `profit` (else `pnlFromPrices` from `src/lib/instruments`), `fees` = -(the close's commission +
+  swap, plus the opening deals' commission and swap in proportion to the lots consumed), `pnl` =
+  profit + commission + swap, `source "api"`, `assetClass` from the instrument table (`forex` or
+  `cfd`). `externalId`: the first close of a position is `mt5:<positionId>` (the same id the
+  file import uses), later closes `mt5:<positionId>:<n>`; ids never change once made, because
+  later deals only add closes at the end. If the MT5 report FILE already put the whole position
+  into the account as one `mt5:<positionId>` trade (quantity above the first close), the later
+  closes are not saved again. Not made into trades, only counted and named: the part of a
+  position still open, positions opened before the 90-day window, reversals in one deal
+  (`DEAL_ENTRY_INOUT`), symbols not in the table. Balance and other non-trade deals are
+  ignored. `DealsResult.kinds` counts these; the sync result (`SyncResult.notes`, returned by
+  the connect route and `POST /api/connectors/sync`) turns them into plain-English notes for the
+  trader (for example positions opened before the 90-day window).
 - Allowed MetaApi routes (`ALLOWED_ROUTES`): client host GET `/users/current/accounts/:id/account-information`,
   `.../positions`, `.../history-deals/time/:from/:to`; provisioning host POST
   `/users/current/accounts` and DELETE `/users/current/accounts/:id` (the bridge account only). Hosts:

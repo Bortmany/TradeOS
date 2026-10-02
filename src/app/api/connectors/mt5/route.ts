@@ -32,6 +32,7 @@ import {
   mt5PlanAllowed,
 } from "@/lib/connectors/mt5-access";
 import { SyncDeferred, syncConnection } from "@/lib/connectors/sync";
+import { mt5AccountCurrencyProblem } from "@/lib/ingestion/adapters/mt5";
 import { liveBudget } from "@/lib/live/budget";
 import type { CallGate } from "@/lib/connectors/metaapi";
 
@@ -44,6 +45,10 @@ const schema = z.object({
     .regex(/^[\w .\-()[\]]+$/),
   login: z.string().trim().regex(/^\d{1,12}$/),
   password: z.string().min(1).max(200),
+  // Attach the live link to one of the trader's OWN trading accounts (so trades from an MT5
+  // report file and from the live link land in one place and never double up). Left out =
+  // a new "MT5 <login>" account.
+  accountId: z.string().trim().min(1).max(64).optional(),
 });
 
 // One connect at a time per trader (stops two quick clicks from slipping past the 2-account limit).
@@ -100,6 +105,22 @@ export const POST = withUser(async (user, req: Request) => {
   });
   if (duplicate) return fail("That MT5 account is already connected.", 409, "duplicate");
 
+  // An existing journal account to attach to: the trader's own, US dollars, not linked yet.
+  // Checked before anything is created at MetaApi.
+  let attachTo: { id: string } | null = null;
+  if (d.accountId) {
+    const target = await prisma.tradingAccount.findFirst({
+      where: { id: d.accountId, userId: user.id },
+      select: { id: true, currency: true, brokerConnection: { select: { id: true } } },
+    });
+    if (!target) return fail("We couldn't find that trading account.", 404, "account_not_found");
+    if (target.brokerConnection) {
+      return fail("That trading account is already linked to a broker. Pick another or make a new one.", 409, "account_linked");
+    }
+    if (mt5AccountCurrencyProblem(target.currency)) return fail(MT5_LIVE_MESSAGES.notUsd, 422, "not_usd");
+    attachTo = { id: target.id };
+  }
+
   // Each attempt can cost the owner at MetaApi (it charges for repeated sign-in failures).
   const attempts = rateLimit(`mt5-connect:${user.id}`, { limit: 5, windowMs: 15 * 60_000 });
   if (!attempts.ok) {
@@ -144,22 +165,28 @@ export const POST = withUser(async (user, req: Request) => {
     // The bridge account is good: save our side. Anything that goes wrong now removes it again.
     let connId: string | null = null;
     let tradingAccountId: string | null = null;
+    let createdAccount = false;
     try {
-      const account = await prisma.tradingAccount.create({
-        data: {
-          userId: user.id,
-          name: `MT5 ${d.login}`,
-          broker: MT5_FIRM_ID,
-          kind: "live",
-          startingBalance: 0,
-          color: "#22c55e",
-        },
-      });
-      tradingAccountId = account.id;
+      if (attachTo) {
+        tradingAccountId = attachTo.id;
+      } else {
+        const account = await prisma.tradingAccount.create({
+          data: {
+            userId: user.id,
+            name: `MT5 ${d.login}`,
+            broker: MT5_FIRM_ID,
+            kind: "live",
+            startingBalance: 0,
+            color: "#22c55e",
+          },
+        });
+        tradingAccountId = account.id;
+        createdAccount = true;
+      }
       const conn = await prisma.brokerConnection.create({
         data: {
           userId: user.id,
-          accountId: account.id,
+          accountId: tradingAccountId,
           broker: MT5_FIRM_ID,
           baseUrl: MT5_FIRM.apiBase,
           username: d.login,
@@ -179,7 +206,7 @@ export const POST = withUser(async (user, req: Request) => {
       }
     } catch (err) {
       if (connId) await prisma.brokerConnection.deleteMany({ where: { id: connId, userId: user.id } });
-      if (tradingAccountId) {
+      if (tradingAccountId && createdAccount) {
         await prisma.tradingAccount.deleteMany({ where: { id: tradingAccountId, userId: user.id } });
       }
       await maDeleteAccountWithRetry(connected.accountId);
@@ -190,6 +217,7 @@ export const POST = withUser(async (user, req: Request) => {
     }
 
     let imported = 0;
+    let notes: string[] = [];
     try {
       const r = await syncConnection(connId, user.id, {
         beforeCall: async () => {
@@ -198,6 +226,7 @@ export const POST = withUser(async (user, req: Request) => {
         onRateLimit: (s) => liveBudget.onRateLimited(s),
       });
       imported = r.imported;
+      notes = r.notes ?? [];
     } catch {
       // The first history read can wait for the sweep; the link itself is good.
     }
@@ -206,6 +235,7 @@ export const POST = withUser(async (user, req: Request) => {
       connectionId: connId,
       accountId: tradingAccountId,
       imported,
+      notes,
     });
   } finally {
     connecting.delete(user.id);

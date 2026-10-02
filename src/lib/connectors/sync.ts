@@ -35,9 +35,12 @@ import {
   MT5_LIVE_MESSAGES,
   MetaApiError,
   mapDealsToTrades,
+  maReadAccountInfo,
   maReadDeals,
+  mt5AccessProblem,
+  type DealsResult,
 } from "@/lib/connectors/metaapi";
-import { mt5PlanAllowed } from "@/lib/connectors/mt5-access";
+import { mt5PlanAllowed, rejectMt5Link } from "@/lib/connectors/mt5-access";
 import type { NormalizedTrade } from "@/lib/types";
 
 const WINDOW_DAYS = 90;
@@ -45,6 +48,8 @@ const WINDOW_DAYS = 90;
 export interface SyncResult {
   imported: number;
   skipped: number;
+  /** Plain-English notes for the trader (for example positions that were left out and why). */
+  notes?: string[];
 }
 
 /** Thrown by `beforeCall` when the shared call budget says "not now": nothing is recorded as an error. */
@@ -210,7 +215,7 @@ async function saveTrades(
  * off or the trader's plan doesn't include it.
  */
 async function syncMt5(
-  conn: { id: string; accountId: string; externalAccountId: string },
+  conn: { id: string; accountId: string; externalAccountId: string; liveStatus: string },
   userId: string,
   opts: SyncOptions,
   gate: () => Promise<void>
@@ -222,7 +227,28 @@ async function syncMt5(
   });
   if (!owner || !mt5PlanAllowed(owner)) throw new ConnectorError(MT5_LIVE_MESSAGES.plan);
 
+  // A rejected link is never read again (reconnect first).
+  if (conn.liveStatus === "rejected") throw new ConnectorError(MT5_LIVE_MESSAGES.readRejected, "key_rejected");
+
   try {
+    // Re-check that the login is still read-only BEFORE reading any deals, so a link with
+    // near-live switched off is checked too. A login that can trade has its bridge account
+    // deleted at once.
+    let info;
+    try {
+      info = await maReadAccountInfo(conn.externalAccountId, { gate });
+    } catch (err) {
+      if (err instanceof MetaApiError && err.code === "not_found") {
+        await rejectMt5Link(conn, { bridgeGone: true }); // the bridge no longer knows it: reconnect needed
+        throw new ConnectorError(MT5_LIVE_MESSAGES.readRejected, "key_rejected");
+      }
+      throw err;
+    }
+    if (mt5AccessProblem(info) === "trading_rights") {
+      await rejectMt5Link(conn);
+      throw new ConnectorError(MT5_LIVE_MESSAGES.readRejected, "key_rejected");
+    }
+
     const to = new Date();
     const from = new Date(to.getTime() - WINDOW_DAYS * 86_400_000);
     let deals;
@@ -235,7 +261,10 @@ async function syncMt5(
       }
       throw err;
     }
-    return await saveTrades(conn, userId, mapDealsToTrades(deals).trades);
+    const mapped = mapDealsToTrades(deals);
+    const saved = await saveTrades(conn, userId, await dropDoubleCounts(conn.accountId, mapped.trades));
+    const notes = plainDealNotes(mapped);
+    return notes.length > 0 ? { ...saved, notes } : saved;
   } catch (err) {
     if (err instanceof SyncDeferred) throw err;
     if (err instanceof ConnectorError && err.kind === "rate_limit") {
@@ -248,4 +277,58 @@ async function syncMt5(
     });
     throw err instanceof ConnectorError ? err : new ConnectorError(message);
   }
+}
+
+/**
+ * Trader-facing notes about positions the MT5 sync left out, in plain English (no ids).
+ * Most useful: a position opened before the 90-day window can only come in by file.
+ */
+export function plainDealNotes(r: Pick<DealsResult, "kinds">): string[] {
+  const out: string[] = [];
+  const k = r.kinds;
+  const were = (n: number) => (n === 1 ? "1 position was" : `${n} positions were`);
+  const itThem = (n: number) => (n === 1 ? "it was" : "they were");
+  if (k.beforeWindow > 0) {
+    out.push(
+      `${were(k.beforeWindow)} opened more than ${WINDOW_DAYS} days ago, so ${itThem(k.beforeWindow)} left out. Import your MT5 report file to add older trades.`
+    );
+  }
+  if (k.reversed > 0) {
+    out.push(
+      `${were(k.reversed)} flipped from long to short in one deal, which isn't supported yet, so ${itThem(k.reversed)} left out.`
+    );
+  }
+  if (k.unsupportedSymbols.length > 0) {
+    const names = [...new Set(k.unsupportedSymbols)].slice(0, 5).join(", ");
+    out.push(`Trades in ${names} were left out because TradeOS doesn't support those symbols yet.`);
+  }
+  if (k.other > 0) {
+    out.push(`${were(k.other)} left out because MT5 gave incomplete details.`);
+  }
+  return out;
+}
+
+/**
+ * A position closed in several steps is saved as one trade per step: "mt5:<id>", then
+ * "mt5:<id>:2" and so on. The MT5 report FILE saves the whole position as one "mt5:<id>"
+ * trade. When that file trade is already in this account and covers more than the first
+ * step, the later steps are already inside it, so they are not saved again.
+ */
+async function dropDoubleCounts(accountId: string, trades: NormalizedTrade[]): Promise<NormalizedTrade[]> {
+  const later = trades.filter((t) => /^mt5:\d+:\d+$/.test(t.externalId ?? ""));
+  if (later.length === 0) return trades;
+  const baseIds = [...new Set(later.map((t) => (t.externalId as string).replace(/:\d+$/, "")))];
+  const existing = await prisma.trade.findMany({
+    where: { accountId, externalId: { in: baseIds } },
+    select: { externalId: true, quantity: true },
+  });
+  const held = new Map(existing.map((e) => [e.externalId as string, e.quantity]));
+  return trades.filter((t) => {
+    const id = t.externalId ?? "";
+    if (!/^mt5:\d+:\d+$/.test(id)) return true;
+    const baseId = id.replace(/:\d+$/, "");
+    const firstStep = trades.find((x) => x.externalId === baseId);
+    const have = held.get(baseId);
+    return !(have !== undefined && firstStep && have > firstStep.quantity + 1e-9);
+  });
 }

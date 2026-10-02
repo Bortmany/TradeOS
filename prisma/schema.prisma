@@ -395,6 +395,10 @@ model BrokerConnection {
   // warning never drops in between. Cleared when the fills land.
   pendingCloseLoss Float?
   pendingCloseAt   DateTime?
+  // JSON list of the positions behind pendingCloseLoss: [{ key, ext?, symbol, side, size, loss, at }].
+  // Each one is cleared only when ITS closed trade (same symbol and side, or the same MT5
+  // position id, and its size) has landed. Null on older rows: they fall back to "any trade".
+  pendingCloseItems String?
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

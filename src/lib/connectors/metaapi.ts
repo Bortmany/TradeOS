@@ -430,34 +430,95 @@ export interface Mt5Credentials {
 
 const PROVISION_ATTEMPTS = 6;
 const READY_ATTEMPTS = 8;
+const RECOVERY_ATTEMPTS = 3;
 
-/** Create the bridge account. A 202 ("still checking") is polled with the same transaction id. */
+/** The answer to one create call that did not fail outright: the new account's id, or "still checking". */
+function createdIdOf(r: Sent): string | "pending" {
+  if (r.status === 202) return "pending";
+  const id = (r.json as { id?: unknown } | null)?.id;
+  if (typeof id !== "string" || !ID_PATTERN.test(id)) {
+    throw new MetaApiError(MT5_LIVE_MESSAGES.bridgeDown, "api");
+  }
+  return id;
+}
+
+/**
+ * A create call that failed in a way that does NOT prove nothing was made: the request
+ * may have reached MetaApi (timeout, dropped connection, a 5xx). A clear "no" (wrong
+ * login, unknown server, our token refused) proves no account exists.
+ */
+function leavesAccountUnknown(err: unknown, afterAmbiguous = false): boolean {
+  if (!(err instanceof MetaApiError)) return true;
+  // MetaApi itself said "no" to these login details: nothing was made.
+  if (err.code === "bad_login" || err.code === "server_not_found") return false;
+  // Refused before processing (token, rate limit, call budget, switched off): the request
+  // made nothing, but once an earlier try was lost that proves nothing about THAT try.
+  if (!afterAmbiguous && (err.code === "refused" || err.code === "busy" || err.code === "off")) return false;
+  return true;
+}
+
+/**
+ * Create the bridge account. The create call carries ONE transaction id for every try, so
+ * MetaApi treats repeats as the same request and never makes a second account.
+ *
+ * If the answer is lost (15 s timeout, dropped connection, a 5xx, or "still checking"
+ * six times), the account may exist without us knowing its id, and it may hold a trading
+ * password. So we ask again, with the SAME transaction id, to learn the id; the caller
+ * then runs the investor check or deletes it. If we still cannot learn it, the account
+ * NAME (never the password) is logged so the owner can remove it by hand at MetaApi.
+ */
 export async function maProvisionAccount(creds: Mt5Credentials, deps: CallDeps = {}): Promise<string> {
   const sleep = deps.sleep ?? realSleep;
-  const transactionId = randomBytes(16).toString("hex");
+  const transactionId = randomBytes(16).toString("hex"); // stable across every try below
+  const name = `TradeOS ${randomBytes(4).toString("hex")}`; // no personal detail in the label
   const body = {
     login: creds.login,
     password: creds.password,
-    name: `TradeOS ${randomBytes(4).toString("hex")}`, // no personal detail in the label
+    name,
     server: creds.server,
     platform: "mt5",
     magic: 0,
     type: "cloud-g2", // the only type that reports investorMode
     region: MT5_REGION,
   };
+
+  let firstError: MetaApiError | null = null;
+  let ambiguous = false;
   for (let attempt = 0; attempt < PROVISION_ATTEMPTS; attempt++) {
-    const r = await send("createAccount", { body, transactionId, gate: deps.gate });
-    if (r.status === 202) {
-      await sleep(Math.min(Math.max(r.retryAfterSec ?? 5, 1), 15) * 1000);
-      continue;
+    let r: Sent;
+    try {
+      r = await send("createAccount", { body, transactionId, gate: deps.gate });
+    } catch (err) {
+      if (!leavesAccountUnknown(err)) throw err;
+      ambiguous = true;
+      firstError = err instanceof MetaApiError ? err : null;
+      break;
     }
-    const id = (r.json as { id?: unknown } | null)?.id;
-    if (typeof id !== "string" || !ID_PATTERN.test(id)) {
-      throw new MetaApiError(MT5_LIVE_MESSAGES.bridgeDown, "api");
-    }
-    return id;
+    const got = createdIdOf(r);
+    if (got !== "pending") return got;
+    await sleep(Math.min(Math.max(r.retryAfterSec ?? 5, 1), 15) * 1000);
+    ambiguous = true; // only cleared by a real answer
   }
-  throw new MetaApiError(MT5_LIVE_MESSAGES.busy, "busy");
+
+  if (ambiguous) {
+    // One recovery round with the same transaction id: it hands back the account if it was made.
+    for (let i = 0; i < RECOVERY_ATTEMPTS; i++) {
+      await sleep(i === 0 ? 2_000 : 5_000);
+      try {
+        const r = await send("createAccount", { body, transactionId, gate: deps.gate });
+        const got = createdIdOf(r);
+        if (got !== "pending") return got;
+      } catch (err) {
+        if (!leavesAccountUnknown(err, true)) throw err; // MetaApi's own "no": nothing was ever created
+      }
+    }
+    console.error(
+      "[metaapi] could not confirm whether a bridge account was created; if an account named",
+      name,
+      "exists at MetaApi, remove it by hand (no password is logged)"
+    );
+  }
+  throw firstError ?? new MetaApiError(MT5_LIVE_MESSAGES.busy, "busy");
 }
 
 /** Delete the bridge account (and so the password MetaApi holds). An account already gone counts as done. */
@@ -529,15 +590,19 @@ export async function maConnectInvestor(creds: Mt5Credentials, deps: CallDeps = 
 // Deals -> trades. MT5 already ties every deal to a position (`positionId`):
 // deals IN open it, deals OUT close it. One trade per FULLY closed position,
 // the same shape as the Positions-table file import (`mt5:<positionId>` ids, so
-// the same position imported by file and by the live link never doubles up):
-//   entry = volume-weighted average of the IN deals, exit = of the OUT deals
+// the same position imported by file and by the live link never doubles up).
+// One trade per CLOSE, so a partial close counts as soon as it happens (FIFO: a close
+// takes the oldest open lots first). All the OUT deals sharing one time are one close.
+//   entry = volume-weighted average of the lots the close consumed, exit = of its OUT deals
 //   quantity = lots closed; pnlGross = sum of the OUT deals' profit (the bridge's
 //   own figure, already in the account currency, USD only for now); fees =
-//   -(commission + swap over every deal of the position); pnl = profit + commission + swap.
+//   -(commission + swap of the close, plus the share of the opening deals' commission and
+//   swap for the lots consumed); pnl = profit + commission + swap.
+//   The first close of a position is "mt5:<positionId>", later ones "mt5:<positionId>:<n>".
 // If a deal carries no profit figure, the P&L is worked out from the prices with
-// src/lib/instruments (forex and CFD maths). Positions still open (or only partly
-// closed), opened before the history window, or reversed in one deal are not made
-// into trades; they are counted and named in `notes`.
+// src/lib/instruments (forex and CFD maths). The part of a position still open, positions
+// opened before the history window, or reversed in one deal are not made into trades;
+// they are counted and named in `notes`.
 // --------------------------------------------------------------------------
 
 export interface DealsResult {
@@ -546,6 +611,8 @@ export interface DealsResult {
   openCount: number;
   skipped: number;
   notes: string[];
+  /** Why positions were skipped, counted, so the trader can be told in plain words. */
+  kinds: { beforeWindow: number; reversed: number; unsupportedSymbols: string[]; other: number };
 }
 
 const cents = (n: number) => {
@@ -559,7 +626,13 @@ const dp = (n: number, places: number) => {
 const cleanSymbol = (s: string) => s.replace(/[^\x20-\x7e]/g, "").slice(0, 24);
 
 export function mapDealsToTrades(deals: readonly MetaApiDeal[]): DealsResult {
-  const result: DealsResult = { trades: [], openCount: 0, skipped: 0, notes: [] };
+  const result: DealsResult = {
+    trades: [],
+    openCount: 0,
+    skipped: 0,
+    notes: [],
+    kinds: { beforeWindow: 0, reversed: 0, unsupportedSymbols: [], other: 0 },
+  };
   const byPosition = new Map<string, MetaApiDeal[]>();
   for (const d of deals) {
     if (d.type !== "DEAL_TYPE_BUY" && d.type !== "DEAL_TYPE_SELL") continue; // balance, credit, charge ...
@@ -581,12 +654,16 @@ export function mapDealsToTrades(deals: readonly MetaApiDeal[]): DealsResult {
     const outs = sorted.filter((d) => d.entryType === "DEAL_ENTRY_OUT" || d.entryType === "DEAL_ENTRY_OUT_BY");
     if (sorted.some((d) => d.entryType === "DEAL_ENTRY_INOUT")) {
       skip("reversed in one deal, which isn't supported yet");
+      result.kinds.reversed++;
       continue;
     }
     const valid = (d: MetaApiDeal) =>
       isNum(d.volume) && d.volume > 0 && isNum(d.price) && d.price > 0 && Number.isFinite(Date.parse(d.time));
     if (ins.length === 0) {
-      if (outs.length > 0) skip("opened before the history window");
+      if (outs.length > 0) {
+        skip("opened before the history window");
+        result.kinds.beforeWindow++;
+      }
       continue;
     }
     if (outs.length === 0) {
@@ -595,68 +672,127 @@ export function mapDealsToTrades(deals: readonly MetaApiDeal[]): DealsResult {
     }
     if (![...ins, ...outs].every(valid)) {
       skip("a deal is missing its size, price or time");
+      result.kinds.other++;
       continue;
     }
     const inVol = dp(ins.reduce((s, d) => s + (d.volume as number), 0), 8);
     const outVol = dp(outs.reduce((s, d) => s + (d.volume as number), 0), 8);
-    if (outVol < inVol - 1e-9) {
-      result.openCount++; // partly closed: still open
-      continue;
-    }
     if (outVol > inVol + 1e-9) {
       skip("closed more than it opened");
+      result.kinds.other++;
       continue;
     }
     const instrument = getInstrument(ins[0].symbol ?? "");
     if (!instrument) {
-      skip(`symbol ${cleanSymbol(ins[0].symbol ?? "") || "(blank)"} is not supported yet`);
+      const name = cleanSymbol(ins[0].symbol ?? "") || "(blank)";
+      skip(`symbol ${name} is not supported yet`);
+      result.kinds.unsupportedSymbols.push(name);
       continue;
     }
+    // Part of it is still open: only the closed part becomes trades (below).
+    if (outVol < inVol - 1e-9) result.openCount++;
 
     const side: "long" | "short" = ins[0].type === "DEAL_TYPE_BUY" ? "long" : "short";
-    const entryPrice = ins.reduce((s, d) => s + (d.price as number) * (d.volume as number), 0) / inVol;
-    const exitPrice = outs.reduce((s, d) => s + (d.price as number) * (d.volume as number), 0) / outVol;
-    const commission = sorted.reduce((s, d) => s + (isNum(d.commission) ? d.commission : 0), 0);
-    const swap = sorted.reduce((s, d) => s + (isNum(d.swap) ? d.swap : 0), 0);
 
-    let profit: number;
-    if (outs.every((d) => isNum(d.profit))) {
-      profit = outs.reduce((s, d) => s + (d.profit as number), 0);
-    } else {
-      try {
-        profit = pnlFromPrices({
-          symbol: instrument.symbol,
-          side,
-          lots: outVol,
-          entryPrice,
-          exitPrice,
-          accountCurrency: "USD",
-        });
-      } catch {
-        skip("no profit figure and it can't be worked out from prices");
+    // Walk the deals in time order. Every close (all the OUT deals sharing one time) takes
+    // its lots from the oldest open lots first (FIFO) and becomes ONE trade. Chunk 1 keeps
+    // the plain id "mt5:<positionId>" (what the file import uses); later chunks of the same
+    // position are "mt5:<positionId>:<n>". Ids never change once a chunk exists, because later
+    // deals can only add chunks at the end.
+    const lots: { deal: MetaApiDeal; left: number }[] = [];
+    let chunkNo = 0;
+    for (let i = 0; i < sorted.length; ) {
+      const d = sorted[i];
+      if (d.entryType === "DEAL_ENTRY_IN") {
+        lots.push({ deal: d, left: d.volume as number });
+        i++;
         continue;
       }
-    }
+      if (d.entryType !== "DEAL_ENTRY_OUT" && d.entryType !== "DEAL_ENTRY_OUT_BY") {
+        i++;
+        continue;
+      }
+      const chunk: MetaApiDeal[] = [];
+      while (
+        i < sorted.length &&
+        (sorted[i].entryType === "DEAL_ENTRY_OUT" || sorted[i].entryType === "DEAL_ENTRY_OUT_BY") &&
+        sorted[i].time === d.time
+      ) {
+        chunk.push(sorted[i]);
+        i++;
+      }
+      chunkNo++;
+      const chunkVol = dp(chunk.reduce((s, x) => s + (x.volume as number), 0), 8);
+      const exitPrice = chunk.reduce((s, x) => s + (x.price as number) * (x.volume as number), 0) / chunkVol;
 
-    result.trades.push({
-      symbol: instrument.symbol,
-      side,
-      entryPrice: dp(entryPrice, 6),
-      exitPrice: dp(exitPrice, 6),
-      quantity: outVol,
-      entryTime: new Date(ins[0].time),
-      exitTime: new Date(outs[outs.length - 1].time),
-      fees: cents(-(commission + swap)),
-      pnl: cents(profit + commission + swap),
-      pnlGross: cents(profit),
-      strategyTag: null,
-      notes: null,
-      emotions: null,
-      tags: null,
-      source: "api",
-      externalId: `mt5:${positionId}`,
-      assetClass: instrument.assetClass,
-    });
+      let need = chunkVol;
+      let entryValue = 0;
+      let taken = 0;
+      let entryCommission = 0;
+      let entrySwap = 0;
+      let firstTime: string | null = null;
+      for (const lot of lots) {
+        if (need <= 1e-9) break;
+        if (lot.left <= 1e-9) continue;
+        const take = Math.min(lot.left, need);
+        const share = take / (lot.deal.volume as number);
+        entryValue += (lot.deal.price as number) * take;
+        entryCommission += (isNum(lot.deal.commission) ? lot.deal.commission : 0) * share;
+        entrySwap += (isNum(lot.deal.swap) ? lot.deal.swap : 0) * share;
+        firstTime = firstTime ?? lot.deal.time;
+        lot.left = dp(lot.left - take, 8);
+        need = dp(need - take, 8);
+        taken += take;
+      }
+      if (need > 1e-9 || !firstTime || taken <= 0) {
+        skip("a close has no matching open");
+        result.kinds.other++;
+        continue;
+      }
+      const entryPrice = entryValue / taken;
+      const commission = entryCommission + chunk.reduce((s, x) => s + (isNum(x.commission) ? x.commission : 0), 0);
+      const swap = entrySwap + chunk.reduce((s, x) => s + (isNum(x.swap) ? x.swap : 0), 0);
+
+      let profit: number;
+      if (chunk.every((x) => isNum(x.profit))) {
+        profit = chunk.reduce((s, x) => s + (x.profit as number), 0);
+      } else {
+        try {
+          profit = pnlFromPrices({
+            symbol: instrument.symbol,
+            side,
+            lots: chunkVol,
+            entryPrice,
+            exitPrice,
+            accountCurrency: "USD",
+          });
+        } catch {
+          skip("no profit figure and it can't be worked out from prices");
+          result.kinds.other++;
+          continue;
+        }
+      }
+
+      result.trades.push({
+        symbol: instrument.symbol,
+        side,
+        entryPrice: dp(entryPrice, 6),
+        exitPrice: dp(exitPrice, 6),
+        quantity: chunkVol,
+        entryTime: new Date(firstTime),
+        exitTime: new Date(chunk[chunk.length - 1].time),
+        fees: cents(-(commission + swap)),
+        pnl: cents(profit + commission + swap),
+        pnlGross: cents(profit),
+        strategyTag: null,
+        notes: null,
+        emotions: null,
+        tags: null,
+        source: "api",
+        externalId: chunkNo === 1 ? `mt5:${positionId}` : `mt5:${positionId}:${chunkNo}`,
+        assetClass: instrument.assetClass,
+      });
+    }
   }
   result.trades.sort((a, b) => (a.exitTime?.getTime() ?? 0) - (b.exitTime?.getTime() ?? 0));
   return result;

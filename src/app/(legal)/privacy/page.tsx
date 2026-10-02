@@ -88,8 +88,16 @@ export default function PrivacyPage() {
             MetaApi, which holds it so it can read your account, and it is never saved by
             TradeOS, shown again, logged or exported. The link is read-only: it reads
             your balance, open positions and closed trades, and can never place, change or
-            cancel an order. Disconnecting the account, or deleting your TradeOS account,
-            also deletes the account, and the password stored with it, at MetaApi.
+            cancel an order. Disconnecting the account deletes it, and the password stored
+            with it, at MetaApi; if MetaApi cannot confirm that, the link stays and we ask
+            you to try again. If your paid plan ends or is cancelled, we stop reading the
+            account and delete it at MetaApi too (while a failed payment is being retried,
+            reading only pauses and the account stays at MetaApi until the payment goes
+            through, you disconnect, or the plan ends). If we find that a linked login can
+            place trades, we delete it at MetaApi straight away. If you delete your TradeOS
+            account, we delete the MT5 account at MetaApi first; if MetaApi cannot be reached
+            at that moment, your TradeOS account is still deleted and the owner removes the
+            MetaApi account by hand afterwards.
           </li>
           <li>
             <strong>Phone warnings (optional)</strong> — if you press &quot;Enable alerts&quot; in
@@ -164,7 +172,8 @@ export default function PrivacyPage() {
             <strong>Broker access</strong> — you can disconnect a broker connection at any
             time, which deletes the stored credentials. You can also revoke the API key on
             the broker&apos;s side. For an MT5 account, disconnecting also removes it, and
-            the investor password stored with it, from MetaApi.
+            the investor password stored with it, from MetaApi (if MetaApi cannot confirm,
+            the link stays and you can try again).
           </li>
         </ul>
       </Section>

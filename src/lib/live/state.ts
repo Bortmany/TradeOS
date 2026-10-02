@@ -55,9 +55,9 @@ export function pendingLossOf(
 
 
 /**
- * Has a closed trade arrived for this account since the position vanished
- * (`pendingCloseAt` = the last read that still saw it open)? However it came:
- * the poller's immediate fill sync, the 30-minute sweep, or a manual import.
+ * Legacy check for rows saved before per-position tracking (no `pendingCloseItems`): has
+ * ANY closed trade arrived for this account since the read that still saw the position
+ * open? New rows are matched position by position (`unlandedPending`) instead.
  */
 export async function pendingLanded(
   userId: string,
@@ -74,15 +74,147 @@ export async function pendingLanded(
   return n > 0;
 }
 
+/** A position (or part of one) that left between two reads and whose closed trade has not landed. */
+export interface PendingItem {
+  /** The broker's position or contract id. */
+  key: string;
+  /** For an MT5 position: the externalId its trade carries ("mt5:<positionId>"). */
+  ext?: string;
+  symbol: string;
+  side: "long" | "short";
+  size: number;
+  /** <= 0 */
+  loss: number;
+  /** ISO time of the last read that still saw it open. */
+  at: string;
+}
+
+export function parsePendingItems(json: string | null | undefined): PendingItem[] {
+  if (!json) return [];
+  try {
+    const raw = JSON.parse(json) as unknown;
+    if (!Array.isArray(raw)) return [];
+    const out: PendingItem[] = [];
+    for (const r of raw as Record<string, unknown>[]) {
+      if (
+        r &&
+        typeof r.key === "string" &&
+        typeof r.symbol === "string" &&
+        (r.side === "long" || r.side === "short") &&
+        typeof r.size === "number" &&
+        typeof r.loss === "number" &&
+        typeof r.at === "string" &&
+        Number.isFinite(Date.parse(r.at))
+      ) {
+        out.push({
+          key: r.key,
+          ...(typeof r.ext === "string" ? { ext: r.ext } : {}),
+          symbol: r.symbol,
+          side: r.side,
+          size: r.size,
+          loss: Math.min(0, r.loss),
+          at: r.at,
+        });
+      }
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+const SIZE_EPS = 1e-9;
+
+/**
+ * Which of these pending positions are still waiting for their closed trade? A
+ * position is matched by its OWN trade: the same MT5 position id, or else the same
+ * symbol and side, with a size that adds up. A trade that closed something else does
+ * not clear it, so two positions closing in the same minute can not drop one loss early.
+ * A position whose trade covers only part of it keeps the rest of its loss (pro rata),
+ * and one older than the lapse window is dropped. Returns the items still waiting.
+ */
+export async function unlandedPending(
+  userId: string,
+  accountId: string,
+  items: PendingItem[],
+  now: Date
+): Promise<PendingItem[]> {
+  const live = items.filter((i) => now.getTime() - Date.parse(i.at) < PENDING_GONE_MAX_MS);
+  if (live.length === 0) return [];
+  const since = new Date(Math.min(...live.map((i) => Date.parse(i.at))));
+  const trades = await prisma.trade.findMany({
+    where: { userId, accountId, exitTime: { gte: since } },
+    select: { symbol: true, side: true, quantity: true, externalId: true, exitTime: true },
+    orderBy: { exitTime: "asc" },
+  });
+  const left = trades.map((t) => t.quantity);
+  const remaining: PendingItem[] = [];
+  const ordered = [...live].sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+  for (const item of ordered) {
+    const at = Date.parse(item.at);
+    let need = item.size;
+    trades.forEach((t, idx) => {
+      if (need <= SIZE_EPS || left[idx] <= SIZE_EPS) return;
+      if (!t.exitTime || t.exitTime.getTime() < at) return;
+      const mine = item.ext
+        ? t.externalId === item.ext || (t.externalId ?? "").startsWith(`${item.ext}:`)
+        : !t.externalId?.startsWith("mt5:") &&
+          t.symbol.toUpperCase() === item.symbol.toUpperCase() &&
+          t.side === item.side;
+      if (!mine) return;
+      const take = Math.min(need, left[idx]);
+      need -= take;
+      left[idx] -= take;
+    });
+    if (need > SIZE_EPS) {
+      const frac = item.size > 0 ? need / item.size : 1;
+      remaining.push({
+        ...item,
+        size: Math.round(need * 1e8) / 1e8,
+        loss: Math.round(item.loss * frac * 100) / 100,
+      });
+    }
+  }
+  return remaining;
+}
+
+/**
+ * The "position just closed" loss still to count right now, and the positions behind
+ * it. Rows saved by an older version (no item list) fall back to the old rule.
+ */
+export async function pendingStateNow(
+  userId: string,
+  c: {
+    accountId: string;
+    pendingCloseLoss: number | null;
+    pendingCloseAt: Date | null;
+    pendingCloseItems?: string | null;
+  },
+  now: Date
+): Promise<{ loss: number; items: PendingItem[] }> {
+  const items = parsePendingItems(c.pendingCloseItems);
+  if (items.length > 0) {
+    const rest = await unlandedPending(userId, c.accountId, items, now);
+    const loss = rest.reduce((s, i) => s + i.loss, 0);
+    return { loss: Math.round(Math.min(0, loss) * 100) / 100, items: rest };
+  }
+  const loss = pendingLossOf(c, now);
+  if (loss === 0 || !c.pendingCloseAt) return { loss: 0, items: [] };
+  return { loss: (await pendingLanded(userId, c.accountId, c.pendingCloseAt)) ? 0 : loss, items: [] };
+}
+
 /** The "position just closed" loss still to count right now (0 once its trade has landed or it lapsed). */
 async function pendingLossNow(
   userId: string,
-  c: { accountId: string; pendingCloseLoss: number | null; pendingCloseAt: Date | null },
+  c: {
+    accountId: string;
+    pendingCloseLoss: number | null;
+    pendingCloseAt: Date | null;
+    pendingCloseItems: string | null;
+  },
   now: Date
 ): Promise<number> {
-  const loss = pendingLossOf(c, now);
-  if (loss === 0 || !c.pendingCloseAt) return 0;
-  return (await pendingLanded(userId, c.accountId, c.pendingCloseAt)) ? 0 : loss;
+  return (await pendingStateNow(userId, c, now)).loss;
 }
 
 export interface PositionView {

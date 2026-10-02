@@ -51,7 +51,7 @@ import {
   mt5AccessProblem,
   mt5DisplaySymbol,
 } from "@/lib/connectors/metaapi";
-import { readableConnectionsWhere } from "@/lib/connectors/mt5-access";
+import { readableConnectionsWhere, rejectMt5Link } from "@/lib/connectors/mt5-access";
 import {
   dropSessionToken,
   getSessionToken,
@@ -65,8 +65,15 @@ import { generateAlerts } from "@/lib/alerts/generate";
 import { notifyAlertSteps } from "@/lib/push/alerts";
 import { withSingleRunner, type RunContext } from "@/lib/single-runner";
 import { CallBudget, liveBudget } from "@/lib/live/budget";
-import { positionsLeft } from "@/lib/live/closed-between";
-import { PENDING_GONE_MAX_MS, pendingLanded, pendingLossOf } from "@/lib/live/state";
+import { positionsLeftItems, type LeftItem } from "@/lib/live/closed-between";
+import {
+  PENDING_GONE_MAX_MS,
+  parsePendingItems,
+  pendingLanded,
+  pendingLossOf,
+  unlandedPending,
+  type PendingItem,
+} from "@/lib/live/state";
 import {
   DECRYPT_MESSAGE,
   NOT_ALLOWED_MESSAGE,
@@ -116,6 +123,7 @@ interface ConnRow {
   startingBalance: number;
   pendingCloseLoss: number | null;
   pendingCloseAt: Date | null;
+  pendingCloseItems: string | null;
 }
 
 interface Group {
@@ -234,6 +242,7 @@ async function tickWork(
       startingBalance: c.account.startingBalance ?? 0,
       pendingCloseLoss: c.pendingCloseLoss,
       pendingCloseAt: c.pendingCloseAt,
+      pendingCloseItems: c.pendingCloseItems,
     };
     if (c.broker === MT5_FIRM_ID) {
       // No login to share and no stored password: each MT5 link is its own group.
@@ -461,9 +470,9 @@ async function readGroup(
       // about to leave the snapshot before the closed trade reaches us.
       const before = await prisma.positionSnapshot.findMany({
         where: { connectionId: c.id, userId: c.userId },
-        select: { contractId: true, side: true, size: true, openPnl: true },
+        select: { contractId: true, symbol: true, side: true, size: true, openPnl: true },
       });
-      const gone = positionsLeft(before, views);
+      const gone = positionsLeftItems(before, views);
 
       const pendingAt = await persistRead(c, views, balanceOf.get(c.externalAccountId), now, gone);
       noteSuccess(c.id);
@@ -524,6 +533,9 @@ async function readMt5Group(
 
   const info = await bounded(() => maReadAccountInfo(c.externalAccountId, { gate }));
   if (mt5AccessProblem(info) === "trading_rights") {
+    // This login can trade: delete the bridge account (it may hold a trading password) and
+    // mark the link rejected, so nothing reads it again.
+    await rejectMt5Link(c);
     throw new KeyRejected(MT5_LIVE_MESSAGES.readRejected);
   }
   const positions = await bounded(() => maReadPositions(c.externalAccountId, { gate }));
@@ -543,10 +555,11 @@ async function readMt5Group(
 
   const before = await prisma.positionSnapshot.findMany({
     where: { connectionId: c.id, userId: c.userId },
-    select: { contractId: true, side: true, size: true, openPnl: true },
+    select: { contractId: true, symbol: true, side: true, size: true, openPnl: true },
   });
-  const gone = positionsLeft(before, views);
-  const pendingAt = await persistRead(c, views, info.balance, now, gone);
+  const gone = positionsLeftItems(before, views);
+  // An MT5 position is matched to its own closed trade by position id ("mt5:<positionId>").
+  const pendingAt = await persistRead(c, views, info.balance, now, gone, (key) => `mt5:${key}`);
   noteSuccess(c.id);
   touchedUsers.add(c.userId);
   stats.reads++;
@@ -609,7 +622,8 @@ async function persistRead(
   views: SnapshotInput[],
   balance: number | undefined,
   now: Date,
-  gone: { left: boolean; loss: number }
+  gone: LeftItem[],
+  extFor?: (key: string) => string
 ): Promise<Date | null> {
   const openSum = views.reduce((s, v) => s + (v.openPnl ?? 0), 0);
   const closed = await prisma.trade.aggregate({
@@ -621,32 +635,60 @@ async function persistRead(
   const peak =
     c.livePeakEquity == null || equity > c.livePeakEquity ? equity : c.livePeakEquity;
 
-  // A position left: keep its open loss counted until the closed trade lands. An
-  // earlier close still waiting for its trade (not lapsed, not landed) adds to the new
-  // loss and keeps its clock; the clock starts at the last read that still saw the
-  // position open.
-  let earlier = 0;
-  let earlierSince: Date | null = null;
-  if (
+  // A position left: keep its open loss counted until ITS closed trade lands (matched by
+  // symbol, side and size, or by MT5 position id), so two positions closing together can
+  // not clear each other's loss. Earlier closes still waiting keep their own clock; a
+  // new one starts at the last read that still saw the position open.
+  let earlier: PendingItem[] = [];
+  if (c.pendingCloseItems) {
+    earlier = await unlandedPending(c.userId, c.accountId, parsePendingItems(c.pendingCloseItems), now);
+  } else if (
     c.pendingCloseAt &&
     now.getTime() - c.pendingCloseAt.getTime() < PENDING_GONE_MAX_MS &&
     !(await pendingLanded(c.userId, c.accountId, c.pendingCloseAt))
   ) {
-    earlier = pendingLossOf({ pendingCloseLoss: c.pendingCloseLoss, pendingCloseAt: c.pendingCloseAt }, now);
-    earlierSince = c.pendingCloseAt;
+    // Saved before per-position tracking: carry it as one unmatched item until it lapses.
+    earlier = [
+      {
+        key: "earlier",
+        symbol: "",
+        side: "long",
+        size: 1,
+        loss: pendingLossOf({ pendingCloseLoss: c.pendingCloseLoss, pendingCloseAt: c.pendingCloseAt }, now),
+        at: c.pendingCloseAt.toISOString(),
+      },
+    ];
   }
-  let pendingAt: Date | null = earlierSince;
-  let pending: { pendingCloseLoss?: number | null; pendingCloseAt?: Date | null } = {};
-  if (gone.left) {
-    pendingAt = earlierSince ?? c.lastLiveAt ?? now;
-    pending = { pendingCloseLoss: Math.min(0, earlier + gone.loss), pendingCloseAt: pendingAt };
-    // The closed trade may already be here (30-minute sweep): nothing to wait for.
-    if (await pendingLanded(c.userId, c.accountId, pendingAt)) {
-      pendingAt = null;
-      pending = { pendingCloseLoss: null, pendingCloseAt: null };
-    }
-  } else if (c.pendingCloseAt && !earlierSince) {
-    pending = { pendingCloseLoss: null, pendingCloseAt: null }; // landed or lapsed: tidy up
+  const seenAt = (c.lastLiveAt ?? now).toISOString();
+  let fresh: PendingItem[] = gone.map((g) => ({
+    key: g.key,
+    ...(extFor ? { ext: extFor(g.key) } : {}),
+    symbol: g.symbol,
+    side: g.side,
+    size: g.size,
+    loss: g.loss,
+    at: seenAt,
+  }));
+  // The closed trade may already be here (30-minute sweep): nothing to wait for.
+  if (fresh.length > 0) fresh = await unlandedPending(c.userId, c.accountId, fresh, now);
+  const items = [...earlier, ...fresh];
+  const hadPending = !!(c.pendingCloseAt || c.pendingCloseItems);
+  let pendingAt: Date | null = null;
+  let pending: {
+    pendingCloseLoss?: number | null;
+    pendingCloseAt?: Date | null;
+    pendingCloseItems?: string | null;
+  } = {};
+  if (items.length > 0) {
+    pendingAt = new Date(Math.min(...items.map((i) => Date.parse(i.at))));
+    const total = items.reduce((sum, i) => sum + i.loss, 0);
+    pending = {
+      pendingCloseLoss: Math.round(Math.min(0, total) * 100) / 100,
+      pendingCloseAt: pendingAt,
+      pendingCloseItems: JSON.stringify(items),
+    };
+  } else if (hadPending) {
+    pending = { pendingCloseLoss: null, pendingCloseAt: null, pendingCloseItems: null }; // landed or lapsed: tidy up
   }
 
   await prisma.$transaction([

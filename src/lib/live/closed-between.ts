@@ -7,6 +7,7 @@
 
 export interface PositionLite {
   contractId: string;
+  symbol?: string;
   side: string;
   size: number;
   openPnl: number | null;
@@ -42,4 +43,44 @@ export function positionsLeft(
     }
   }
   return { left, loss: Math.round(Math.min(0, gone) * 100) / 100 };
+}
+
+/** One position (or part of one) that left between two reads. `loss` is <= 0. */
+export interface LeftItem {
+  /** The broker's position or contract id. */
+  key: string;
+  symbol: string;
+  side: "long" | "short";
+  /** The size that left (lots or contracts). */
+  size: number;
+  loss: number;
+}
+
+/**
+ * Like `positionsLeft`, but says WHICH positions left and how much of each, so the
+ * pending loss can be cleared one position at a time, when its own closed trade lands.
+ * A profit that left is never counted (loss 0), and is not offset against another's loss.
+ */
+export function positionsLeftItems(prev: PositionLite[], next: PositionLite[]): LeftItem[] {
+  const nowSize = new Map<string, number>();
+  for (const p of next) nowSize.set(key(p), (nowSize.get(key(p)) ?? 0) + p.size);
+  const items: LeftItem[] = [];
+  for (const p of prev) {
+    const remaining = nowSize.get(key(p)) ?? 0;
+    if (remaining >= p.size) {
+      nowSize.set(key(p), remaining - p.size);
+      continue;
+    }
+    nowSize.set(key(p), 0);
+    const left = p.size - remaining;
+    const loss = p.openPnl != null && p.size > 0 ? Math.min(0, p.openPnl * (left / p.size)) : 0;
+    items.push({
+      key: p.contractId,
+      symbol: p.symbol ?? "",
+      side: p.side === "short" ? "short" : "long",
+      size: left,
+      loss: Math.round(loss * 100) / 100,
+    });
+  }
+  return items;
 }

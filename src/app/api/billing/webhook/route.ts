@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { mt5PlanEnded, removeMt5LinksForUser } from "@/lib/connectors/mt5-access";
 import {
   BILLING_NOT_CONFIGURED,
   billingUpdateFor,
@@ -142,4 +143,16 @@ async function applyEvent(event: PaddleWebhookEvent): Promise<void> {
       ...(event.occurredAt ? { billingEventAt: event.occurredAt } : {}),
     },
   });
+
+  // A plan that has ended (cancelled, or moved to a free plan) stops the MT5 read AND
+  // removes the bridge account at MetaApi, together with the investor password it holds.
+  // A payment that is merely being retried (past_due) only pauses reading. A failure here
+  // never fails the webhook: the bridge accounts are logged and the 30-minute sweep retries.
+  if (update && mt5PlanEnded({ plan: update.plan ?? user.plan, billingStatus: update.billingStatus })) {
+    try {
+      await removeMt5LinksForUser(user.id);
+    } catch (err) {
+      console.error("[paddle] could not remove MT5 bridge accounts after a plan ended:", (err as Error).message);
+    }
+  }
 }

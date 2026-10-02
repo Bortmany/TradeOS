@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { getAccounts } from "@/lib/data";
+import { prisma } from "@/lib/db";
 import { ADAPTERS } from "@/lib/ingestion";
 import { PageHeader } from "@/components/page-header";
 import { ShieldCheck, EyeOff, FileSpreadsheet } from "lucide-react";
@@ -28,6 +29,17 @@ export default async function ImportPage() {
   const mt5On = metaApiSwitchedOn();
   const mt5Plan = mt5On && mt5PlanAllowed({ plan: user.plan, billingStatus: user.billingStatus });
   const mt5Count = mt5On ? await countMt5Connections(user.id) : 0;
+  // Accounts a live MT5 link can attach to: the trader's own, in US dollars, not linked to a broker yet.
+  const linkedIds = mt5On
+    ? new Set(
+        (await prisma.brokerConnection.findMany({ where: { userId: user.id }, select: { accountId: true } })).map(
+          (c) => c.accountId
+        )
+      )
+    : new Set<string>();
+  const mt5Targets = accounts
+    .filter((a) => a.currency.trim().toUpperCase() === "USD" && !linkedIds.has(a.id))
+    .map((a) => ({ id: a.id, name: a.name }));
 
   return (
     <div className="container max-w-7xl space-y-6 py-6">
@@ -67,7 +79,7 @@ export default async function ImportPage() {
       <BrokerConnect />
 
       {/* MT5 live link: HIDDEN until the owner switches it on (METAAPI_ENABLED + token). */}
-      {mt5On && <Mt5LiveCard planAllowed={mt5Plan} count={mt5Count} max={MT5_MAX_ACCOUNTS} />}
+      {mt5On && <Mt5LiveCard planAllowed={mt5Plan} count={mt5Count} max={MT5_MAX_ACCOUNTS} accounts={mt5Targets} />}
     </div>
   );
 }

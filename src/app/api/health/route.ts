@@ -39,7 +39,7 @@ export async function GET() {
     }
   }
 
-  checks.billing =isBillingConfigured() ? "configured" : "dev-mode";
+  checks.billing = isBillingConfigured() ? "configured" : "dev-mode";
   checks.aiCoaching = process.env.AI_COACHING_ENABLED === "true" ? "enabled" : "disabled";
   checks.errorTracking = process.env.SENTRY_DSN ? "configured" : "dormant";
   // Phone warnings (Web Push): "configured" once all four VAPID keys are set.

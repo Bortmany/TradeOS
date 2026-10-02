@@ -43,6 +43,8 @@ export interface MetaState {
   mode: "ok" | "network" | "rate-limit" | "bad-login" | "server-missing" | "token-refused" | "delete-fails";
   /** The create call answers 202 this many times before 201. */
   pendingCreates: number;
+  /** The next this-many create calls MAKE the account but the answer is lost (a timeout). */
+  lostCreateResponses: number;
   /** account-information answers 504 this many times before working. */
   notReadyReads: number;
   synchronizing: boolean;
@@ -70,6 +72,7 @@ export function installFakeMetaApi(initial: Partial<MetaState> = {}) {
     deals: [],
     mode: "ok",
     pendingCreates: 0,
+    lostCreateResponses: 0,
     notReadyReads: 0,
     synchronizing: false,
     ...initial,
@@ -78,6 +81,8 @@ export function installFakeMetaApi(initial: Partial<MetaState> = {}) {
   const violations: string[] = [];
   /** account id -> the kind of password it was created with (live accounts only). */
   const accounts = new Map<string, "investor" | "master">();
+  /** transaction id -> the account it made (MetaApi hands the same account back for a repeated id). */
+  const byTransaction = new Map<string, string>();
   let seq = 0;
 
   const json = (body: unknown, status = 200, headers: Record<string, string> = {}) =>
@@ -132,6 +137,8 @@ export function installFakeMetaApi(initial: Partial<MetaState> = {}) {
           details: { code: "E_SRV_NOT_FOUND", serversByBrokers: {} },
         }, 400);
       }
+      const txn = headers["transaction-id"];
+      if (txn && byTransaction.has(txn)) return json({ id: byTransaction.get(txn), state: "DEPLOYED" }, 201);
       if (state.pendingCreates > 0) {
         state.pendingCreates -= 1;
         return json({ message: "Automatic broker settings detection is in progress, please retry in 1 seconds" }, 202, {
@@ -141,6 +148,11 @@ export function installFakeMetaApi(initial: Partial<MetaState> = {}) {
       seq += 1;
       const id = `acc-${seq}-aaaa-bbbb`;
       accounts.set(id, state.passwordKind);
+      if (txn) byTransaction.set(txn, id);
+      if (state.lostCreateResponses > 0) {
+        state.lostCreateResponses -= 1;
+        throw new TypeError("fetch failed"); // the account exists; the answer never arrived
+      }
       return json({ id, state: "DEPLOYED" }, 201);
     }
 

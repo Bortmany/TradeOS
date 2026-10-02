@@ -49,17 +49,19 @@ export async function makeTrader(opts: {
 export async function addClosedTrade(
   t: { userId: string; accountId: string },
   pnl: number,
-  when: Date
+  when: Date,
+  more: { symbol?: string; side?: string; quantity?: number; externalId?: string } = {}
 ) {
   return prisma.trade.create({
     data: {
       userId: t.userId,
       accountId: t.accountId,
-      symbol: "ES",
-      side: "long",
+      symbol: more.symbol ?? "ES",
+      side: more.side ?? "long",
       entryPrice: 5000,
       exitPrice: 5000 + pnl / 50,
-      quantity: 1,
+      quantity: more.quantity ?? 1,
+      ...(more.externalId ? { externalId: more.externalId } : {}),
       entryTime: when,
       exitTime: when,
       fees: 0,

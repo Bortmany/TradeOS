@@ -18,10 +18,11 @@ import { clearSessionTokens } from "@/lib/connectors/session";
 import { generateAlerts } from "@/lib/alerts/generate";
 import { positionsLeft } from "@/lib/live/closed-between";
 import { runnerHealth } from "@/lib/single-runner";
+import { unlandedPending } from "@/lib/live/state";
 import { REFUSED_MESSAGE, REJECTED_MESSAGE } from "@/lib/live/messages";
 import * as pushAlerts from "@/lib/push/alerts";
 import * as firms from "@/lib/connectors/firms";
-import { MES, fill, installFakeGateway } from "./fixtures/projectx";
+import { ES, MES, fill, installFakeGateway } from "./fixtures/projectx";
 import { addClosedTrade, cleanup, connect, makeTrader, metaOf, openAlerts } from "./fixtures/live-helpers";
 
 const T0 = new Date("2026-10-02T18:00:00Z");
@@ -143,7 +144,7 @@ describe("a position that closes between reads (open loss must not vanish before
       bars: { [MES]: 5200.25 },
     });
     await runLiveTick({ now: T0, budget: budgetAt({ t: 0 }) });
-    await addClosedTrade(t, -900, at(30)); // landed by some other path before the next read
+    await addClosedTrade(t, -900, at(30), { symbol: "MES", side: "long", quantity: 3 }); // that position's own trade, landed by some other path before the next read
     gw.state.positions["123"] = [];
     await runLiveTick({ now: at(61), budget: budgetAt({ t: 61_000 }) });
     const [a] = await dailyLoss(t.userId);
@@ -405,5 +406,142 @@ describe("phone warnings go out after the pass, outside the lease", () => {
     const stats = await runLiveTick({ now: T0, budget: budgetAt({ t: 0 }), pushCapMs: 250 });
     expect(stats.reads).toBe(1);
     expect(Date.now() - started).toBeLessThan(3_000); // returned after the cap, not never
+  });
+});
+
+// --------------------------------------------------------------------------
+// A pending loss is cleared by ITS OWN closed trade (symbol, side and size), not by
+// any trade that happens to land. Affects TopstepX and MT5 alike.
+// --------------------------------------------------------------------------
+
+describe("a pending close loss is matched to the specific position that closed", () => {
+  it("two positions close in the same minute and only one is synced: the other loss stays counted", async () => {
+    const t = await makeTrader(); // $1,000 daily limit
+    await connect(t);
+    gw = installFakeGateway({
+      balances: { "123": 1 },
+      positions: {
+        "123": [
+          { contractId: MES, type: 1, size: 3, averagePrice: 5260.25 }, // bar 5200.25: -60 x 3 x 5 = -$900
+          { contractId: ES, type: 1, size: 1, averagePrice: 5000 }, // bar 4996: -4 x 50 = -$200
+        ],
+      },
+      bars: { [MES]: 5200.25, [ES]: 4996 },
+    });
+    await runLiveTick({ now: T0, budget: budgetAt({ t: 0 }) });
+    let [a] = await dailyLoss(t.userId);
+    expect(metaOf(a)).toMatchObject({ value: 1100, openCount: 2 });
+
+    // Both close at the broker, but only the MES fills have reached the trade list.
+    gw.state.positions["123"] = [];
+    gw.state.fills["123"] = [
+      fill(1, MES, 0, 3, 5260.25, at(-120)),
+      fill(2, MES, 1, 3, 5200.25, at(30)), // exactly -$900
+    ];
+    const clock = { t: 61_000 };
+    const budget = budgetAt(clock);
+    await runLiveTick({ now: at(61), budget });
+    expect(await prisma.trade.count({ where: { accountId: t.accountId } })).toBe(1);
+    [a] = await dailyLoss(t.userId);
+    // Realized MES -900, plus the ES loss still pending (-200). With the old rule ANY trade
+    // cleared the whole pending loss and this read 900.
+    expect(metaOf(a)).toMatchObject({ value: 1100, pendingCloseLoss: -200, openCount: 0 });
+
+    // The ES fills arrive: now nothing is pending.
+    gw.state.fills["123"] = [
+      ...gw.state.fills["123"],
+      fill(3, ES, 0, 1, 5000, at(-100)),
+      fill(4, ES, 1, 1, 4996, at(40)), // -$200
+    ];
+    clock.t = 122_000;
+    await runLiveTick({ now: at(122), budget });
+    [a] = await dailyLoss(t.userId);
+    expect(metaOf(a)).toMatchObject({ value: 1100, pendingCloseLoss: 0 });
+  });
+
+  it("a partial close keeps its loss counted continuously until its trade lands, then only the open rest remains", async () => {
+    const t = await makeTrader();
+    await connect(t);
+    gw = installFakeGateway({
+      balances: { "123": 1 },
+      positions: { "123": [{ contractId: MES, type: 1, size: 4, averagePrice: 5260.25 }] },
+      bars: { [MES]: 5200.25 }, // -$300 per contract... -60 x 5 = -300 each
+    });
+    await runLiveTick({ now: T0, budget: budgetAt({ t: 0 }) });
+    let [a] = await dailyLoss(t.userId);
+    expect(metaOf(a)).toMatchObject({ value: 1200, openCount: 1 });
+
+    // 2 of 4 close; the fills are not in yet. Open rest -600 + pending -600: still 1,200.
+    gw.state.positions["123"] = [{ contractId: MES, type: 1, size: 2, averagePrice: 5260.25 }];
+    const clock = { t: 61_000 };
+    const budget = budgetAt(clock);
+    await runLiveTick({ now: at(61), budget });
+    [a] = await dailyLoss(t.userId);
+    expect(metaOf(a)).toMatchObject({ value: 1200, openCount: 1, pendingCloseLoss: -600 });
+
+    // A trade for ANOTHER symbol lands (not this position): the pending loss must stay.
+    await addClosedTrade(t, -50, at(70), { symbol: "ES", quantity: 2 });
+    clock.t = 122_000;
+    await runLiveTick({ now: at(122), budget });
+    [a] = await dailyLoss(t.userId);
+    expect(metaOf(a)).toMatchObject({ pendingCloseLoss: -600 });
+
+    // Its own trade lands (2 MES, -$600): continuous, nothing double counted, nothing dropped.
+    gw.state.fills["123"] = [
+      fill(1, MES, 0, 4, 5260.25, at(-120)),
+      fill(2, MES, 1, 2, 5200.25, at(90)), // closes 2 of the 4: -$600
+    ];
+    clock.t = 183_000;
+    await runLiveTick({ now: at(183), budget });
+    [a] = await dailyLoss(t.userId);
+    // realized -600 + -50 (the other trade) + open rest -600
+    expect(metaOf(a)).toMatchObject({ value: 1250, pendingCloseLoss: 0, openCount: 1 });
+  });
+
+  it("the matching itself: a trade for another position does nothing; a part trade clears that share only", async () => {
+    const t = await makeTrader();
+    const items = [
+      { key: "p1", symbol: "MES", side: "long" as const, size: 2, loss: -600, at: at(0).toISOString() },
+      { key: "p2", symbol: "ES", side: "long" as const, size: 1, loss: -200, at: at(0).toISOString() },
+    ];
+    const now = at(120);
+    // nothing landed
+    expect(await unlandedPending(t.userId, t.accountId, items, now)).toHaveLength(2);
+    // an MES SHORT trade is not this long position
+    await addClosedTrade(t, -10, at(50), { symbol: "MES", side: "short", quantity: 2 });
+    expect(await unlandedPending(t.userId, t.accountId, items, now)).toHaveLength(2);
+    // 1 of the 2 MES contracts lands: half of that loss is still pending, ES untouched
+    await addClosedTrade(t, -300, at(60), { symbol: "MES", side: "long", quantity: 1 });
+    const half = await unlandedPending(t.userId, t.accountId, items, now);
+    expect(half.map((i) => [i.key, i.size, i.loss])).toEqual([
+      ["p1", 1, -300],
+      ["p2", 1, -200],
+    ]);
+    // a trade that closed BEFORE the position left does not count
+    await addClosedTrade(t, -1, at(-30), { symbol: "ES", side: "long", quantity: 1 });
+    expect((await unlandedPending(t.userId, t.accountId, items, now)).map((i) => i.key)).toEqual(["p1", "p2"]);
+    // the rest of MES and the ES trade land
+    await addClosedTrade(t, -300, at(70), { symbol: "MES", side: "long", quantity: 1 });
+    await addClosedTrade(t, -200, at(80), { symbol: "ES", side: "long", quantity: 1 });
+    expect(await unlandedPending(t.userId, t.accountId, items, now)).toEqual([]);
+    // an item older than the lapse window is dropped
+    expect(
+      await unlandedPending(t.userId, t.accountId, [{ ...items[0], at: at(-3 * 3600).toISOString() }], now)
+    ).toEqual([]);
+  });
+
+  it("an MT5 position is matched by its position id (mt5:<id>) and its chunks", async () => {
+    const t = await makeTrader();
+    const items = [
+      { key: "555", ext: "mt5:555", symbol: "EURUSD", side: "long" as const, size: 1, loss: -400, at: at(0).toISOString() },
+      { key: "556", ext: "mt5:556", symbol: "EURUSD", side: "long" as const, size: 1, loss: -100, at: at(0).toISOString() },
+    ];
+    // Same symbol, side and size, but it is position 556's trade: only 556 clears.
+    await addClosedTrade(t, -100, at(40), { symbol: "EURUSD", side: "long", quantity: 1, externalId: "mt5:556" });
+    const left = await unlandedPending(t.userId, t.accountId, items, at(120));
+    expect(left.map((i) => i.key)).toEqual(["555"]);
+    // The second chunk id of the same position counts as that position's trade too.
+    await addClosedTrade(t, -400, at(50), { symbol: "EURUSD", side: "long", quantity: 1, externalId: "mt5:555:2" });
+    expect(await unlandedPending(t.userId, t.accountId, items, at(120))).toEqual([]);
   });
 });

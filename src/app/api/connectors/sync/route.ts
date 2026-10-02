@@ -17,7 +17,12 @@ export const POST = withUser(async (user, req: Request) => {
   try {
     const { id } = z.object({ id: z.string().min(1) }).parse(await req.json());
     const result = await syncConnection(id, user.id);
-    return NextResponse.json({ ok: true, imported: result.imported, skipped: result.skipped });
+    return NextResponse.json({
+      ok: true,
+      imported: result.imported,
+      skipped: result.skipped,
+      ...(result.notes ? { notes: result.notes } : {}),
+    });
   } catch (err) {
     if (err instanceof z.ZodError) {
       return NextResponse.json({ ok: false, error: "Invalid request." }, { status: 400 });

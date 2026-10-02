@@ -292,7 +292,10 @@ function ConnectionRow({
         setSyncError(json.error ?? "Sync failed.");
         return;
       }
-      setSyncResult(`+${json.imported} trades imported`);
+      setSyncResult(
+        `+${json.imported} trades imported` +
+          (Array.isArray(json.notes) && json.notes.length > 0 ? `. ${json.notes.join(" ")}` : "")
+      );
       await onChanged();
     } catch {
       setSyncError("Network error during sync.");

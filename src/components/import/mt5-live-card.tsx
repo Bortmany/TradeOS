@@ -17,6 +17,9 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Hint } from "@/components/hint";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
+const NEW_ACCOUNT = "__new__";
 
 const DEMO_LINE = "The demo desk is look-around only. Create a free account to save your own.";
 
@@ -26,6 +29,8 @@ interface Props {
   /** MT5 links this trader has now, and the most they may have. */
   count: number;
   max: number;
+  /** The trader's own US-dollar accounts the link can attach to (not linked to a broker yet). */
+  accounts: { id: string; name: string }[];
 }
 
 function ErrorPanel({ message, extra }: { message: string; extra?: string }) {
@@ -40,7 +45,7 @@ function ErrorPanel({ message, extra }: { message: string; extra?: string }) {
   );
 }
 
-export function Mt5LiveCard({ planAllowed, count, max }: Props) {
+export function Mt5LiveCard({ planAllowed, count, max, accounts }: Props) {
   const router = useRouter();
   const [server, setServer] = React.useState("");
   const [login, setLogin] = React.useState("");
@@ -51,6 +56,10 @@ export function Mt5LiveCard({ planAllowed, count, max }: Props) {
   const [success, setSuccess] = React.useState(false);
   const [whyOpen, setWhyOpen] = React.useState(false);
   const [linked, setLinked] = React.useState(count);
+  const [target, setTarget] = React.useState<string>(NEW_ACCOUNT);
+  const [notes, setNotes] = React.useState<string[]>([]);
+  const [usedIds, setUsedIds] = React.useState<string[]>([]);
+  const choices = accounts.filter((a) => !usedIds.includes(a.id));
   const pwRef = React.useRef<HTMLInputElement>(null);
 
   const atLimit = linked >= max;
@@ -69,6 +78,7 @@ export function Mt5LiveCard({ planAllowed, count, max }: Props) {
     setTouched({ server: true, login: true, password: true });
     setError(null);
     setSuccess(false);
+    setNotes([]);
     if (errors.server || errors.login || errors.password) return;
 
     setStep(1);
@@ -77,13 +87,19 @@ export function Mt5LiveCard({ planAllowed, count, max }: Props) {
       const res = await fetch("/api/connectors/mt5", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ server: server.trim(), login: login.trim(), password }),
+        body: JSON.stringify({
+          server: server.trim(),
+          login: login.trim(),
+          password,
+          ...(target !== NEW_ACCOUNT ? { accountId: target } : {}),
+        }),
       });
       const json = (await res.json()) as {
         ok: boolean;
         error?: string;
         code?: string;
         clearPassword?: boolean;
+        notes?: string[];
       };
       if (!res.ok || !json.ok) {
         if (json.code === "demo") {
@@ -105,6 +121,9 @@ export function Mt5LiveCard({ planAllowed, count, max }: Props) {
       setLogin("");
       setTouched({ server: false, login: false, password: false });
       setSuccess(true);
+      setNotes(Array.isArray(json.notes) ? json.notes : []);
+      if (target !== NEW_ACCOUNT) setUsedIds((ids) => [...ids, target]);
+      setTarget(NEW_ACCOUNT);
       setLinked((n) => n + 1);
       window.dispatchEvent(new Event("tradeos:connections-changed"));
       router.refresh();
@@ -229,6 +248,27 @@ export function Mt5LiveCard({ planAllowed, count, max }: Props) {
               </div>
             </div>
 
+            <div className="space-y-1.5 sm:max-w-sm">
+              <Label htmlFor="mt5-account">Journal account</Label>
+              <Select value={target} onValueChange={setTarget} disabled={busy}>
+                <SelectTrigger id="mt5-account" className="h-11 md:h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NEW_ACCOUNT}>New account (named after your MT5 login)</SelectItem>
+                  {choices.map((a) => (
+                    <SelectItem key={a.id} value={a.id}>
+                      {a.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-2xs text-muted-foreground">
+                Already imported this account from an MT5 report file? Pick it here so the same trades are
+                never counted twice.
+              </p>
+            </div>
+
             <p className="text-xs text-foreground">
               Use your read-only investor password. TradeOS refuses the main trading password. Your
               prop firm can give you the investor password.
@@ -273,7 +313,14 @@ export function Mt5LiveCard({ planAllowed, count, max }: Props) {
         {success && (
           <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-raised px-4 py-3" role="status">
             <CheckCircle2 className="h-4 w-4 text-profit" />
-            <p className="text-sm">Connected. Reading your MT5 account, read-only.</p>
+            <div>
+              <p className="text-sm">Connected. Reading your MT5 account, read-only.</p>
+              {notes.map((n) => (
+                <p key={n} className="text-xs text-muted-foreground">
+                  {n}
+                </p>
+              ))}
+            </div>
           </div>
         )}
       </CardContent>

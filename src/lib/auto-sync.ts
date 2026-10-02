@@ -13,7 +13,7 @@
 
 import { prisma } from "@/lib/db";
 import { syncConnection, SyncDeferred } from "@/lib/connectors/sync";
-import { readableConnectionsWhere } from "@/lib/connectors/mt5-access";
+import { readableConnectionsWhere, removeEndedMt5Links } from "@/lib/connectors/mt5-access";
 import { withSingleRunner, type RunContext, type RunnerOutcome } from "@/lib/single-runner";
 import { CallBudget, liveBudget } from "@/lib/live/budget";
 
@@ -71,6 +71,13 @@ function sweepGate(ctx: RunContext, budget: CallBudget): () => Promise<void> {
 }
 
 async function sweepWork(ctx: RunContext, budget: CallBudget): Promise<void> {
+  // MT5 bridge accounts of traders whose plan has ended: retry any removal that failed before.
+  try {
+    const removed = await removeEndedMt5Links();
+    if (removed > 0) console.log(`[auto-sync] removed ${removed} MT5 link(s) of ended plans`);
+  } catch (err) {
+    console.error("[auto-sync] MT5 plan-end clean-up failed:", (err as Error).message);
+  }
   const connections = await prisma.brokerConnection.findMany({
     where: readableConnectionsWhere(), // MT5 rows only while the owner's switch is on and the plan allows
     orderBy: { lastSyncAt: "asc" },
