@@ -109,6 +109,8 @@ Explanations are human-readable and deterministic, e.g.
 `"Entered 09:12 ET — before the 09:30 window opens."`
 
 ## Package C — Ingestion (`src/lib/ingestion/`)
+(The MT5 file import below is unchanged. A separate live MT5 link, off by default, is
+described in Package J, "MT5 live link through MetaApi".)
 Files: `csv.ts` (RFC-4180 parser: `parseCsv(text): { headers: string[]; rows: string[][] }`),
 `adapters/{topstepx,tradovate,ninjatrader,rithmic,ibkr,mt5,generic}.ts`, `index.ts`.
 
@@ -530,6 +532,57 @@ an upsert by that key, never delete-and-recreate (so dismissals survive):
   was rejected or its sync is in error.
 - The poll needs a persistent server (Railway, VPS, Docker). On Vercel there is no
   long-running process, so near-live does not run there.
+
+### MT5 live link through MetaApi (`src/lib/connectors/metaapi.ts`, read-only, OFF by default)
+
+- Switch: `METAAPI_ENABLED=true` AND `METAAPI_TOKEN` (`metaApiSwitchedOn()`); anything
+  else is off. While off: `POST /api/connectors/mt5` answers 503 `{ code: "mt5_off" }`, no
+  row with `broker = "mt5"` is loaded by the poller, the 30-minute sweep, the cron route or
+  `scripts/sync-all.ts` (`readableConnectionsWhere()`), `syncConnection` refuses it without
+  recording an error, no MetaApi host is in `allowedHosts()` / `isAllowedBaseUrl()`, and
+  the Import page renders no MT5 card.
+- Storage, no schema change: a `BrokerConnection` with `broker = "mt5"`, `username` = the
+  MT5 login, `externalAccountId` = the MetaApi account id, `externalAccountName` =
+  `"<server> · <login>"`, `baseUrl` = the provisioning origin (informational; the adapter
+  uses fixed hosts), `apiKeyEnc` = an encrypted marker. The investor password is never
+  stored. The journal account is a `TradingAccount` with `broker = "mt5"`.
+- `POST /api/connectors/mt5` `{ server, login (digits), password }`: session, zod, demo
+  refused, `USER_EXTERNAL_LIMIT` plus 5 tries per 15 minutes, paid plan (`mt5PlanAllowed`:
+  pro/elite and `billingStatus = "active"`, else 403 `code: "plan"`), at most 2 MT5 links
+  (403 `code: "limit"`, re-checked after saving so two quick clicks cannot pass), one connect at a
+  time per trader. Flow: create the bridge account (type `cloud-g2`, platform `mt5`, region
+  `new-york`), wait for it to answer, read account information, then `mt5AccessProblem()`:
+  `investorMode` must be exactly `true`, `tradeAllowed` must not be `true`, currency must be
+  USD. On any failure the bridge account is deleted before answering. Answers: 422
+  `trading_rights` (with `clearPassword: true`), 422 `not_usd`, 401 `bad_login`, 400
+  `server_not_found`, 502 `bridge_down`, 503 `busy`. The bridge's own text is never passed on.
+- Disconnect (`DELETE /api/connectors`) and `POST /api/profile/delete` delete the MetaApi
+  account first (`removeBridgeAccounts`); a failure answers 502 and keeps the link / the
+  account.
+- Live read (`readMt5Group` in `poller.ts`): `account-information` (balance to `lastBalance`;
+  the investor flag is re-checked, failing = `liveStatus "rejected"`) and `positions` (one
+  `PositionSnapshot` per position: `contractId` = MetaApi position id, `symbol` tidied by the
+  instruments table, `size` = lots, `avgPrice` = open price, `lastPrice` = current price,
+  `priceSource "broker"`, `openPnl` = the bridge's `unrealizedProfit` in USD). A vanished
+  position triggers the same immediate fill sync and pending-close protection as TopstepX.
+- Deals to trades (`mapDealsToTrades`, same shape as Package C's MT5 file import): group the
+  `DEAL_TYPE_BUY` / `DEAL_TYPE_SELL` deals by `positionId`; `DEAL_ENTRY_IN` opens, `OUT` /
+  `OUT_BY` closes. One trade per FULLY closed position: `side` from the opening deal, entry =
+  volume-weighted average of the IN deals, exit = of the OUT deals, `quantity` = lots,
+  `entryTime` = first IN, `exitTime` = last OUT (the bridge's UTC `time`), `pnlGross` = sum of
+  the OUT deals' `profit` (else `pnlFromPrices` from `src/lib/instruments`), `fees` =
+  -(commission + swap over every deal of the position), `pnl` = profit + commission + swap,
+  `externalId = "mt5:<positionId>"`, `source "api"`, `assetClass` from the instrument table
+  (`forex` or `cfd`). Not made into trades, only counted and named: positions still open or
+  part-closed, positions opened before the 90-day window, reversals in one deal
+  (`DEAL_ENTRY_INOUT`), symbols not in the table. Balance and other non-trade deals are ignored.
+- Allowed MetaApi routes (`ALLOWED_ROUTES`): client host GET `/users/current/accounts/:id/account-information`,
+  `.../positions`, `.../history-deals/time/:from/:to`; provisioning host POST
+  `/users/current/accounts` and DELETE `/users/current/accounts/:id` (the bridge account only). Hosts:
+  `mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai`, `mt-client-api-v1.new-york.agiliumtrade.ai`.
+  Every call: token in the `auth-token` header only, `redirect: "error"`, 15 s timeout, asked of
+  the shared call budget first.
+- `Trade.assetClass` is now also written by the broker sync (null for TopstepX futures).
 
 ### Phone warnings (Web Push, additive tables `PushSubscription`, `PushSent`)
 

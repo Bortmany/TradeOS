@@ -13,6 +13,9 @@ import { rateLimit } from "@/lib/rate-limit";
 import { apiErrorResponse } from "@/lib/api-error";
 import { purgeStoredFiles } from "@/lib/attachments";
 import { refuseDemo } from "@/lib/demo-guard";
+import { MT5_FIRM_ID } from "@/lib/connectors/firms";
+import { MT5_LIVE_MESSAGES } from "@/lib/connectors/metaapi";
+import { removeBridgeAccounts } from "@/lib/connectors/mt5-access";
 
 const schema = z.object({ password: z.string().min(1) });
 
@@ -38,6 +41,17 @@ export const POST = withUser(async (user, req: Request) => {
     const ok = await verifyPassword(password, dbUser.passwordHash);
     if (!ok) {
       return NextResponse.json({ ok: false, error: "Incorrect password." }, { status: 403 });
+    }
+
+    // MT5 links also live at MetaApi (with the investor password it holds): remove them
+    // there first. If MetaApi does not confirm, nothing is deleted and the trader can retry.
+    const bridgeRows = await prisma.brokerConnection.findMany({
+      where: { userId: user.id, broker: MT5_FIRM_ID },
+      select: { externalAccountId: true },
+    });
+    const bridge = await removeBridgeAccounts(bridgeRows.map((r) => r.externalAccountId));
+    if (bridge === "failed") {
+      return NextResponse.json({ ok: false, error: MT5_LIVE_MESSAGES.cleanupFailed }, { status: 502 });
     }
 
     // Stored screenshots go too (the rows go with the account).

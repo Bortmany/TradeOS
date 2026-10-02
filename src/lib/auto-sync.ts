@@ -13,6 +13,7 @@
 
 import { prisma } from "@/lib/db";
 import { syncConnection, SyncDeferred } from "@/lib/connectors/sync";
+import { readableConnectionsWhere } from "@/lib/connectors/mt5-access";
 import { withSingleRunner, type RunContext, type RunnerOutcome } from "@/lib/single-runner";
 import { CallBudget, liveBudget } from "@/lib/live/budget";
 
@@ -71,6 +72,7 @@ function sweepGate(ctx: RunContext, budget: CallBudget): () => Promise<void> {
 
 async function sweepWork(ctx: RunContext, budget: CallBudget): Promise<void> {
   const connections = await prisma.brokerConnection.findMany({
+    where: readableConnectionsWhere(), // MT5 rows only while the owner's switch is on and the plan allows
     orderBy: { lastSyncAt: "asc" },
     select: { id: true, userId: true, externalAccountName: true },
   });

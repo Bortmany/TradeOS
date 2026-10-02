@@ -42,7 +42,16 @@ import {
   pxSearchOpenPositions,
   type ProjectXPosition,
 } from "@/lib/connectors/topstepx";
-import { getFirm, isAllowedBaseUrl } from "@/lib/connectors/firms";
+import { MT5_FIRM_ID, getFirm, isAllowedBaseUrl } from "@/lib/connectors/firms";
+import {
+  MT5_LIVE_MESSAGES,
+  MetaApiError,
+  maReadAccountInfo,
+  maReadPositions,
+  mt5AccessProblem,
+  mt5DisplaySymbol,
+} from "@/lib/connectors/metaapi";
+import { readableConnectionsWhere } from "@/lib/connectors/mt5-access";
 import {
   dropSessionToken,
   getSessionToken,
@@ -89,7 +98,11 @@ export interface LiveTickStats {
 
 /** The round must stop now: the call budget is used up, the broker is backing off, or the tick's deadline hit. */
 class BudgetStop extends Error {}
-class KeyRejected extends Error {}
+class KeyRejected extends Error {
+  constructor(public readonly text: string = REJECTED_MESSAGE) {
+    super("key rejected");
+  }
+}
 
 interface ConnRow {
   id: string;
@@ -110,6 +123,8 @@ interface Group {
   baseUrl: string;
   username: string;
   apiKey: string;
+  /** An MT5 link through MetaApi: one connection per group, no login, no stored key. */
+  mt5?: boolean;
   conns: ConnRow[];
 }
 
@@ -194,7 +209,8 @@ async function tickWork(
 ): Promise<void> {
   // Errors here are NOT swallowed: the runner logs them and records the failure.
   const rows = await prisma.brokerConnection.findMany({
-    where: { nearLive: true, liveStatus: { not: "rejected" } },
+    // MT5 rows are only ever loaded while the owner's switch is on and the owner is on a paid plan.
+    where: { AND: [{ nearLive: true, liveStatus: { not: "rejected" } }, readableConnectionsWhere()] },
     include: { account: { select: { startingBalance: true } } },
   });
 
@@ -206,6 +222,25 @@ async function tickWork(
     // Retry back-off after repeated failures (a bad day at the broker is not hammered).
     const fs = failureState.get(c.id);
     if (fs && now.getTime() < fs.nextAt - FAILURE_SLACK_MS) continue;
+    const row: ConnRow = {
+      id: c.id,
+      userId: c.userId,
+      accountId: c.accountId,
+      baseUrl: c.baseUrl,
+      username: c.username,
+      externalAccountId: c.externalAccountId,
+      lastLiveAt: c.lastLiveAt,
+      livePeakEquity: c.livePeakEquity,
+      startingBalance: c.account.startingBalance ?? 0,
+      pendingCloseLoss: c.pendingCloseLoss,
+      pendingCloseAt: c.pendingCloseAt,
+    };
+    if (c.broker === MT5_FIRM_ID) {
+      // No login to share and no stored password: each MT5 link is its own group.
+      const key = `mt5:${c.id}`;
+      groups.set(key, { key, baseUrl: c.baseUrl, username: c.username, apiKey: "", mt5: true, conns: [row] });
+      continue;
+    }
     if (!isAllowedBaseUrl(c.baseUrl)) {
       await markFailure([c.id], "rejected", NOT_ALLOWED_MESSAGE);
       stats.rejected++;
@@ -221,19 +256,7 @@ async function tickWork(
     }
     const key = sessionKey(c.baseUrl, c.username, apiKey);
     const g = groups.get(key) ?? { key, baseUrl: c.baseUrl, username: c.username, apiKey, conns: [] };
-    g.conns.push({
-      id: c.id,
-      userId: c.userId,
-      accountId: c.accountId,
-      baseUrl: c.baseUrl,
-      username: c.username,
-      externalAccountId: c.externalAccountId,
-      lastLiveAt: c.lastLiveAt,
-      livePeakEquity: c.livePeakEquity,
-      startingBalance: c.account.startingBalance ?? 0,
-      pendingCloseLoss: c.pendingCloseLoss,
-      pendingCloseAt: c.pendingCloseAt,
-    });
+    g.conns.push(row);
     groups.set(key, g);
   }
 
@@ -247,7 +270,8 @@ async function tickWork(
     if (ctx.expired()) break; // out of time: the stalest go first next tick
     stats.groups++;
     try {
-      await readGroup(g, ctx, now, budget, touchedUsers, stats);
+      if (g.mt5) await readMt5Group(g, ctx, now, budget, touchedUsers, stats);
+      else await readGroup(g, ctx, now, budget, touchedUsers, stats);
     } catch (err) {
       if (err instanceof BudgetStop) break; // minute's budget used or deadline; resume next tick
       if (err instanceof ConnectorError && err.kind === "rate_limit") {
@@ -256,10 +280,10 @@ async function tickWork(
       }
       const ids = g.conns.map((c) => c.id);
       if (err instanceof KeyRejected) {
-        await markFailure(ids, "rejected", REJECTED_MESSAGE);
+        await markFailure(ids, "rejected", err.text);
         stats.rejected += ids.length;
       } else if (err instanceof ConnectorError) {
-        await markFailure(ids, "unreachable", messageFor(err));
+        await markFailure(ids, "unreachable", g.mt5 ? MT5_LIVE_MESSAGES.readUnreachable : messageFor(err));
         noteFailure(ids, now);
         stats.failed += ids.length;
       } else {
@@ -464,6 +488,69 @@ async function readGroup(
       throw err;
     }
   }
+}
+
+/**
+ * One MT5 link through MetaApi: read the account (balance, equity, the investor flag)
+ * and its open positions, then save the snapshot like any other read. Two budgeted
+ * calls per read. If the account no longer reports the read-only investor flag, the
+ * link is marked rejected and nothing more is read from it.
+ */
+async function readMt5Group(
+  g: Group,
+  ctx: RunContext,
+  now: Date,
+  budget: CallBudget,
+  touchedUsers: Set<string>,
+  stats: LiveTickStats
+): Promise<void> {
+  const c = g.conns[0];
+  const gate = async () => {
+    if (ctx.expired() || !budget.take()) throw new BudgetStop();
+  };
+  const bounded = async <T>(fn: () => Promise<T>): Promise<T> => {
+    try {
+      const r = await withinDeadline(ctx, fn());
+      budget.onSuccess();
+      return r;
+    } catch (err) {
+      // The bridge no longer knows this account: only reconnecting helps.
+      if (err instanceof MetaApiError && err.code === "not_found") {
+        throw new KeyRejected(MT5_LIVE_MESSAGES.readRejected);
+      }
+      throw err;
+    }
+  };
+
+  const info = await bounded(() => maReadAccountInfo(c.externalAccountId, { gate }));
+  if (mt5AccessProblem(info) === "trading_rights") {
+    throw new KeyRejected(MT5_LIVE_MESSAGES.readRejected);
+  }
+  const positions = await bounded(() => maReadPositions(c.externalAccountId, { gate }));
+
+  const views: SnapshotInput[] = positions.map((p) => ({
+    contractId: p.id,
+    symbol: mt5DisplaySymbol(p.symbol),
+    side: p.side,
+    size: p.volume,
+    avgPrice: p.openPrice,
+    lastPrice: p.currentPrice,
+    priceSource: p.currentPrice != null ? ("broker" as const) : null,
+    // The bridge's own open profit, already in the account's currency (USD only).
+    openPnl: p.unrealizedProfit,
+    notPricedReason: p.unrealizedProfit == null ? ("no_price" as const) : null,
+  }));
+
+  const before = await prisma.positionSnapshot.findMany({
+    where: { connectionId: c.id, userId: c.userId },
+    select: { contractId: true, side: true, size: true, openPnl: true },
+  });
+  const gone = positionsLeft(before, views);
+  const pendingAt = await persistRead(c, views, info.balance, now, gone);
+  noteSuccess(c.id);
+  touchedUsers.add(c.userId);
+  stats.reads++;
+  if (pendingAt) await fetchFills(c, ctx, budget, touchedUsers, stats);
 }
 
 /**

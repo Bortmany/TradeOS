@@ -25,7 +25,20 @@ import {
   pairFills,
   ConnectorError,
 } from "@/lib/connectors/topstepx";
-import { isAllowedBaseUrl, DISALLOWED_BASE_URL_MESSAGE } from "@/lib/connectors/firms";
+import {
+  isAllowedBaseUrl,
+  DISALLOWED_BASE_URL_MESSAGE,
+  MT5_FIRM_ID,
+  metaApiSwitchedOn,
+} from "@/lib/connectors/firms";
+import {
+  MT5_LIVE_MESSAGES,
+  MetaApiError,
+  mapDealsToTrades,
+  maReadDeals,
+} from "@/lib/connectors/metaapi";
+import { mt5PlanAllowed } from "@/lib/connectors/mt5-access";
+import type { NormalizedTrade } from "@/lib/types";
 
 const WINDOW_DAYS = 90;
 
@@ -62,6 +75,8 @@ export async function syncConnection(
     include: { account: true },
   });
   if (!conn) throw new ConnectorError("Connection not found.");
+
+  if (conn.broker === MT5_FIRM_ID) return syncMt5(conn, userId, opts, gate);
 
   try {
     // Older connections were stored with a user-typed gateway URL. The server
@@ -111,51 +126,7 @@ export async function syncConnection(
       }
     }
     const trades = pairFills(fills);
-
-    let imported = 0;
-    let skipped = 0;
-    for (const t of trades) {
-      try {
-        await prisma.trade.create({
-          data: {
-            userId,
-            accountId: conn.accountId,
-            symbol: t.symbol,
-            side: t.side,
-            entryPrice: t.entryPrice,
-            exitPrice: t.exitPrice ?? null,
-            quantity: t.quantity,
-            entryTime: t.entryTime,
-            exitTime: t.exitTime ?? null,
-            fees: t.fees ?? 0,
-            pnl: t.pnl ?? 0,
-            pnlGross: t.pnlGross ?? null,
-            source: "api",
-            externalId: t.externalId ?? null,
-            isWin: t.exitTime ? (t.pnl ?? 0) > 0 : null,
-          },
-        });
-        imported++;
-      } catch {
-        skipped++; // unique-constraint dedupe on [accountId, externalId]
-      }
-    }
-
-    await prisma.brokerConnection.update({
-      where: { id: conn.id },
-      data: { status: "connected", lastSyncAt: new Date(), lastError: null },
-    });
-
-    if (imported > 0) {
-      try {
-        const { recomputeUserCompliance } = await import("@/lib/rules/recompute");
-        await recomputeUserCompliance(userId);
-      } catch {
-        /* best-effort */
-      }
-    }
-
-    return { imported, skipped };
+    return await saveTrades(conn, userId, trades);
   } catch (err) {
     // A budget "not now" is not a failure of the connection: record nothing.
     if (err instanceof SyncDeferred) throw err;
@@ -174,6 +145,106 @@ export async function syncConnection(
           ? { liveStatus: "rejected", lastLiveError: REJECTED_MESSAGE }
           : {}),
       },
+    });
+    throw err instanceof ConnectorError ? err : new ConnectorError(message);
+  }
+}
+
+
+/** Save paired trades (deduped by [accountId, externalId]), mark the connection synced, refresh the scores. */
+async function saveTrades(
+  conn: { id: string; accountId: string },
+  userId: string,
+  trades: NormalizedTrade[]
+): Promise<SyncResult> {
+  let imported = 0;
+  let skipped = 0;
+  for (const t of trades) {
+    try {
+      await prisma.trade.create({
+        data: {
+          userId,
+          accountId: conn.accountId,
+          symbol: t.symbol,
+          side: t.side,
+          entryPrice: t.entryPrice,
+          exitPrice: t.exitPrice ?? null,
+          quantity: t.quantity,
+          entryTime: t.entryTime,
+          exitTime: t.exitTime ?? null,
+          fees: t.fees ?? 0,
+          pnl: t.pnl ?? 0,
+          pnlGross: t.pnlGross ?? null,
+          source: "api",
+          externalId: t.externalId ?? null,
+          assetClass: t.assetClass ?? null,
+          isWin: t.exitTime ? (t.pnl ?? 0) > 0 : null,
+        },
+      });
+      imported++;
+    } catch {
+      skipped++; // unique-constraint dedupe on [accountId, externalId]
+    }
+  }
+
+  await prisma.brokerConnection.update({
+    where: { id: conn.id },
+    data: { status: "connected", lastSyncAt: new Date(), lastError: null },
+  });
+
+  if (imported > 0) {
+    try {
+      const { recomputeUserCompliance } = await import("@/lib/rules/recompute");
+      await recomputeUserCompliance(userId);
+    } catch {
+      /* best-effort */
+    }
+  }
+  return { imported, skipped };
+}
+
+/**
+ * MT5 through MetaApi: read the closed deals of the bridge account and turn them into
+ * trades (see mapDealsToTrades). Read-only; every call is asked of the shared call
+ * budget through `gate`. Refused (and nothing recorded) while the owner's switch is
+ * off or the trader's plan doesn't include it.
+ */
+async function syncMt5(
+  conn: { id: string; accountId: string; externalAccountId: string },
+  userId: string,
+  opts: SyncOptions,
+  gate: () => Promise<void>
+): Promise<SyncResult> {
+  if (!metaApiSwitchedOn()) throw new ConnectorError(MT5_LIVE_MESSAGES.off);
+  const owner = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { plan: true, billingStatus: true },
+  });
+  if (!owner || !mt5PlanAllowed(owner)) throw new ConnectorError(MT5_LIVE_MESSAGES.plan);
+
+  try {
+    const to = new Date();
+    const from = new Date(to.getTime() - WINDOW_DAYS * 86_400_000);
+    let deals;
+    try {
+      deals = await maReadDeals(conn.externalAccountId, from, to, { gate });
+    } catch (err) {
+      // The bridge is still downloading this account's history: nothing to import yet, not a failure.
+      if (err instanceof MetaApiError && err.code === "not_ready" && err.status === undefined) {
+        return { imported: 0, skipped: 0 };
+      }
+      throw err;
+    }
+    return await saveTrades(conn, userId, mapDealsToTrades(deals).trades);
+  } catch (err) {
+    if (err instanceof SyncDeferred) throw err;
+    if (err instanceof ConnectorError && err.kind === "rate_limit") {
+      opts.onRateLimit?.(err.retryAfterSec);
+    }
+    const message = err instanceof ConnectorError ? err.message : "Sync failed unexpectedly.";
+    await prisma.brokerConnection.update({
+      where: { id: conn.id },
+      data: { status: "error", lastError: message },
     });
     throw err instanceof ConnectorError ? err : new ConnectorError(message);
   }

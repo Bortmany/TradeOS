@@ -135,6 +135,13 @@ export function BrokerConnect() {
     void load();
   }, [load]);
 
+  // The MT5 card (a sibling on the Import page) announces a new link so this list reloads.
+  React.useEffect(() => {
+    const onChanged = () => void load();
+    window.addEventListener("tradeos:connections-changed", onChanged);
+    return () => window.removeEventListener("tradeos:connections-changed", onChanged);
+  }, [load]);
+
   const refreshAll = React.useCallback(async () => {
     await load();
     router.refresh();
@@ -238,6 +245,7 @@ function ConnectionRow({
   const [switchResult, setSwitchResult] = React.useState<string | null>(null);
   const [demoLine, setDemoLine] = React.useState(false);
   const rejected = connection.liveHealth === "rejected";
+  const isMt5 = connection.broker === "mt5";
 
   async function onToggleNearLive(next: boolean) {
     setSwitching(true);
@@ -325,9 +333,10 @@ function ConnectionRow({
     >
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
+          {isMt5 && <Badge variant="outline">MT5</Badge>}
           <p className="truncate text-sm font-medium">{connection.externalAccountName}</p>
           {rejected ? (
-            <Badge variant="loss">Key rejected</Badge>
+            <Badge variant="loss">{isMt5 ? "Needs reconnecting" : "Key rejected"}</Badge>
           ) : (
             <Badge variant={connection.status === "connected" ? "profit" : "loss"}>
               {connection.status === "connected" ? "Connected" : "Sync error"}
@@ -407,7 +416,7 @@ function ConnectionRow({
       </div>
 
       <div className="flex w-full shrink-0 items-center gap-2 md:w-auto">
-        {rejected && (
+        {rejected && !isMt5 && (
           <Button variant="secondary" size="sm" onClick={onReconnect} className="h-11 md:h-8">
             Reconnect
           </Button>
@@ -436,6 +445,8 @@ function ConnectionRow({
                 This removes the API link only. The linked account “
                 {connection.accountName}” and every imported trade stay in your
                 journal — nothing is deleted.
+                {isMt5 &&
+                  " This also removes the account, and the password stored with it, from MetaApi."}
               </DialogDescription>
             </DialogHeader>
             {removeError && <ErrorPanel message={removeError} />}
@@ -476,7 +487,11 @@ function LiveLine({
     return (
       <p className="mt-1 flex items-start gap-1 text-2xs text-loss">
         <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
-        <span>TopstepX rejected this key. Reconnect to resume.</span>
+        <span>
+          {c.broker === "mt5"
+            ? (c.lastLiveError ?? "This MT5 link needs to be connected again.")
+            : "TopstepX rejected this key. Reconnect to resume."}
+        </span>
       </p>
     );
   }
@@ -503,7 +518,7 @@ function LiveLine({
       <p className="mt-1 flex items-start gap-1 text-2xs tabular text-warning">
         <WifiOff className="mt-px h-3 w-3 shrink-0" />
         <span>
-          Can&apos;t reach TopstepX.{at ? ` Last updated ${at}.` : ""}
+          Can&apos;t reach {c.broker === "mt5" ? "the MT5 bridge" : "TopstepX"}.{at ? ` Last updated ${at}.` : ""}
           {balance}
         </span>
       </p>

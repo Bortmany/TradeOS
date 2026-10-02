@@ -79,7 +79,17 @@ export default function PrivacyPage() {
             only and is never saved. The alerts you see (for example &quot;80% of today&apos;s
             loss limit used&quot;) are worked out from your closed trades plus those open
             positions, and you can dismiss any of them. Disconnecting a broker or deleting
-            your account removes the saved snapshot and balance.
+            your account removes the saved snapshot and balance. If you link a MetaTrader 5
+            (MT5) account, once that option is switched on and your plan includes it: we
+            keep your MT5 server name, your MT5 login number and the id of the account
+            that our bridge provider, MetaApi, creates for it. TradeOS asks for your
+            read-only <em>investor</em> password only and refuses the main trading
+            password. TradeOS does not keep the investor password: it goes straight to
+            MetaApi, which holds it so it can read your account, and it is never saved by
+            TradeOS, shown again, logged or exported. The link is read-only: it reads
+            your balance, open positions and closed trades, and can never place, change or
+            cancel an order. Disconnecting the account, or deleting your TradeOS account,
+            also deletes the account, and the password stored with it, at MetaApi.
           </li>
           <li>
             <strong>Phone warnings (optional)</strong> — if you press &quot;Enable alerts&quot; in
@@ -118,7 +128,8 @@ export default function PrivacyPage() {
           Your data lives in our hosting provider&apos;s database. If paid billing is enabled,
           Paddle processes payments. Your trade screenshots are stored with our private
           file-storage provider (Cloudflare R2), which holds the files for us and never
-          makes them public. If error tracking is enabled, crash reports
+          makes them public. If you link an MT5 account, MetaApi (a cloud bridge to
+          MetaTrader 5) holds its investor password and reads that account for us. If error tracking is enabled, crash reports
           (technical details about an error, with credentials automatically redacted) may
           be sent to Sentry so problems can be fixed. These providers process data only to
           provide their service to us.
@@ -152,7 +163,8 @@ export default function PrivacyPage() {
           <li>
             <strong>Broker access</strong> — you can disconnect a broker connection at any
             time, which deletes the stored credentials. You can also revoke the API key on
-            the broker&apos;s side.
+            the broker&apos;s side. For an MT5 account, disconnecting also removes it, and
+            the investor password stored with it, from MetaApi.
           </li>
         </ul>
       </Section>

@@ -4,7 +4,9 @@ import { withUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { encryptSecret } from "@/lib/crypto";
 import { pxLogin, pxSearchAccounts, ConnectorError } from "@/lib/connectors/topstepx";
-import { FIRM_IDS, getFirm } from "@/lib/connectors/firms";
+import { FIRM_IDS, MT5_FIRM_ID, getFirm } from "@/lib/connectors/firms";
+import { MT5_LIVE_MESSAGES } from "@/lib/connectors/metaapi";
+import { removeBridgeAccounts } from "@/lib/connectors/mt5-access";
 import { syncConnection } from "@/lib/connectors/sync";
 import { withinLimit } from "@/lib/billing/plans";
 import type { Plan } from "@/lib/types";
@@ -211,9 +213,19 @@ export const DELETE = withUser(async (user, req: Request) => {
     const { id } = z.object({ id: z.string().min(1) }).parse(await req.json());
     const conn = await prisma.brokerConnection.findFirst({ where: { id, userId: user.id } });
     if (!conn) return NextResponse.json({ ok: false, error: "Connection not found." }, { status: 404 });
+    // An MT5 link also lives at MetaApi, together with the investor password it holds:
+    // remove it there first, and keep the connection if MetaApi does not confirm.
+    let remote: "removed" | "skipped" = "skipped";
+    if (conn.broker === MT5_FIRM_ID) {
+      const r = await removeBridgeAccounts([conn.externalAccountId]);
+      if (r === "failed") {
+        return NextResponse.json({ ok: false, error: MT5_LIVE_MESSAGES.cleanupFailed }, { status: 502 });
+      }
+      remote = r;
+    }
     // Remove only the connection — the TradingAccount and its trades remain.
     await prisma.brokerConnection.delete({ where: { id: conn.id } });
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, ...(conn.broker === MT5_FIRM_ID ? { remote } : {}) });
   } catch {
     return NextResponse.json({ ok: false, error: "Invalid request." }, { status: 400 });
   }

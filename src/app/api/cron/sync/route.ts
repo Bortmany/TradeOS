@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import { prisma } from "@/lib/db";
 import { syncConnection } from "@/lib/connectors/sync";
+import { readableConnectionsWhere } from "@/lib/connectors/mt5-access";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60; // Vercel function budget for larger batches
@@ -36,6 +37,7 @@ export async function GET(req: Request) {
   }
 
   const connections = await prisma.brokerConnection.findMany({
+    where: readableConnectionsWhere(), // MT5 rows only while the owner's switch is on and the plan allows
     orderBy: { lastSyncAt: "asc" }, // stalest first, in case we hit the time budget
     select: { id: true, userId: true, externalAccountName: true },
   });

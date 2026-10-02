@@ -6,6 +6,13 @@ import { PageHeader } from "@/components/page-header";
 import { ShieldCheck, EyeOff, FileSpreadsheet } from "lucide-react";
 import { ImportWizard } from "@/components/import/import-wizard";
 import { BrokerConnect } from "@/components/import/broker-connect";
+import { Mt5LiveCard } from "@/components/import/mt5-live-card";
+import { metaApiSwitchedOn } from "@/lib/connectors/firms";
+import {
+  MT5_MAX_ACCOUNTS,
+  countMt5Connections,
+  mt5PlanAllowed,
+} from "@/lib/connectors/mt5-access";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +24,10 @@ export default async function ImportPage() {
 
   // Broker options (excluding the generic fallback which is "Auto-detect" territory).
   const brokers = ADAPTERS.map((a) => ({ key: a.key, label: a.label }));
+
+  const mt5On = metaApiSwitchedOn();
+  const mt5Plan = mt5On && mt5PlanAllowed({ plan: user.plan, billingStatus: user.billingStatus });
+  const mt5Count = mt5On ? await countMt5Connections(user.id) : 0;
 
   return (
     <div className="container max-w-7xl space-y-6 py-6">
@@ -54,6 +65,9 @@ export default async function ImportPage() {
       />
 
       <BrokerConnect />
+
+      {/* MT5 live link: HIDDEN until the owner switches it on (METAAPI_ENABLED + token). */}
+      {mt5On && <Mt5LiveCard planAllowed={mt5Plan} count={mt5Count} max={MT5_MAX_ACCOUNTS} />}
     </div>
   );
 }
