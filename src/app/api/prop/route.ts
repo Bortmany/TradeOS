@@ -37,14 +37,14 @@ export const POST = withUser(async (user, req: Request) => {
   const limited = enforceUserRateLimit("prop:write", user.id);
   if (limited) return limited;
 
-  // Server-side feature gate: the prop-firm tracker is an Elite feature. The UI
-  // hides it on lower plans, but the API must enforce it too — the button being
+  // Server-side feature gate: the prop-firm tracker is a Pro feature (Pro, Elite
+  // and trials). The UI hides it on Starter, but the API must enforce it too — the button being
   // hidden is not a security control.
   if (!hasFeature(user.plan as Plan, user.billingStatus, "propFirmModule")) {
     return NextResponse.json(
       {
         ok: false,
-        error: "The prop-firm tracker is available on the Elite plan. Upgrade to use it.",
+        error: "The prop-firm tracker is included in Pro. Upgrade to use it.",
       },
       { status: 403 }
     );

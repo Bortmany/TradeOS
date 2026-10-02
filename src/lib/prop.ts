@@ -1,4 +1,4 @@
-// TradeOS — Prop firm evaluation tracker (Elite-tier).
+// TradeOS — Prop firm evaluation tracker (Pro and above).
 // Deterministic, DB-agnostic compute layer for prop-firm compliance: how much
 // profit-target progress a funded/evaluation account has, and — the number that
 // actually matters to a funded trader — how much *buffer* remains before a

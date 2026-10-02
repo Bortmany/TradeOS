@@ -12,6 +12,8 @@ import {
   Landmark,
 } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth";
+import { hasFeature } from "@/lib/billing/plans";
+import type { Plan } from "@/lib/types";
 import {
   getPropStatus,
   PROP_PRESETS,
@@ -95,7 +97,19 @@ export default async function PropPage() {
       .filter(Boolean)
       .join(" · "),
   }));
-  const addTracker = <AddTrackerDialog accounts={untracked} presets={presets} />;
+  // The server (POST /api/prop) is the real gate; this only decides which
+  // control to show. Anyone without the feature sees a plain upgrade link.
+  const canTrack = hasFeature(user.plan as Plan, user.billingStatus, "propFirmModule");
+  const addTracker = canTrack ? (
+    <AddTrackerDialog accounts={untracked} presets={presets} />
+  ) : (
+    <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:items-end">
+      <p className="text-sm text-muted-foreground">The prop-firm tracker is included in Pro.</p>
+      <Button asChild className="min-h-[52px] w-full sm:min-h-0 sm:w-auto">
+        <Link href="/settings/billing">Upgrade to Pro</Link>
+      </Button>
+    </div>
+  );
 
   return (
     <div className="container max-w-7xl space-y-6 py-6">

@@ -70,7 +70,7 @@ export const PLAN_DEFINITIONS: Record<Plan, PlanDefinition> = {
       maxRuleBooks: Infinity,
       maxRules: Infinity,
       ruleEngine: true,
-      propFirmModule: false,
+      propFirmModule: true,
       reports: true,
       advancedAnalytics: true,
       backtesting: true,
@@ -83,14 +83,16 @@ export const PLAN_DEFINITIONS: Record<Plan, PlanDefinition> = {
       "Strategy backtesting + testing portal",
       "Unlimited history",
       "Daily / weekly / monthly reports",
+      "Prop-firm tracker (Topstep, Apex, TPT presets)",
+      "Live drawdown and daily-loss-limit guardrails, plus consistency and profit-target monitoring",
     ],
   },
   elite: {
     id: "elite",
     name: "Elite",
-    priceMonthly: 79,
-    priceAnnual: 790, // ten months' worth — two months free
-    tagline: "For funded & prop-firm traders.",
+    priceMonthly: 59,
+    priceAnnual: 590, // ten months' worth — two months free
+    tagline: "For heavy importers and early adopters.",
     features: {
       maxAccounts: Infinity,
       maxTradesPerImport: 100_000,
@@ -106,10 +108,9 @@ export const PLAN_DEFINITIONS: Record<Plan, PlanDefinition> = {
     },
     bullets: [
       "Everything in Pro",
-      "Prop-firm tracker (Topstep, Apex, TPT presets)",
-      "Live drawdown / daily-loss-limit guardrails",
-      "Consistency & profit-target monitoring",
-      "Priority support + early access to AI coaching",
+      "Import up to 100,000 trades at once (Pro: 10,000)",
+      "Priority support",
+      "Early access to AI coaching when it ships",
     ],
   },
 };

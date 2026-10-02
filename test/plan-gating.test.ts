@@ -1,4 +1,4 @@
-// Server-side feature gates. The prop, rulebook and rule create routes now call
+// Server-side feature gates (the prop tracker is Pro and above, trials included). The prop, rulebook and rule create routes now call
 // hasFeature() before writing, so the "hidden button" on lower plans is backed
 // by a real server check. These tests pin the exact gate outcomes those routes
 // depend on, so a future plan-table tweak that would silently open a paid
@@ -51,13 +51,61 @@ describe("rule engine caps (rulebooks + rules create)", () => {
 });
 
 describe("prop-firm module gate (prop create)", () => {
-  it("is CLOSED for free, trial and Pro (Elite-only feature)", () => {
-    expect(hasFeature("free", "active", "propFirmModule")).toBe(false);
-    expect(hasFeature("free", "trialing", "propFirmModule")).toBe(false);
-    expect(hasFeature("pro", "active", "propFirmModule")).toBe(false);
+  const prop = (plan: "free" | "pro" | "elite", status: string) =>
+    hasFeature(plan, status, "propFirmModule");
+
+  it("is CLOSED for Starter, whatever the status except a trial", () => {
+    expect(prop("free", "active")).toBe(false);
+    expect(prop("free", "canceled")).toBe(false);
+    expect(prop("free", "past_due")).toBe(false);
   });
 
-  it("is OPEN only for Elite", () => {
-    expect(hasFeature("elite", "active", "propFirmModule")).toBe(true);
+  it("is OPEN for a trial, because a trial gives Pro-level access", () => {
+    expect(prop("free", "trialing")).toBe(true);
+  });
+
+  it("is OPEN for Pro while active or trialing, CLOSED once lapsed", () => {
+    expect(prop("pro", "active")).toBe(true);
+    expect(prop("pro", "trialing")).toBe(true);
+    expect(prop("pro", "canceled")).toBe(false);
+    expect(prop("pro", "past_due")).toBe(false);
+  });
+
+  it("is OPEN for Elite while active, CLOSED once canceled", () => {
+    expect(prop("elite", "active")).toBe(true);
+    expect(prop("elite", "canceled")).toBe(false);
+  });
+
+  it("fails closed on a status it does not recognise", () => {
+    expect(prop("pro", "")).toBe(false);
+    expect(prop("elite", "something_new")).toBe(false);
+  });
+});
+
+describe("nobody loses a feature in the pricing change", () => {
+  // The plan table as it stood before the October 2026 pricing change.
+  const before = {
+    free: { maxAccounts: 1, maxTradesPerImport: 200, historyDays: 30, maxRuleBooks: 1, maxRules: 3, ruleEngine: true, propFirmModule: false, reports: false, advancedAnalytics: false, backtesting: false, aiCoaching: false },
+    pro: { maxAccounts: Infinity, maxTradesPerImport: 10_000, historyDays: Infinity, maxRuleBooks: Infinity, maxRules: Infinity, ruleEngine: true, propFirmModule: false, reports: true, advancedAnalytics: true, backtesting: true, aiCoaching: false },
+    elite: { maxAccounts: Infinity, maxTradesPerImport: 100_000, historyDays: Infinity, maxRuleBooks: Infinity, maxRules: Infinity, ruleEngine: true, propFirmModule: true, reports: true, advancedAnalytics: true, backtesting: true, aiCoaching: false },
+  } as const;
+
+  const rank = (v: boolean | number) => (typeof v === "boolean" ? Number(v) : v);
+
+  it("every plan has every feature it had before, at least as much", () => {
+    for (const plan of ["free", "pro", "elite"] as const) {
+      const now = getFeatures(plan);
+      for (const [key, old] of Object.entries(before[plan])) {
+        expect(rank(now[key as keyof typeof now]), `${plan}.${key}`).toBeGreaterThanOrEqual(rank(old));
+      }
+    }
+  });
+
+  it("Pro is at least Starter, and Elite is at least Pro, on every feature", () => {
+    const keys = Object.keys(getFeatures("free")) as (keyof ReturnType<typeof getFeatures>)[];
+    for (const key of keys) {
+      expect(rank(getFeatures("pro")[key]), key).toBeGreaterThanOrEqual(rank(getFeatures("free")[key]));
+      expect(rank(getFeatures("elite")[key]), key).toBeGreaterThanOrEqual(rank(getFeatures("pro")[key]));
+    }
   });
 });

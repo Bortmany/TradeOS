@@ -81,16 +81,20 @@ so launching with billing dormant is a supported state, not a broken one.
 2. **Catalog -> Products -> New product**, create two, each with a recurring
    price:
    - **Pro** — **$29 / month**
-   - **Elite** — **$79 / month**
+   - **Elite** — **$59 / month**
 3. For each, copy the **price id** (starts with `pri_...`, *not* the product
    `prd_...`) into:
    - `PADDLE_PRICE_ID_PRO`
    - `PADDLE_PRICE_ID_ELITE`
 
    *Optional:* to also sell a year up front, add a second recurring price on the
-   same two products — **$290 / year** (Pro) and **$790 / year** (Elite) — and
+   same two products — **$290 / year** (Pro) and **$590 / year** (Elite) — and
    copy those price ids into `PADDLE_PRICE_ID_PRO_ANNUAL` and
    `PADDLE_PRICE_ID_ELITE_ANNUAL`. Leave them unset and no yearly option appears.
+   *Existing deployments (Elite price change, Oct 2026):* add the new $59 and
+   $590 prices on the Elite product as **new** prices (never edit or delete the
+   old ones), then set `PADDLE_PRICE_ID_ELITE` and `PADDLE_PRICE_ID_ELITE_ANNUAL`
+   to the new ids and redeploy. Old subscribers keep their price and stay on Elite.
 4. **Developer tools -> Authentication -> API keys**: create a server-side key
    and copy it into `PADDLE_API_KEY`. Set `PADDLE_ENV` to `sandbox` while
    testing, `production` when live (any unrecognised value is treated as

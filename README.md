@@ -119,11 +119,11 @@ Feature gating lives in `src/lib/billing/plans.ts`:
 | Plan | Price | For |
 | --- | --- | --- |
 | **Starter** | Free | Habit-building — 1 account, 30-day history |
-| **Pro** | $29/mo | The full rule engine + discipline score + analytics |
-| **Elite** | $79/mo | Prop-firm guardrails, reports, priority |
+| **Pro** | $29/mo | The full rule engine + discipline score + analytics + prop-firm tracker |
+| **Elite** | $59/mo | Everything in Pro, bigger imports (100,000 trades), priority support |
 
 New users get a 14-day full-access trial. Path to $10k MRR ≈ **345 Pro** or
-**~130 Elite** subscribers. Paddle billing is built and env-gated — limits
+**~170 Elite** subscribers. Paddle billing is built and env-gated — limits
 are applied by plan today, and checkout lights up when the keys are added. Paddle is
 the merchant of record, so it handles worldwide sales tax/VAT.
 
@@ -171,7 +171,7 @@ the merchant of record, so it handles worldwide sales tax/VAT.
 - **Paddle:** set `PADDLE_ENV`, `PADDLE_API_KEY`, `PADDLE_WEBHOOK_SECRET` and
   the `PADDLE_PRICE_ID_PRO` / `PADDLE_PRICE_ID_ELITE` price ids. Optionally add
   `PADDLE_PRICE_ID_PRO_ANNUAL` / `PADDLE_PRICE_ID_ELITE_ANNUAL` to also sell a
-  year up front ($290 / $790 — two months free); without them no yearly option
+  year up front ($290 / $590 — two months free); without them no yearly option
   is shown and monthly billing is unchanged. Checkout, the
   customer portal and subscription-sync webhooks activate automatically; until
   then the UI shows a graceful "not switched on" notice and gating still works.
