@@ -16,9 +16,12 @@ const ORDER: Plan[] = ["free", "pro", "elite"];
 // themselves stay server-side and never reach the browser.
 export function PlanCards({
   currentPlan,
+  trialPlan,
   annualAvailable = false,
 }: {
   currentPlan: Plan;
+  /** The plan the free trial is giving access to (when higher than currentPlan). */
+  trialPlan?: Plan;
   annualAvailable?: boolean;
 }) {
   const [busy, setBusy] = React.useState<Plan | null>(null);
@@ -128,7 +131,8 @@ export function PlanCards({
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   {plan.name}
-                  {isCurrent && <Badge variant="profit">Current</Badge>}
+                  {isCurrent && <Badge variant="profit">{trialPlan ? "Saved plan" : "Current"}</Badge>}
+                  {trialPlan === id && <Badge variant="info">Trial access</Badge>}
                 </CardTitle>
                 <p className="text-sm text-muted-foreground">{plan.tagline}</p>
                 <p className="pt-1">

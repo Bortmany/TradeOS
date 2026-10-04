@@ -530,8 +530,15 @@ function PropCard({ s, tz, now }: { s: PropStatus; tz: string; now: Date }) {
         <OpenSection s={s} tz={tz} now={now} />
 
         <p className="border-t border-border pt-3 text-2xs text-muted-foreground">
-          {s.tradeCount} closed trade{s.tradeCount === 1 ? "" : "s"} · Worst day{" "}
-          <span className="tabular text-loss">{formatCurrency(-s.worstDayLoss)}</span> · Net{" "}
+          {s.tradeCount} closed trade{s.tradeCount === 1 ? "" : "s"} · {s.worstDayLoss >= 0.005 ? (
+            <>
+              Worst day{" "}
+              <span className="tabular text-loss">{formatCurrency(-s.worstDayLoss)}</span>
+            </>
+          ) : (
+            "No losing day"
+          )}{" "}
+          · Net{" "}
           <span className={cn("tabular", pnlColor(s.netProfit))}>{formatCurrency(s.netProfit, { sign: true })}</span>
         </p>
       </CardContent>
@@ -559,7 +566,7 @@ function Guardrail({
   barClass?: string;
   left: React.ReactNode;
   right: React.ReactNode;
-  /** Draw the 50% and 80% step marks on the bar (the alert steps). */
+  /** Draw the 50%, 80% and 100% step marks on the bar (the alert steps and the limit). */
   ticks?: boolean;
   labelHint?: string;
   badge?: React.ReactNode;

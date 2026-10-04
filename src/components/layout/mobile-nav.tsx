@@ -83,7 +83,8 @@ export function MobileNav() {
       <div className="pointer-events-auto fixed inset-x-0 bottom-0 z-30 border-t border-border bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden print:hidden">
         <nav aria-label="Main" className="flex h-16 items-stretch">
           {ITEMS.map(({ href, label, icon: Icon }) => {
-            const active = matches(pathname, href);
+            // While the More sheet is open only More is lit, not the page behind it.
+            const active = !open && matches(pathname, href);
             return (
               <Link
                 key={href}

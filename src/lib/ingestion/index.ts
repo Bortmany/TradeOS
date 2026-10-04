@@ -59,6 +59,7 @@ export interface IngestResult {
   notTradeFile?: boolean;
   // MT5 only.
   openSkipped?: number;
+  openSkippedSymbols?: string[];
   timesReadAs?: string;
 }
 
@@ -102,7 +103,7 @@ export function ingestCsv(text: string, brokerKey?: Broker, options?: ParseOptio
     }
   }
 
-  const { trades, skipped, errors, refusal, openSkipped, timesReadAs } = chosen.parse(
+  const { trades, skipped, errors, refusal, openSkipped, openSkippedSymbols, timesReadAs } = chosen.parse(
     useHeaders,
     useRows,
     useOptions
@@ -115,6 +116,7 @@ export function ingestCsv(text: string, brokerKey?: Broker, options?: ParseOptio
     ...(refusal ? { refusal } : {}),
     ...(chosen.key === "generic" && !looksLikeTradeTable(useHeaders) ? { notTradeFile: true } : {}),
     ...(openSkipped !== undefined ? { openSkipped } : {}),
+    ...(openSkippedSymbols && openSkippedSymbols.length > 0 ? { openSkippedSymbols } : {}),
     ...(timesReadAs ? { timesReadAs } : {}),
   };
 }

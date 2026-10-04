@@ -25,6 +25,7 @@ const STATUS_LABELS: Readonly<Record<string, string>> = {
   funded: "Funded",
   evaluation: "Evaluation",
   demo: "Demo",
+  unspecified: "Not set",
 };
 
 const STATUS_VARIANTS: Readonly<Record<string, BadgeVariant>> = {
@@ -40,13 +41,34 @@ function titleCase(s: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+/**
+ * Where a trade came from, in words ("CSV import", "Broker sync", "Manual entry").
+ * `source` is the stored lower-case value on the trade.
+ */
+export function tradeSourceLabel(source: string | null | undefined): string {
+  switch (source) {
+    case "csv":
+      return "CSV import";
+    case "broker":
+      return "Broker sync";
+    case "api":
+      return "Live link";
+    case "manual":
+      return "Manual entry";
+    case "sample":
+      return "Sample data";
+    default:
+      return source ? titleCase(source) : "Manual entry";
+  }
+}
+
 export function brokerLabel(broker: string | null | undefined): string {
   if (!broker) return "Manual";
   return BROKER_LABELS[broker] ?? titleCase(broker);
 }
 
 export function accountStatusLabel(kind: string | null | undefined): string {
-  if (!kind) return "Live";
+  if (!kind) return "Not set";
   return STATUS_LABELS[kind] ?? titleCase(kind);
 }
 
@@ -63,16 +85,22 @@ export interface AccountDisplay {
 }
 
 /** The single name / status / broker label a screen shows for an account. */
-export function accountDisplay(account: {
-  name: string;
-  kind: string;
-  broker: string;
-}): AccountDisplay {
+export function accountDisplay(
+  account: {
+    name: string;
+    kind: string;
+    broker: string;
+  },
+  /** On a trade screen: the trade's own source, so an imported trade is never called "Manual". */
+  tradeSource?: string | null
+): AccountDisplay {
+  const manualAccount = !account.broker || account.broker === "manual";
+  const importedTrade = tradeSource != null && tradeSource !== "" && tradeSource !== "manual";
   return {
     name: account.name,
     status: accountStatusLabel(account.kind),
     statusVariant: accountStatusVariant(account.kind),
-    broker: brokerLabel(account.broker),
+    broker: manualAccount && importedTrade ? tradeSourceLabel(tradeSource) : brokerLabel(account.broker),
   };
 }
 

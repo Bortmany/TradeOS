@@ -257,8 +257,10 @@ export function TradeEditor({
       )}
       {showDemo && <DemoLine />}
 
-      <div className="flex items-center justify-between gap-2">
-        <Button onClick={save} disabled={saving}>
+      <div className={cn("flex items-center justify-between gap-2", stripVisible && "max-md:justify-end")}>
+        {/* On a phone the strip below carries Save while there is something to
+            save, so this one steps aside: one Save journal button, never two. */}
+        <Button onClick={save} disabled={saving} className={stripVisible ? "max-md:hidden" : undefined}>
           {saving ? (
             <Loader2 className="h-4 w-4 animate-spin" />
           ) : saved ? (

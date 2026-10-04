@@ -10,7 +10,7 @@ import { recomputeCompliance } from "@/lib/rules/recompute-compliance";
 import { apiErrorResponse } from "@/lib/api-error";
 import type { Broker, Plan } from "@/lib/types";
 import { NOT_A_CSV_ERROR } from "@/lib/validation";
-import { BROKERS, ServerTimeSchema } from "@/lib/types";
+import { ACCOUNT_KINDS, BROKERS, ServerTimeSchema } from "@/lib/types";
 import { mt5AccountCurrencyProblem } from "@/lib/ingestion/adapters/mt5";
 
 import { MAX_CSV_CHARS, importRowLimit } from "@/lib/import-limits";
@@ -19,6 +19,8 @@ import { refuseDemo } from "@/lib/demo-guard";
 // Either an existing account, or a name + starting balance to create one as part of
 // the import (so a brand-new trader never has to detour through Accounts).
 const newAccountSchema = z.object({
+  // What the trader chose; left out = "not set" (never guessed as Live).
+  kind: z.enum(ACCOUNT_KINDS).optional(),
   name: z.string().trim().min(1, "Give the account a name.").max(80),
   startingBalance: z.coerce.number().finite().min(0).default(0),
 });
@@ -105,8 +107,8 @@ export const POST = withUser(async (user, req: Request) => {
         data: {
           userId: user.id,
           name: newAccount.name,
-          broker: result.broker === "generic" ? "manual" : result.broker,
-          kind: "live",
+          broker: result.broker,
+          kind: newAccount.kind ?? "unspecified",
           startingBalance: newAccount.startingBalance,
         },
       });
@@ -197,6 +199,7 @@ export const POST = withUser(async (user, req: Request) => {
       // MT5 only: how the file's times were read, and how many open positions were left out.
       ...(result.timesReadAs ? { timesReadAs: result.timesReadAs } : {}),
       ...(result.openSkipped !== undefined ? { openSkipped: result.openSkipped } : {}),
+      ...(result.openSkippedSymbols ? { openSkippedSymbols: result.openSkippedSymbols } : {}),
     });
   } catch (err) {
     // Never echo a raw error message to the client — the shared helper maps it

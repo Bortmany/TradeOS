@@ -1,9 +1,14 @@
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 
+/** Where the marks sit: the 50% and 80% warning steps and the 100% limit. */
+export const STEP_MARKS = [50, 80, 100] as const;
+
 /**
- * A flat bar with two thin tick marks at 50% and 80% of the limit, so the three
- * alert steps can be read straight off the bar. `usedPct` is 0..100 (capped).
+ * A flat bar with thin tick marks at 50%, 80% and 100% of the limit, so the
+ * three alert steps can be read straight off the bar. `usedPct` is 0..100
+ * (capped). The marks are placed with an inline position (Tailwind has no
+ * "four fifths" class, which is why the 80% mark used to be missing).
  */
 export function StepMeter({
   usedPct,
@@ -25,8 +30,15 @@ export function StepMeter({
         indicatorClassName={indicatorClassName}
         aria-label={label}
       />
-      <span aria-hidden className="absolute inset-y-0 start-1/2 w-px bg-foreground/40" />
-      <span aria-hidden className="absolute inset-y-0 start-4/5 w-px bg-foreground/40" />
+      {STEP_MARKS.map((pct) => (
+        <span
+          key={pct}
+          aria-hidden
+          data-step-mark={pct}
+          className="absolute inset-y-0 w-px bg-foreground/40"
+          style={{ insetInlineStart: pct === 100 ? "calc(100% - 1px)" : `${pct}%` }}
+        />
+      ))}
     </div>
   );
 }

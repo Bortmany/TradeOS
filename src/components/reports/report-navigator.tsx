@@ -6,9 +6,9 @@
 // next report loads, the arrows are disabled (no double-clicks) and the body
 // shows the page skeleton.
 
-import { createContext, forwardRef, useContext, useState, useTransition } from "react";
+import { createContext, forwardRef, useCallback, useContext, useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,17 +18,49 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { isDayKey } from "@/lib/et-days";
+import { NAV_STUCK_MS, canStartNav, currentHref, isNavPending, type NavTarget } from "@/lib/report-nav";
 
 const NavContext = createContext<{ pending: boolean; go: (href: string) => void }>({
   pending: false,
   go: () => {},
 });
 
-/** Shares "a new report is loading" between the navigator and the body. */
+/**
+ * Shares "a new report is loading" between the navigator and the body.
+ *
+ * Plain router.push (no useTransition): "loading" is true from the click until
+ * the address bar changes. If the address has not changed after NAV_STUCK_MS the
+ * page is loaded the ordinary way, so the arrows can never stay locked.
+ */
 export function ReportNavProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
-  const go = (href: string) => startTransition(() => router.push(href));
+  const pathname = usePathname();
+  const search = useSearchParams().toString();
+  const current = currentHref(pathname, search);
+  const [target, setTarget] = useState<NavTarget | null>(null);
+  const pending = isNavPending(target, current);
+
+  // The address changed: the move finished, forget it.
+  useEffect(() => {
+    if (target && target.from !== current) setTarget(null);
+  }, [target, current]);
+
+  // Still on the old address a long time later: load the new one the plain way.
+  useEffect(() => {
+    if (!target || target.from !== current) return;
+    const timer = setTimeout(() => window.location.assign(target.href), NAV_STUCK_MS);
+    return () => clearTimeout(timer);
+  }, [target, current]);
+
+  const go = useCallback(
+    (href: string) => {
+      if (!canStartNav(target, current, href)) return;
+      setTarget({ href, from: current });
+      router.push(href);
+    },
+    [router, target, current]
+  );
+
   return <NavContext.Provider value={{ pending, go }}>{children}</NavContext.Provider>;
 }
 

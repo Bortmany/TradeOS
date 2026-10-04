@@ -175,7 +175,7 @@ export const POST = withUser(async (user, req: Request) => {
             userId: user.id,
             name: `MT5 ${d.login}`,
             broker: MT5_FIRM_ID,
-            kind: "live",
+            kind: "unspecified",
             startingBalance: 0,
             color: "#22c55e",
           },

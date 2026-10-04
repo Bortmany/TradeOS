@@ -165,14 +165,23 @@ export function ScoreMeter({
     score >= 80 ? "bg-score-high" : score >= 60 ? "bg-score-mid" : "bg-score-low";
   return (
     <div title={detail}>
-      <div className="flex items-baseline justify-between gap-2">
-        <span className={cn("truncate", compact ? "text-2xs uppercase tracking-wide text-muted-foreground" : "text-sm")}>
+      {/* Compact tiles on a phone stack the label above the figure so neither is
+          cut ("RULE ADH…") or wrapped over three lines ("Not scored yet"). */}
+      <div
+        className={cn(
+          "gap-2",
+          compact ? "flex flex-col items-start gap-0.5 sm:flex-row sm:items-baseline sm:justify-between" : "flex items-baseline justify-between"
+        )}
+      >
+        <span className={cn(compact ? "text-2xs uppercase leading-tight tracking-wide text-muted-foreground" : "truncate text-sm")}>
           {label}
         </span>
         {unscored ? (
-          <span className="text-sm text-muted-foreground">Not scored yet</span>
+          <span className={cn("whitespace-nowrap text-muted-foreground", compact ? "text-xs" : "text-sm")}>
+            Not scored yet
+          </span>
         ) : (
-          <span className={cn("font-semibold tabular", compact ? "text-base" : "text-sm")}>
+          <span className={cn("shrink-0 font-semibold tabular", compact ? "text-base" : "text-sm")}>
             {Math.round(score)}
           </span>
         )}
@@ -183,7 +192,7 @@ export function ScoreMeter({
         )}
       </div>
       {detail && (
-        <p className={cn("mt-1 text-2xs text-muted-foreground", compact && "truncate")}>{detail}</p>
+        <p className="mt-1 text-2xs leading-snug text-muted-foreground">{detail}</p>
       )}
     </div>
   );

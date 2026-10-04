@@ -62,7 +62,10 @@ export function LandingMenu() {
           <nav
             id="landing-menu-panel"
             aria-label="Page sections"
-            className="absolute inset-x-0 top-full z-50 border-b border-border bg-background shadow-md motion-safe:animate-rise-in"
+            // Fully solid: an explicit colour (not a fade-in) so nothing from
+            // the hero shows through the panel, even mid-animation.
+            style={{ backgroundColor: "hsl(var(--background))" }}
+            className="absolute inset-x-0 top-full z-50 border-b border-border bg-background shadow-md motion-safe:animate-in motion-safe:slide-in-from-top-2 motion-safe:duration-200"
           >
             {LINKS.map((l, i) => (
               <a

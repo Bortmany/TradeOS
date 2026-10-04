@@ -21,7 +21,7 @@ import {
   sizeSummaryLine,
   type SizeOk,
 } from "@/lib/sizing";
-import { parseNumberText, withCommas } from "@/lib/sizing/parse";
+import { numberProblemMessage, parseNumberText, withCommas } from "@/lib/sizing/parse";
 import { cn, formatCurrency } from "@/lib/utils";
 
 export interface SizeAccount {
@@ -145,12 +145,13 @@ export function SizeCalculator({
   // Field errors: shown for a field once it has been left or holds something invalid.
   function textError(field: "accountSize" | "riskPercent" | "stopDistance" | "dollarsPerPoint"): string | null {
     const p = parsed[field];
-    if (p.kind === "nan") return "That doesn't look like a number.";
+    const raw = { accountSize, riskPercent, stopDistance: stop, dollarsPerPoint }[field];
+    if (p.kind === "nan") return numberProblemMessage(raw, false);
     if (p.kind === "empty") {
       if (!touched[field]) return null;
       return field === "dollarsPerPoint"
         ? "Enter the dollars per point for this contract, for example 5."
-        : "That doesn't look like a number.";
+        : numberProblemMessage(raw, true);
     }
     // Dollars per point: zero or negative gets the calculator's own message.
     if (field === "dollarsPerPoint") return p.value <= 0 ? "Enter the dollars per point for this contract, for example 5." : null;

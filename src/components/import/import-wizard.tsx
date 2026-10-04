@@ -4,6 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { UploadCloud, FileText, CheckCircle2, AlertTriangle, Download } from "lucide-react";
 import { SIDES, EMOTIONS } from "@/lib/types";
+import { accountStatusLabel } from "@/lib/account-display";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,6 +33,13 @@ interface BrokerOption {
   label: string;
 }
 
+/** " (EURUSD)" / " (EURUSD, XAUUSD)" naming the open positions left out; empty when unknown. */
+function openNames(r: { openSkippedSymbols?: string[] }): string {
+  return r.openSkippedSymbols && r.openSkippedSymbols.length > 0
+    ? ` (${r.openSkippedSymbols.join(", ")})`
+    : "";
+}
+
 interface ImportResult {
   broker: string;
   imported: number;
@@ -40,6 +48,7 @@ interface ImportResult {
   // MT5 files only: how the times were read, and how many open positions were left out.
   timesReadAs?: string;
   openSkipped?: number;
+  openSkippedSymbols?: string[];
 }
 
 type ServerTimeMode = "ny_close" | "utc" | "offset";
@@ -126,6 +135,8 @@ function CsvImport({
   const [accountId, setAccountId] = React.useState(accounts[0]?.id ?? NEW_ACCOUNT);
   const [newName, setNewName] = React.useState("");
   const [newBalance, setNewBalance] = React.useState("");
+  // What the new account is. "Not set" unless the trader says (never guessed as Live).
+  const [newKind, setNewKind] = React.useState<string>("unspecified");
   const creatingAccount = accountId === NEW_ACCOUNT;
   const [broker, setBroker] = React.useState<string>("auto");
   const [csvText, setCsvText] = React.useState("");
@@ -172,6 +183,7 @@ function CsvImport({
                 newAccount: {
                   name: newName.trim(),
                   startingBalance: newBalance.trim() ? Number(newBalance) : 0,
+                  kind: newKind,
                 },
               }
             : { accountId }),
@@ -197,6 +209,7 @@ function CsvImport({
         setAccountId(json.accountId);
         setNewName("");
         setNewBalance("");
+        setNewKind("unspecified");
       }
       setResult({
         broker: json.broker,
@@ -205,6 +218,7 @@ function CsvImport({
         errors: json.errors ?? [],
         timesReadAs: json.timesReadAs,
         openSkipped: json.openSkipped,
+        openSkippedSymbols: json.openSkippedSymbols,
       });
       router.refresh();
     } catch {
@@ -267,6 +281,21 @@ function CsvImport({
                     onChange={(e) => setNewBalance(e.target.value)}
                     placeholder="e.g. 50000"
                   />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Account type</Label>
+                  <Select value={newKind} onValueChange={setNewKind}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(["unspecified", "live", "funded", "evaluation", "demo"] as const).map((k) => (
+                        <SelectItem key={k} value={k}>
+                          {accountStatusLabel(k)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </>
             )}
@@ -478,8 +507,8 @@ function CsvImport({
                   {(result.openSkipped ?? 0) > 0 && (
                     <p>
                       {result.openSkipped === 1
-                        ? "1 open position was skipped — import again after it closes."
-                        : `${result.openSkipped} open positions were skipped — import again after they close.`}
+                        ? `1 open position${openNames(result)} was skipped — import again after it closes.`
+                        : `${result.openSkipped} open positions${openNames(result)} were skipped — import again after they close.`}
                     </p>
                   )}
                 </div>

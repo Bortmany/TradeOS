@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/table";
 import { useTimeZone } from "@/components/time-zone-provider";
 import { formatCurrency, formatNumber, formatDateTime, pnlColor } from "@/lib/utils";
+import { formatLots, formatPrice } from "@/lib/instruments/format";
 import {
   JOURNAL_PAGE_SIZE,
   JOURNAL_PHONE_PAGE_SIZE,
@@ -156,12 +157,12 @@ export function JournalList({
                       </span>
                       <span className="mx-1.5 text-muted-foreground/50">·</span>
                       <span className="inline-block whitespace-nowrap">
-                        {formatNumber(t.quantity)} @ {formatNumber(t.entryPrice, 2)}
+                        {formatLots(t.quantity, t.symbol, t.assetClass)} @ {formatPrice(t.entryPrice, t.symbol, t.assetClass)}
                         <span className="mx-1 text-muted-foreground/50">→</span>
                         {open ? (
                           <span className="text-warning">open</span>
                         ) : (
-                          formatNumber(t.exitPrice as number, 2)
+                          formatPrice(t.exitPrice as number, t.symbol, t.assetClass)
                         )}
                       </span>
                     </p>
@@ -262,14 +263,14 @@ export function JournalList({
                           {t.side}
                         </span>
                       </TableCell>
-                      <TableCell className="text-right tabular">{formatNumber(t.quantity)}</TableCell>
+                      <TableCell className="text-right tabular">{formatLots(t.quantity, t.symbol, t.assetClass)}</TableCell>
                       <TableCell className="whitespace-nowrap text-right tabular text-muted-foreground">
-                        {formatNumber(t.entryPrice, 2)}
+                        {formatPrice(t.entryPrice, t.symbol, t.assetClass)}
                         <span className="mx-1 text-muted-foreground/50">→</span>
                         {open ? (
                           <span className="text-warning">open</span>
                         ) : (
-                          formatNumber(t.exitPrice as number, 2)
+                          formatPrice(t.exitPrice as number, t.symbol, t.assetClass)
                         )}
                       </TableCell>
                       <TableCell className={`text-right tabular font-medium ${pnlColor(t.pnl)}`}>

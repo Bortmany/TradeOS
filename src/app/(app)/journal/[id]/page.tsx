@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { pointMultiplier } from "@/lib/ingestion/symbols";
 import { pipsFromPrices } from "@/lib/instruments";
+import { formatPrice } from "@/lib/instruments/format";
 import {
   formatCurrency,
   formatNumber,
@@ -54,7 +55,7 @@ export default async function TradeDetailPage({
   if (!detail) notFound();
 
   const { trade, account, evaluations, whyEntered, screenshots } = detail;
-  const shownAccount = account ? accountDisplay(account) : null;
+  const shownAccount = account ? accountDisplay(account, trade.source) : null;
   // Display zone only — the rule verdicts below keep the engine's own "ET".
   const tz = resolveTimeZone(user.timezone);
   const open = trade.exitTime === null || trade.exitPrice === null;
@@ -122,8 +123,10 @@ export default async function TradeDetailPage({
           <div className="hidden h-9 w-px bg-border sm:block" />
           <div className="text-right">
             <p className="text-2xs uppercase tracking-wide text-muted-foreground">Compliance</p>
-            {trade.complianceScore == null ? (
-              <p className="text-xl font-semibold text-muted-foreground">—</p>
+            {trade.complianceScore == null || evaluations.length === 0 ? (
+              // No rule judged this trade: say so (the stored number, if any,
+              // is untouched) instead of printing a perfect-looking 100.
+              <p className="text-sm font-medium text-muted-foreground">Not scored yet</p>
             ) : (
               <p
                 className={`text-xl font-semibold tabular ${scoreTextClass(trade.complianceScore)}`}
@@ -166,6 +169,8 @@ export default async function TradeDetailPage({
                 </TabsList>
                 <TabsContent value="context">
                   <TradeContextChart
+                    symbol={trade.symbol}
+                    assetClass={trade.assetClass}
                     tradeId={trade.id}
                     side={trade.side}
                     entryPrice={trade.entryPrice}
@@ -198,10 +203,10 @@ export default async function TradeDetailPage({
             </CardHeader>
             <CardContent>
               <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3">
-                <Fact label="Entry" value={formatNumber(trade.entryPrice, 2)} sub={formatDateTime(trade.entryTime, tz)} />
+                <Fact label="Entry" value={formatPrice(trade.entryPrice, trade.symbol, trade.assetClass)} sub={formatDateTime(trade.entryTime, tz)} />
                 <Fact
                   label="Exit"
-                  value={open ? "Open" : formatNumber(trade.exitPrice as number, 2)}
+                  value={open ? "Open" : formatPrice(trade.exitPrice as number, trade.symbol, trade.assetClass)}
                   sub={open ? "Position still open" : formatDateTime(trade.exitTime as Date, tz)}
                 />
                 {isFx ? (

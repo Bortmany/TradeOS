@@ -18,6 +18,9 @@ export default async function BillingPage() {
   const plan = user.plan as Plan;
   const effective = effectivePlan(plan, user.billingStatus);
   const planDef = PLAN_DEFINITIONS[plan];
+  // On a trial of a higher plan than the one saved on the account (Starter
+  // trialing gets Pro): say so, rather than "You're on Starter".
+  const onTrialUpgrade = user.billingStatus === "trialing" && effective !== plan;
 
   const trialDaysLeft =
     user.billingStatus === "trialing" && user.trialEndsAt
@@ -40,16 +43,20 @@ export default async function BillingPage() {
         <div className="flex items-center gap-3">
           <Sparkles className="h-5 w-5 text-primary" />
           <div>
-            <p className="text-sm font-medium">
-              You're on {planDef?.name ?? plan}
-              <Badge variant="info" className="ml-2 capitalize">
+            {/* A div, not a p: the status badge is a div, and a div inside a p
+                makes the browser rebuild the markup (React hydration error). */}
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium">
+              <span>{onTrialUpgrade ? "Your free trial gives you Pro access" : `You're on ${planDef?.name ?? plan}`}</span>
+              <Badge variant="info" className="capitalize">
                 {user.billingStatus.replace("_", " ")}
               </Badge>
-            </p>
+            </div>
             <p className="text-2xs text-muted-foreground">
-              {effective !== plan
-                ? `Currently getting ${PLAN_DEFINITIONS[effective].name}-level access.`
-                : planDef?.tagline}
+              {onTrialUpgrade
+                ? `You're on the ${planDef?.name ?? plan} plan. Until the trial ends you can use every Pro feature. Pick a plan below to keep it.`
+                : effective !== plan
+                  ? `Currently getting ${PLAN_DEFINITIONS[effective].name}-level access.`
+                  : planDef?.tagline}
             </p>
           </div>
         </div>
@@ -65,7 +72,11 @@ export default async function BillingPage() {
 
       {/* Whether a year can be bought is decided on the server; the browser is
           only ever told yes or no, never the payment provider's price ids. */}
-      <PlanCards currentPlan={plan} annualAvailable={annualPricingAvailable()} />
+      <PlanCards
+        currentPlan={plan}
+        trialPlan={onTrialUpgrade ? effective : undefined}
+        annualAvailable={annualPricingAvailable()}
+      />
 
       <p className="pt-2 text-center text-2xs text-muted-foreground">
         Payments are processed securely by Paddle, our reseller and merchant of record.

@@ -217,6 +217,7 @@ export const mt5Adapter: BrokerAdapter = {
     const c = new TradeCollector();
     const seen = new Set<string>();
     let openSkipped = 0;
+    const openSymbols: string[] = [];
 
     rows.forEach((row, i) => {
       const rowNumber = (options?.firstDataRow ?? 2) + i;
@@ -243,6 +244,9 @@ export const mt5Adapter: BrokerAdapter = {
       if (!closeTimeRaw) {
         // Still open: importing it now would block the closed version later.
         openSkipped++;
+        if (!openSymbols.includes(instrument.symbol) && openSymbols.length < 10) {
+          openSymbols.push(instrument.symbol);
+        }
         c.skipped++;
         return;
       }
@@ -281,6 +285,7 @@ export const mt5Adapter: BrokerAdapter = {
     return {
       ...c.result(),
       openSkipped,
+      ...(openSymbols.length > 0 ? { openSkippedSymbols: openSymbols } : {}),
       timesReadAs: describeServerTime(serverTime),
     };
   },

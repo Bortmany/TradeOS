@@ -25,6 +25,7 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { LoadSampleData } from "@/components/load-sample-data";
+import { drawdownTile } from "@/lib/analytics/drawdown-display";
 import {
   formatCurrency,
   formatPercent,
@@ -64,6 +65,7 @@ export default async function DashboardPage({
 
   const activeAccount = account ? accounts.find((a) => a.id === account) : null;
   const m = data.metrics;
+  const ddTile = drawdownTile(m.maxDrawdown, m.maxDrawdownPct);
 
   // "Before you trade" card. A failed load shows a line inside the card, never
   // breaks the dashboard; the checklist never feeds the score.
@@ -220,11 +222,11 @@ export default async function DashboardPage({
         />
         <Kpi
           label="Max Drawdown"
-          labelHint="How far you are below your best profit so far, as a share of that profit."
-          value={formatPercent(m.maxDrawdownPct)}
+          labelHint="Your biggest fall from your best profit so far. Shown as a share of that profit, or in dollars when the fall is bigger than the profit it fell from."
+          value={ddTile.value}
           valueClass="text-loss"
           icon={AlertTriangle}
-          hint={`of peak profit · ${formatCurrency(-m.maxDrawdown)}`}
+          hint={ddTile.hint}
         />
       </div>
 

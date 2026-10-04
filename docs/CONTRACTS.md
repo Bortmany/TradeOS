@@ -638,3 +638,11 @@ an upsert by that key, never delete-and-recreate (so dismissals survive):
   (503 `not_configured`, 409 `device_limit`), `POST /api/push/unsubscribe`,
   `POST /api/push/test` (also 5 per hour per person, 429 `test_limit`; 410 `gone` removes
   the device). A 404 or 410 from the push service deletes that subscription.
+
+## Account kind "unspecified" (fix round, display only)
+
+`TradingAccount.kind` is one of `live | funded | evaluation | demo | unspecified`.
+Accounts made by a file import or the MT5 live link start as `unspecified`
+(shown "Not set") unless the trader picks a type in the import form; they are no
+longer called Live by default. Accounts created on the Accounts page still default
+to `live`. No column change (it is a plain string); scoring never reads it.

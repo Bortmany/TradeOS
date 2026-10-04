@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/tooltip";
 import { pointMultiplier } from "@/lib/ingestion/symbols";
 import { clamp, formatCurrency, formatNumber, pnlColor } from "@/lib/utils";
+import { formatPrice } from "@/lib/instruments/format";
 import type { AssetClass, Side } from "@/lib/types";
 
 // Animated, deterministic replay of a single trade's price action. TradeOS's MVP
@@ -445,7 +446,7 @@ export function TradeReplay({
       {/* Live readout */}
       <div className="mt-3 grid grid-cols-3 gap-3">
         <Readout label="Current price">
-          <span className="tabular text-foreground">{formatNumber(currentPrice, 2)}</span>
+          <span className="tabular text-foreground">{formatPrice(currentPrice, symbol, assetClass)}</span>
         </Readout>
         <Readout
           label={pnlLabel}

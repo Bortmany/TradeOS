@@ -81,9 +81,6 @@ export const POST = withUser(async (
   const uploadLimited = enforceUserRateLimit("attachments:upload", user.id, UPLOAD_RATE_LIMIT);
   if (uploadLimited) return uploadLimited;
 
-  const storage = getStorage();
-  if (!storage) return fail(503, "storage_off", "Screenshots aren't switched on yet.");
-
   try {
     const id = routeIdSchema.parse((await params).id);
     const trade = await prisma.trade.findFirst({
@@ -91,6 +88,10 @@ export const POST = withUser(async (
       select: { id: true },
     });
     if (!trade) return fail(404, "not_found", "Trade not found.");
+
+    // Ownership first, then "storage is off": someone else's trade id is always 404.
+    const storage = getStorage();
+    if (!storage) return fail(503, "storage_off", "Screenshots aren't switched on yet.");
 
     // The upload must say how big it is, and a huge claim is refused before reading.
     const lengthHeader = req.headers.get("content-length");

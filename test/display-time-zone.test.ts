@@ -217,10 +217,14 @@ describe("bad stored zones fall back to New York without throwing", () => {
     expect(formatDate(new Date(NaN), "Asia/Muscat")).toBe("—");
   });
 
-  it("the save list accepts the table and real IANA zones, rejects the rest", () => {
+  it("the save list accepts only the fixed list; an old off-list zone still displays", () => {
     expect(isAllowedTimeZone("Asia/Muscat")).toBe(true);
     expect(isAllowedTimeZone("UTC")).toBe(true);
-    expect(isAllowedTimeZone("Europe/Paris")).toBe(true);
+    // Real zones that are not in the picker can no longer be newly saved ...
+    expect(isAllowedTimeZone("Europe/Paris")).toBe(false);
+    expect(isAllowedTimeZone("Asia/Dubai")).toBe(false);
+    // ... but one already saved is still shown properly rather than reset.
+    expect(resolveTimeZone("Asia/Dubai")).toBe("Asia/Dubai");
     expect(isAllowedTimeZone("Mars/Olympus_Mons")).toBe(false);
     expect(isAllowedTimeZone("")).toBe(false);
     expect(isAllowedTimeZone("asia/muscat")).toBe(false);

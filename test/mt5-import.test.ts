@@ -89,6 +89,7 @@ describe("the MT5 sample file", () => {
     expect(r.trades).toHaveLength(5);
     expect(r.skipped).toBe(2);
     expect(r.openSkipped).toBe(1);
+    expect(r.openSkippedSymbols).toHaveLength(1); // the result names the open position's symbol
     const total = r.trades.reduce((s, t) => s + (t.pnl ?? 0), 0);
     expect(Math.round(total * 100) / 100).toBe(857.31);
   });

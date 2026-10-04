@@ -1,3 +1,8 @@
+// The generic page skeleton. It lives here, not in app/(app)/loading.tsx, on
+// purpose: a loading file above the Reports page makes Next 15 stall moves
+// between report windows in a production build (see src/lib/report-nav.ts).
+// Settings and Backtest re-export this from their own loading.tsx; Reports
+// shows its own in-page skeleton instead and has no loading file.
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 

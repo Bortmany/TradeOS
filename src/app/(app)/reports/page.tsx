@@ -14,6 +14,7 @@ import {
   type ReportPeriod,
   type ReportData,
 } from "@/lib/reports";
+import { needsDateRedirect } from "@/lib/report-nav";
 import {
   formatDayKeyRange,
   formatDayKeyRangeShort,
@@ -87,6 +88,9 @@ export default async function ReportsPage({
   // The window ends on a New York calendar day: ?date= when given (future or
   // malformed snaps to today ET), else the latest ET day with trades.
   const { anchorKey, todayKey, latestKey } = await resolveReportAnchor(user.id, date, account);
+  // A bare /reports settles on an address that names its day. redirect() from a
+  // page replaces the address (no extra Back-button step).
+  if (needsDateRedirect(date)) redirect(reportHref(period, anchorKey, account));
   const report = await buildReport(user.id, period, account, anchorKey);
   const atLatest = report.endKey >= todayKey;
   const windowLabel = formatDayKeyRange(report.startKey, report.endKey);
@@ -161,7 +165,7 @@ export default async function ReportsPage({
               action={
                 <Button asChild variant="secondary" className="print:hidden">
                   <ReportNavLink href={reportHref(period, latestKey, account)}>
-                    No trades in this window — show my last trading day
+                    Show my last trading day
                   </ReportNavLink>
                 </Button>
               }

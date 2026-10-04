@@ -90,7 +90,7 @@ model TradingAccount {
 
   name        String
   broker      String   @default("manual") // topstepx | tradovate | ninjatrader | rithmic | ibkr | mt5 | manual | csv
-  // kind: live | funded | evaluation | demo
+  // kind: live | funded | evaluation | demo | unspecified (imports and links start unspecified)
   kind        String   @default("live")
   currency    String   @default("USD")
   startingBalance Float @default(0)

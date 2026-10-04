@@ -137,12 +137,14 @@ function intlSupportedZones(): Set<string> {
 export const TIME_ZONE_ERROR = "That time zone isn't recognised. Pick one from the list.";
 
 /**
- * The zones a trader may SAVE: every zone in the label table plus every IANA
- * zone name this runtime's Intl lists (exact spelling). Used by the profile route.
+ * The zones a trader may SAVE: exactly the fixed list in TIME_ZONE_LABELS (the
+ * same list the picker shows). A zone already saved from before is still
+ * DISPLAYED (resolveTimeZone keeps any real zone) but can't be newly chosen.
+ * Used by the profile route.
  */
 export function isAllowedTimeZone(zone: unknown): zone is string {
   if (typeof zone !== "string" || zone.length === 0 || zone.length > 64) return false;
-  return Object.prototype.hasOwnProperty.call(TIME_ZONE_LABELS, zone) || intlSupportedZones().has(zone);
+  return Object.prototype.hasOwnProperty.call(TIME_ZONE_LABELS, zone);
 }
 
 /**

@@ -37,6 +37,8 @@ export interface ParseResult {
   refusal?: string;
   // MT5 only: rows skipped because the position is still open.
   openSkipped?: number;
+  // MT5 only: the symbols of those open positions (each once, at most 10).
+  openSkippedSymbols?: string[];
   // MT5 only: how the file's times were read, e.g. "UTC+3".
   timesReadAs?: string;
 }

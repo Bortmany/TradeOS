@@ -43,7 +43,9 @@ export const ServerTimeSchema = z.discriminatedUnion("mode", [
 ]);
 export type ServerTime = z.infer<typeof ServerTimeSchema>;
 
-export const ACCOUNT_KINDS = ["live", "funded", "evaluation", "demo"] as const;
+// "unspecified" = the trader has not said (accounts made by an import or a link
+// start here instead of being called Live).
+export const ACCOUNT_KINDS = ["live", "funded", "evaluation", "demo", "unspecified"] as const;
 export type AccountKind = (typeof ACCOUNT_KINDS)[number];
 
 export const PLANS = ["free", "pro", "elite"] as const;

@@ -27,6 +27,8 @@ export interface JournalRow {
   complianceScore: number | null;
   violationCount: number;
   strategyTag: string | null;
+  /** "futures" | "forex" | "cfd" — decides how prices and sizes are printed. */
+  assetClass: string | null;
 }
 
 export function toJournalRow(t: TradeRecord): JournalRow {
@@ -43,6 +45,7 @@ export function toJournalRow(t: TradeRecord): JournalRow {
     complianceScore: t.complianceScore ?? null,
     violationCount: t.violationCount ?? 0,
     strategyTag: t.strategyTag,
+    assetClass: t.assetClass ?? null,
   };
 }
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { formatNumber } from "@/lib/utils";
+import { formatPrice } from "@/lib/instruments/format";
 
 // Schematic, deterministic price-context chart. There is NO live market data in
 // TradeOS's MVP, so we synthesize a plausible-looking intrabar path from the
@@ -10,6 +10,8 @@ import { formatNumber } from "@/lib/utils";
 
 interface Props {
   tradeId: string;
+  symbol: string;
+  assetClass?: string | null;
   side: "long" | "short";
   entryPrice: number;
   exitPrice: number | null;
@@ -39,7 +41,7 @@ function mulberry32(a: number): () => number {
   };
 }
 
-export function TradeContextChart({ tradeId, side, entryPrice, exitPrice, isWin, pnl }: Props) {
+export function TradeContextChart({ tradeId, symbol, assetClass, side, entryPrice, exitPrice, isWin, pnl }: Props) {
   const model = useMemo(() => {
     const rand = mulberry32(hashSeed(tradeId));
     const open = exitPrice == null;
@@ -176,7 +178,7 @@ export function TradeContextChart({ tradeId, side, entryPrice, exitPrice, isWin,
           className="text-muted-foreground tabular"
           fill="currentColor"
         >
-          Entry {formatNumber(entryPrice, 2)}
+          Entry {formatPrice(entryPrice, symbol, assetClass)}
         </text>
         {!model.open && (
           <>
@@ -197,7 +199,7 @@ export function TradeContextChart({ tradeId, side, entryPrice, exitPrice, isWin,
               className={`${outcomeClass} tabular`}
               fill="currentColor"
             >
-              Exit {formatNumber(exitPrice as number, 2)}
+              Exit {formatPrice(exitPrice as number, symbol, assetClass)}
             </text>
           </>
         )}
