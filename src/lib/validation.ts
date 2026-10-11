@@ -16,7 +16,12 @@ export const NAME_EXAMPLE = "John Doe";
 export const EMAIL_EXAMPLE = "JohnDoe@gmail.com";
 
 /** The one plain-English email message, shown on the field in every form. */
-export const EMAIL_ERROR = `Please enter a real email address, like ${EMAIL_EXAMPLE}.`;
+/** Import of a file that has no trade rows at all (not a broker CSV). */
+export const NOT_A_CSV_ERROR =
+  "This file doesn't look like a broker CSV. We couldn't find any trade rows.";
+/** Sign-up with an address that already has an account. */
+export const EMAIL_TAKEN_ERROR = "That email already has an account. Sign in instead.";
+export const EMAIL_ERROR =`Please enter a real email address, like ${EMAIL_EXAMPLE}.`;
 
 /**
  * True when the text could be a real email address. Trims first, caps the

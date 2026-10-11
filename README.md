@@ -1,13 +1,15 @@
 # TradeOS
 
-**The discipline engine for day traders.** Import your trades, grade every one
-against your own rulebook, and turn raw fills into a discipline score you can
-actually improve — across live and funded/prop accounts.
+**The trading journal that keeps you honest.** Import your trades, grade every
+one against your own rulebook, and get a warning at 50%, 80% and 100% of a limit
+— across live and funded/prop accounts. You decide what to do next.
 
-TradeOS is not a journal. It's an AI-ready trading *discipline enforcement*
-system: connectors normalize trades from any broker, a deterministic rule engine
-evaluates each trade, and an explainable 0–100 discipline score shows exactly
-where consistency breaks down — before it costs a payout.
+TradeOS is a trading journal that grades your trades against your own rules:
+read-only connectors bring in trades from any broker in one clean format, a
+deterministic Rule Engine grades each trade, and an explainable 0–100 discipline
+score shows exactly where consistency breaks down — before it costs a payout.
+It warns you; it never places, changes or cancels an order, and it never stops
+you from trading.
 
 ---
 
@@ -117,12 +119,12 @@ Feature gating lives in `src/lib/billing/plans.ts`:
 | Plan | Price | For |
 | --- | --- | --- |
 | **Starter** | Free | Habit-building — 1 account, 30-day history |
-| **Pro** | $29/mo | The full rule engine + discipline score + analytics |
-| **Elite** | $79/mo | Prop-firm guardrails, reports, priority |
+| **Pro** | $29/mo | The full rule engine + discipline score + analytics + prop-firm tracker |
+| **Elite** | $59/mo | Everything in Pro, bigger imports (100,000 trades), priority support |
 
 New users get a 14-day full-access trial. Path to $10k MRR ≈ **345 Pro** or
-**~130 Elite** subscribers. Paddle billing is built and env-gated — the app
-enforces gating today and lights up checkout when the keys are added. Paddle is
+**~170 Elite** subscribers. Paddle billing is built and env-gated — limits
+are applied by plan today, and checkout lights up when the keys are added. Paddle is
 the merchant of record, so it handles worldwide sales tax/VAT.
 
 ---
@@ -169,7 +171,7 @@ the merchant of record, so it handles worldwide sales tax/VAT.
 - **Paddle:** set `PADDLE_ENV`, `PADDLE_API_KEY`, `PADDLE_WEBHOOK_SECRET` and
   the `PADDLE_PRICE_ID_PRO` / `PADDLE_PRICE_ID_ELITE` price ids. Optionally add
   `PADDLE_PRICE_ID_PRO_ANNUAL` / `PADDLE_PRICE_ID_ELITE_ANNUAL` to also sell a
-  year up front ($290 / $790 — two months free); without them no yearly option
+  year up front ($290 / $590 — two months free); without them no yearly option
   is shown and monthly billing is unchanged. Checkout, the
   customer portal and subscription-sync webhooks activate automatically; until
   then the UI shows a graceful "not switched on" notice and gating still works.

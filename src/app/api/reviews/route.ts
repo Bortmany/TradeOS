@@ -4,6 +4,7 @@ import { withUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { apiErrorResponse } from "@/lib/api-error";
+import { refuseDemo } from "@/lib/demo-guard";
 import {
   INVALID_WEEK_MESSAGE,
   WEEK_KEY_PATTERN,
@@ -25,6 +26,8 @@ const schema = z.object({
 });
 
 export const POST = withUser(async (user, req: Request) => {
+  const demoRefused = refuseDemo(user);
+  if (demoRefused) return demoRefused;
   const limited = enforceUserRateLimit("reviews:write", user.id);
   if (limited) return limited;
 

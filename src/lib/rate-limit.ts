@@ -277,6 +277,10 @@ function proxyHops(): number {
 // and/or costs money.
 export const USER_WRITE_LIMIT = { limit: 60, windowMs: 60_000 } as const; // 60/min
 export const USER_EXTERNAL_LIMIT = { limit: 10, windowMs: 60_000 } as const; // 10/min
+// Authed READ endpoints (e.g. the journal's "Load older trades" pages). Reads
+// are cheap and a trader may page quickly, so the allowance is double the write
+// one — but still per user, so a runaway client can't hammer the database.
+export const USER_READ_LIMIT = { limit: 120, windowMs: 60_000 } as const; // 120/min
 
 // Count one hit for a signed-in user against a named action. Keyed by user id
 // (never by anything the client controls), so one user can't spend another's

@@ -4,6 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
 import { BROKERS, ACCOUNT_KINDS } from "@/lib/types";
+import { accountStatusLabel, brokerLabel } from "@/lib/account-display";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,15 +31,6 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-const BROKER_LABELS: Record<string, string> = {
-  topstepx: "TopstepX",
-  tradovate: "Tradovate",
-  ninjatrader: "NinjaTrader",
-  rithmic: "Rithmic",
-  ibkr: "Interactive Brokers",
-  generic: "Generic CSV",
-  manual: "Manual",
-};
 
 const COLORS = ["#5b8def", "#22c55e", "#ef4444", "#f59e0b", "#a855f7", "#14b8a6"];
 
@@ -141,7 +133,7 @@ export function AccountDialog({
                 <SelectContent>
                   {BROKERS.map((b) => (
                     <SelectItem key={b} value={b}>
-                      {BROKER_LABELS[b] ?? b}
+                      {brokerLabel(b)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -156,8 +148,8 @@ export function AccountDialog({
                 </SelectTrigger>
                 <SelectContent>
                   {ACCOUNT_KINDS.map((k) => (
-                    <SelectItem key={k} value={k} className="capitalize">
-                      {k}
+                    <SelectItem key={k} value={k}>
+                      {accountStatusLabel(k)}
                     </SelectItem>
                   ))}
                 </SelectContent>

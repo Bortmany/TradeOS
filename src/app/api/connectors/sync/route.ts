@@ -4,8 +4,11 @@ import { withUser } from "@/lib/auth";
 import { syncConnection } from "@/lib/connectors/sync";
 import { ConnectorError } from "@/lib/connectors/topstepx";
 import { enforceUserRateLimit, USER_EXTERNAL_LIMIT } from "@/lib/rate-limit";
+import { refuseDemo } from "@/lib/demo-guard";
 
 export const POST = withUser(async (user, req: Request) => {
+  const demoRefused = refuseDemo(user);
+  if (demoRefused) return demoRefused;
   // Tight limit: each sync calls the broker's API and pulls fills. Guards both
   // the broker's rate limits and our own worker from a hammering client.
   const limited = enforceUserRateLimit("connectors:sync", user.id, USER_EXTERNAL_LIMIT);
@@ -14,13 +17,18 @@ export const POST = withUser(async (user, req: Request) => {
   try {
     const { id } = z.object({ id: z.string().min(1) }).parse(await req.json());
     const result = await syncConnection(id, user.id);
-    return NextResponse.json({ ok: true, imported: result.imported, skipped: result.skipped });
+    return NextResponse.json({
+      ok: true,
+      imported: result.imported,
+      skipped: result.skipped,
+      ...(result.notes ? { notes: result.notes } : {}),
+    });
   } catch (err) {
     if (err instanceof z.ZodError) {
       return NextResponse.json({ ok: false, error: "Invalid request." }, { status: 400 });
     }
     const message = err instanceof ConnectorError ? err.message : "Sync failed.";
-    const status = err instanceof ConnectorError && err.kind === "auth" ? 401 : 400;
+    const status = err instanceof ConnectorError && (err.kind === "auth" || err.kind === "key_rejected") ? 401 : 400;
     return NextResponse.json({ ok: false, error: message }, { status });
   }
 });

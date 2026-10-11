@@ -6,10 +6,13 @@ import type { Plan } from "@/lib/types";
 import { PageHeader } from "@/components/page-header";
 import { ProfileForm } from "@/components/settings/profile-form";
 import { DataPrivacy } from "@/components/settings/data-privacy";
+import { PhoneWarnings } from "@/components/settings/phone-warnings";
+import { isPushConfigured, pushPublicKeyForBrowser } from "@/lib/push/config";
+import { isDemoDesk } from "@/lib/demo-desk";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { formatDate } from "@/lib/utils";
+import { formatDate, resolveTimeZone } from "@/lib/utils";
 import { prisma } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
@@ -34,7 +37,7 @@ export default async function SettingsPage() {
           <CardHeader>
             <CardTitle>Profile</CardTitle>
             <p className="mt-0.5 text-sm text-muted-foreground">
-              Your name and the timezone your sessions are bucketed in.
+              Your name and the clock the app shows times in.
             </p>
           </CardHeader>
           <CardContent>
@@ -69,8 +72,28 @@ export default async function SettingsPage() {
             />
             <Row
               label="Member since"
-              value={dbUser ? formatDate(dbUser.createdAt) : "—"}
+              value={dbUser ? formatDate(dbUser.createdAt, resolveTimeZone(user.timezone)) : "—"}
             />
+          </CardContent>
+        </Card>
+
+        <PhoneWarnings
+          configured={isPushConfigured()}
+          publicKey={pushPublicKeyForBrowser()}
+          demo={isDemoDesk(user.email)}
+        />
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between gap-2">
+              <CardTitle>Email warnings</CardTitle>
+              <Badge variant="secondary">Coming soon</Badge>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">
+              Email warnings are coming once email is set up.
+            </p>
           </CardContent>
         </Card>
 

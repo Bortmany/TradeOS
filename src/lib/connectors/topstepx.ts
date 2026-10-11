@@ -3,8 +3,10 @@
 // TopstepX runs on the ProjectX platform, which exposes a documented REST
 // gateway (default https://api.topstepx.com). Auth is username + API key →
 // short-lived session token. This module contains:
-//   1. a thin, defensive HTTP client for the three endpoints we need
-//      (Auth/loginKey, Account/search, Trade/search)
+//   1. a thin, defensive HTTP client for the read-only endpoints we need
+//      (Auth/loginKey, Account/search, Trade/search, Position/searchOpen and,
+//      only to estimate an open position's price, History/retrieveBars). The
+//      client refuses any path that is not on ALLOWED_PATHS below.
 //   2. contractId → symbol mapping
 //   3. a pure FIFO pairing engine that converts half-turn fills into
 //      round-trip trades in our NormalizedTrade schema (unit-testable, no I/O)
@@ -12,10 +14,13 @@
 // The gateway returns FILLS (half-turns), one row per execution, with
 // profitAndLoss populated only on position-reducing fills. We rebuild round
 // trips ourselves so the result is broker-agnostic and auditable.
-// No orders are ever placed — this connector is strictly read-only.
+// No orders are ever placed — this connector is strictly read-only: it has no
+// function that places, changes or cancels an order or closes a position, and
+// test/live-safety.test.ts proves it (export names, source text, runtime calls).
 
 import type { NormalizedTrade } from "@/lib/types";
 import { pointMultiplier } from "@/lib/ingestion/symbols";
+import { isAllowedBaseUrl } from "@/lib/connectors/firms";
 
 export const DEFAULT_BASE_URL = "https://api.topstepx.com";
 
@@ -47,23 +52,67 @@ export interface DiscoveredAccount {
 export class ConnectorError extends Error {
   constructor(
     message: string,
-    public readonly kind: "auth" | "network" | "api" = "api"
+    /**
+     * "key_rejected" = the login endpoint explicitly answered success:false (bad key):
+     * the only permanent refusal. "auth" = a bare 401/403 (could be an expired token or
+     * a hiccup): the caller retries, never treats it as a bad key.
+     */
+    public readonly kind: "auth" | "key_rejected" | "network" | "api" | "rate_limit" = "api",
+    /** For kind "rate_limit": the broker's Retry-After, in seconds, if it sent one. */
+    public readonly retryAfterSec?: number
   ) {
     super(message);
     this.name = "ConnectorError";
   }
 }
 
+/** An open position as the gateway reports it (Position/searchOpen). */
+export interface ProjectXPosition {
+  id: number | string;
+  accountId: number | string;
+  contractId: string;
+  creationTimestamp?: string;
+  type: number; // 1 = long, 2 = short
+  size: number;
+  averagePrice: number;
+  // Not documented. Read only when the gateway happens to send it; otherwise
+  // the poller estimates the price from the latest 1-minute bar.
+  currentPrice?: number;
+  lastPrice?: number;
+}
+
+/**
+ * The ONLY gateway paths this module may call. An allow-list, not a deny-list:
+ * pxPost refuses anything else before a request is made. Every path here reads
+ * data; none places, changes or cancels an order or closes a position.
+ */
+export const ALLOWED_PATHS: readonly string[] = [
+  "/api/Auth/loginKey",
+  "/api/Account/search",
+  "/api/Trade/search",
+  "/api/Position/searchOpen",
+  "/api/History/retrieveBars",
+] as const;
+
+const REQUEST_TIMEOUT_MS = 15_000;
+
 // --------------------------------------------------------------------------
 // HTTP client
 // --------------------------------------------------------------------------
 
-async function pxPost<T>(
+export async function pxPost<T>(
   baseUrl: string,
   path: string,
   body: unknown,
   token?: string
 ): Promise<T> {
+  // Defence in depth: a fixed list of read-only paths, and only registry hosts.
+  if (!ALLOWED_PATHS.includes(path)) {
+    throw new ConnectorError("That broker request is not permitted.", "api");
+  }
+  if (!isAllowedBaseUrl(baseUrl)) {
+    throw new ConnectorError("That broker address is not permitted.", "api");
+  }
   let res: Response;
   try {
     res = await fetch(`${baseUrl.replace(/\/$/, "")}${path}`, {
@@ -75,11 +124,22 @@ async function pxPost<T>(
       },
       body: JSON.stringify(body),
       cache: "no-store",
+      // A redirect could send the key or token to another host: refuse every one.
+      redirect: "error",
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
   } catch (err) {
     throw new ConnectorError(
       `Could not reach the broker gateway (${(err as Error).message}). Check the base URL and your network.`,
       "network"
+    );
+  }
+  if (res.status === 429) {
+    const retry = Number(res.headers.get("retry-after"));
+    throw new ConnectorError(
+      "The broker is asking us to slow down (HTTP 429).",
+      "rate_limit",
+      Number.isFinite(retry) && retry > 0 ? retry : undefined
     );
   }
   if (res.status === 401 || res.status === 403) {
@@ -102,11 +162,16 @@ export async function pxLogin(
     success?: boolean;
     errorMessage?: string | null;
   }>(baseUrl, "/api/Auth/loginKey", { userName, apiKey });
-  if (!json.success || !json.token) {
+  if (json.success === false) {
+    // The gateway's explicit "no" to this key: the only permanent refusal.
     throw new ConnectorError(
       json.errorMessage || "Login failed — check your TopstepX username and API key.",
-      "auth"
+      "key_rejected"
     );
+  }
+  if (!json.success || !json.token) {
+    // An odd or empty answer is a gateway problem, not proof the key is bad.
+    throw new ConnectorError("The broker gave no session. Try again shortly.", "api");
   }
   return json.token;
 }
@@ -158,6 +223,69 @@ export async function pxSearchTrades(
     throw new ConnectorError(json.errorMessage || "Could not fetch trades from the broker.");
   }
   return json.trades.filter((f) => !f.voided);
+}
+
+/** The current open positions of one broker account (read-only). */
+export async function pxSearchOpenPositions(
+  baseUrl: string,
+  token: string,
+  accountId: string
+): Promise<ProjectXPosition[]> {
+  const json = await pxPost<{
+    positions?: ProjectXPosition[];
+    success?: boolean;
+    errorMessage?: string | null;
+  }>(
+    baseUrl,
+    "/api/Position/searchOpen",
+    { accountId: /^\d+$/.test(accountId) ? Number(accountId) : accountId },
+    token
+  );
+  if (!json.success || !Array.isArray(json.positions)) {
+    throw new ConnectorError(json.errorMessage || "Could not read open positions.");
+  }
+  return json.positions.filter(
+    (p) => p && Number.isFinite(p.size) && p.size > 0 && Number.isFinite(p.averagePrice)
+  );
+}
+
+/**
+ * The price (final value) of the most recent 1-minute bar for a contract (read-only market
+ * data), or null when the market has no bar in the last 30 minutes. Used only
+ * to ESTIMATE the price of an open position when the gateway sends none.
+ */
+export async function pxLatestBarPrice(
+  baseUrl: string,
+  token: string,
+  contractId: string,
+  now: Date = new Date()
+): Promise<number | null> {
+  const json = await pxPost<{
+    bars?: { t?: string; c?: number }[];
+    success?: boolean;
+    errorMessage?: string | null;
+  }>(
+    baseUrl,
+    "/api/History/retrieveBars",
+    {
+      contractId,
+      live: false,
+      startTime: new Date(now.getTime() - 30 * 60_000).toISOString(),
+      endTime: now.toISOString(),
+      unit: 2, // minutes
+      unitNumber: 1,
+      limit: 5,
+      includePartialBar: true,
+    },
+    token
+  );
+  if (!json.success || !Array.isArray(json.bars)) {
+    throw new ConnectorError(json.errorMessage || "Could not read the latest price.");
+  }
+  const bars = json.bars.filter((b) => typeof b.c === "number" && Number.isFinite(b.c));
+  if (bars.length === 0) return null;
+  bars.sort((a, b) => new Date(b.t ?? 0).getTime() - new Date(a.t ?? 0).getTime());
+  return bars[0].c as number;
 }
 
 // --------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-// TradeOS — Prop firm evaluation tracker (Elite-tier).
+// TradeOS — Prop firm evaluation tracker (Pro and above).
 // Deterministic, DB-agnostic compute layer for prop-firm compliance: how much
 // profit-target progress a funded/evaluation account has, and — the number that
 // actually matters to a funded trader — how much *buffer* remains before a
@@ -7,6 +7,13 @@
 import "server-only";
 import { prisma } from "@/lib/db";
 import type { PropFirm, DrawdownType } from "@/lib/types";
+import { computeLimitFigures } from "@/lib/risk/limits";
+import {
+  loadLiveState,
+  openStateFor,
+  type LiveHealth,
+  type PositionView,
+} from "@/lib/live/state";
 
 // --------------------------------------------------------------------------
 // Presets — ready-made firm rule sets. Field shapes mirror the PropAccount model.
@@ -87,18 +94,45 @@ export interface PropGuardrailMeter {
   atRisk: boolean;
 }
 
+/** The near-live side of one tracker: what the open-position read added, and how fresh it is. */
+export interface PropLive {
+  /** The account has a broker connection at all. */
+  linked: boolean;
+  nearLive: boolean;
+  health: LiveHealth | "none";
+  lastLiveAt: Date | null;
+  lastError: string | null;
+  /** True when the figures below include open P&L (a fresh read). */
+  includesOpen: boolean;
+  openPnl: number;
+  openCount: number;
+  unpricedCount: number;
+  /** Loss (<= 0) of a position that just closed, counted until its fills land. */
+  pendingCloseLoss: number;
+  estimated: boolean;
+  /** The last known positions (shown even when stale). */
+  positions: PositionView[];
+}
+
 export interface PropStatus {
   id: string;
   accountId: string;
   accountName: string;
+  /** The account's own status (TradingAccount.kind) — the truth for "status". */
+  accountKind: string;
+  /** Stored broker key; shown through brokerLabel(). */
+  accountBroker: string;
   firm: PropFirm;
   presetName: string;
+  /** The tracker's own phase — shown only as "Eval progress", never as a status. */
   phase: string;
   size: number;
   startingBalance: number;
 
   tradeCount: number;
+  /** Closed profit only; the profit target never counts open P&L. */
   netProfit: number;
+  /** Includes open P&L when the live read is fresh. */
   currentEquity: number;
   peakEquity: number;
 
@@ -115,8 +149,8 @@ export interface PropStatus {
 
   // Daily loss
   maxDailyLoss: number | null;
-  todayLoss: number; // magnitude of today's loss (>=0), 0 if flat/green
-  todayPnl: number; // signed today P&L
+  todayLoss: number; // magnitude of today's loss (>=0), 0 if flat/green; includes open P&L when fresh
+  todayPnl: number; // signed today P&L (closed + open when fresh)
   worstDayLoss: number; // magnitude of worst single day (>=0)
   dailyLossBuffer: number;
   dailyLoss: PropGuardrailMeter | null;
@@ -141,23 +175,13 @@ export interface PropStatus {
   tradingDaysOk: boolean;
 
   status: PropStatusLevel;
+
+  live: PropLive;
 }
 
 // --------------------------------------------------------------------------
 // Helpers
 // --------------------------------------------------------------------------
-
-// Calendar day key in US Eastern time (prop firms reset on the ET session day).
-const ET_DAY = new Intl.DateTimeFormat("en-CA", {
-  timeZone: "America/New_York",
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-});
-
-function etDayKey(d: Date): string {
-  return ET_DAY.format(d);
-}
 
 function meter(used: number, limit: number): PropGuardrailMeter {
   const buffer = limit - used;
@@ -184,7 +208,8 @@ export async function getPropStatus(userId: string): Promise<PropStatus[]> {
   });
   if (props.length === 0) return [];
 
-  const todayKey = etDayKey(new Date());
+  const now = new Date();
+  const live = await loadLiveState(userId, now);
 
   const results: PropStatus[] = [];
 
@@ -196,22 +221,22 @@ export async function getPropStatus(userId: string): Promise<PropStatus[]> {
 
     const startingBalance = p.account.startingBalance ?? 0;
 
-    // Running equity, peak & drawdown over the closed-trade series.
-    let equity = startingBalance;
-    let peak = startingBalance;
-    let netProfit = 0;
-    const dayPnl = new Map<string, number>();
-
-    for (const t of trades) {
-      netProfit += t.pnl;
-      equity += t.pnl;
-      if (equity > peak) peak = equity;
-      const key = etDayKey(t.exitTime as Date);
-      dayPnl.set(key, (dayPnl.get(key) ?? 0) + t.pnl);
-    }
-
-    const currentEquity = equity;
-    const currentDrawdown = Math.max(0, peak - currentEquity);
+    // The ONE shared calculation (also used by the alert generator), so this
+    // page and the dashboard alert always show the same daily buffer.
+    const conn = live.connections.find((c) => c.accountId === p.accountId);
+    const open = openStateFor(conn, live.positions);
+    const f = computeLimitFigures({
+      startingBalance,
+      trades: trades.map((t) => ({ pnl: t.pnl, exitTime: t.exitTime as Date })),
+      now,
+      open,
+      livePeakEquity: conn?.livePeakEquity ?? null,
+    });
+    const netProfit = f.netProfit;
+    const currentEquity = f.equity;
+    const peak = f.peak;
+    const currentDrawdown = f.currentDrawdown;
+    const dayPnl = f.dayPnl;
 
     // Day-bucketed metrics.
     let worstDay = 0; // most negative day total (signed)
@@ -224,8 +249,8 @@ export async function getPropStatus(userId: string): Promise<PropStatus[]> {
       if (maxDailyLoss != null && -total > maxDailyLoss) dailyLossEverExceeded = true;
     }
     const worstDayLoss = Math.max(0, -worstDay);
-    const todayPnl = dayPnl.get(todayKey) ?? 0;
-    const todayLoss = Math.max(0, -todayPnl);
+    const todayPnl = f.todayPnl;
+    const todayLoss = f.todayLoss;
 
     // Profit target.
     const profitTarget = p.profitTarget ?? null;
@@ -278,6 +303,8 @@ export async function getPropStatus(userId: string): Promise<PropStatus[]> {
       id: p.id,
       accountId: p.accountId,
       accountName: p.account.name,
+      accountKind: p.account.kind,
+      accountBroker: p.account.broker,
       firm: p.firm as PropFirm,
       presetName: p.presetName,
       phase: p.phase,
@@ -310,6 +337,20 @@ export async function getPropStatus(userId: string): Promise<PropStatus[]> {
       tradingDays,
       tradingDaysOk,
       status,
+      live: {
+        linked: !!conn,
+        nearLive: conn?.nearLive ?? false,
+        health: conn ? conn.health : "none",
+        lastLiveAt: conn?.lastLiveAt ?? null,
+        lastError: conn?.lastError ?? null,
+        includesOpen: open != null,
+        openPnl: open?.openPnl ?? 0,
+        openCount: open?.openCount ?? 0,
+        unpricedCount: open?.unpricedCount ?? 0,
+        pendingCloseLoss: open?.pendingCloseLoss ?? 0,
+        estimated: open?.estimated ?? false,
+        positions: conn ? live.positions.filter((x) => x.connectionId === conn.connectionId) : [],
+      },
     });
   }
 

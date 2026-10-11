@@ -37,7 +37,9 @@ export default async function RulesPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  const { books, adherence, ruleCount } = await getRuleBooksWithStats(user.id);
+  const { books, adherence, ruleCount, passCount, failCount } = await getRuleBooksWithStats(user.id);
+  // No rule has judged a trade yet: say so rather than printing a perfect-looking 100%.
+  const scored = passCount + failCount > 0;
   const activeBooks = books.filter((b) => b.isActive).length;
 
   // Every plan has the rule engine; the free one is capped. Infinity means the
@@ -112,8 +114,8 @@ export default async function RulesPage() {
           <div className="grid grid-cols-3 gap-3">
             <SummaryStat
               label="Overall Adherence"
-              value={`${adherence}%`}
-              valueClass={scoreText(adherence)}
+              value={scored ? `${adherence}%` : "Not scored yet"}
+              valueClass={scored ? scoreText(adherence) : "text-base text-muted-foreground"}
               icon={ShieldCheck}
             />
             <SummaryStat
@@ -156,6 +158,7 @@ export default async function RulesPage() {
                     <ScoreMeter
                       label="Adherence"
                       score={book.adherence}
+                      unscored={book.passCount + book.failCount === 0}
                       detail={`${book.passCount} pass · ${book.failCount} fail`}
                     />
                   </div>
@@ -232,7 +235,7 @@ function RuleRow({ bookId, rule }: { bookId: string; rule: RuleWithStats }) {
           <span className="text-loss tabular">{rule.failCount}F</span>
         </div>
         <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-muted">
-          <div
+          {rule.passCount + rule.failCount > 0 && <div
             className={cn(
               "h-full rounded-full",
               rule.adherence >= 80
@@ -242,7 +245,7 @@ function RuleRow({ bookId, rule }: { bookId: string; rule: RuleWithStats }) {
                   : "bg-score-low"
             )}
             style={{ width: `${rule.adherence}%` }}
-          />
+          />}
         </div>
       </div>
 

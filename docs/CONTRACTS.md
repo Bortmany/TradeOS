@@ -13,10 +13,38 @@ at the boundary.
 The canonical trade shape passed to pure functions is `TradeRecord` (in
 `types.ts`). Open trades have `exitTime === null` / `exitPrice === null` and are
 excluded from realized-P&L math. `pnl` is realized, net of fees.
+`TradeRecord` (and the normalized import shape) carry an optional
+`assetClass?: "futures" | "forex" | "cfd" | null` (`ASSET_CLASSES` in `types.ts`;
+stored as the plain-string column `Trade.assetClass`). `null`/absent means
+futures, exactly as for every trade saved before forex/CFD support. `data.ts`
+(`mapTrade`) and `rules/recompute.ts` copy it across; the rule engine and the
+discipline score never read it.
 
 Session classification (US futures, times in America/New_York):
 - `pre` 04:00–09:30, `rth_am` 09:30–12:00, `lunch` 12:00–13:00,
   `rth_pm` 13:00–16:00, `post` 16:00–20:00, `overnight` otherwise.
+
+Grading zone vs display zone: grading (rule engine, discipline score, ET day
+keys, report windows) is fixed to America/New_York and never reads the user's
+setting. `User.timezone` is DISPLAY ONLY: it changes how times are printed, via
+`formatDateTime`/`formatDate(value, zone)` in `utils.ts` (zone label after every
+time, e.g. "9:45 AM ET"); day-key strings are printed unshifted.
+
+Journal paging and report windows (read-only, per user):
+- `getTradesPage(userId, { filter, limit, cursor })` in `data.ts` returns
+  `{ rows, nextCursor, total }`, newest first (`entryTime` desc, then `id`
+  desc). The cursor is an opaque compound (`entryTime` + `id`) so trades with
+  identical times are never skipped or repeated; a malformed cursor throws
+  `InvalidCursorError` (route answers 400). Page size is clamped to 1..100.
+  Filters (account, symbol, strategy, source, outcome, `fromDay`/`toDay`) run in
+  the database; `total` is the count for the filters. Day filters are New York
+  calendar days (ET midnight to ET end of day, the `etDayKey` boundary). Served
+  to the browser by `GET /api/trades/page` (`USER_READ_LIMIT`, 120/min/user).
+- `buildReport(userId, period, accountId?, anchorKey?)` in `reports.ts` covers
+  the New York days ending on `anchorKey` (day = 1, week = 7, month = 30); a
+  trade is in the window when `etDayKey(entryTime)` is. `resolveReportAnchor`
+  turns `?date=` into the anchor (future/malformed → today ET; none → the
+  latest ET day with trades via `getLatestTradeDayKey`). Report maths unchanged.
 
 ---
 
@@ -81,31 +109,131 @@ Explanations are human-readable and deterministic, e.g.
 `"Entered 09:12 ET — before the 09:30 window opens."`
 
 ## Package C — Ingestion (`src/lib/ingestion/`)
+(The MT5 file import below is unchanged. A separate live MT5 link, off by default, is
+described in Package J, "MT5 live link through MetaApi".)
 Files: `csv.ts` (RFC-4180 parser: `parseCsv(text): { headers: string[]; rows: string[][] }`),
-`adapters/{topstepx,tradovate,ninjatrader,rithmic,ibkr,generic}.ts`, `index.ts`.
+`adapters/{topstepx,tradovate,ninjatrader,rithmic,ibkr,mt5,generic}.ts`, `index.ts`.
 
 Adapter interface:
 ```ts
 export interface BrokerAdapter {
   key: Broker; label: string;
   detect(headers: string[]): boolean;           // heuristic header match
-  parse(headers: string[], rows: string[][]): { trades: NormalizedTrade[];
-    skipped: number; errors: string[] };
+  parse(headers: string[], rows: string[][], options?: { serverTime?: ServerTime }): {
+    trades: NormalizedTrade[]; skipped: number; errors: string[];
+    refusal?: string;       // whole-file refusal, plain English (nothing imported)
+    openSkipped?: number;   // MT5 only
+    timesReadAs?: string;   // MT5 only, e.g. "UTC+3"
+  };
 }
 ```
+The optional third argument is ignored by every adapter except `mt5`.
 Registry + orchestrator in `index.ts`:
 - `ADAPTERS: BrokerAdapter[]`
 - `detectAdapter(headers): BrokerAdapter | null`
-- `ingestCsv(text: string, brokerKey?: Broker): { broker: Broker;
-   trades: NormalizedTrade[]; skipped: number; errors: string[] }`
+- `ingestCsv(text: string, brokerKey?: Broker, options?: { serverTime?: ServerTime }): { broker: Broker;
+   trades: NormalizedTrade[]; skipped: number; errors: string[]; refusal?: string;
+   openSkipped?: number; timesReadAs?: string }`
 Validate each row with `NormalizedTradeSchema`. Every numeric field is `.finite()`
 and bounded (`MAX_TRADE_PRICE`/`MAX_TRADE_QUANTITY`/`MAX_TRADE_FEES`/`MAX_TRADE_PNL`
 in `src/lib/types.ts`) so an overflow row that computes to `Infinity` is rejected
 and reported as a row error, never silently dropped at insert time. Compute `pnl`
-when the file lacks it: long = (exit−entry)×qty×mult − fees; short = (entry−exit)×qty×mult − fees;
-use a per-symbol point multiplier table (ES=50, MES=5, NQ=20, MNQ=2, default 1)
-in a `symbols.ts` helper; equities default mult 1. `generic` maps common column
-names (symbol/ticker, side/direction, qty/quantity/size, entry/exit price, times).
+when the file lacks it: **futures** (and any symbol the instruments table does
+not know) long = (exit−entry)×qty×mult − fees; short = (entry−exit)×qty×mult − fees;
+with the futures point multiplier table (ES=50, MES=5, NQ=20, MNQ=2, RTY=50,
+M2K=5, YM=5, MYM=0.5, CL=1000, GC=100, MGC=10, default 1 — this default is
+right for shares only) now in `src/lib/instruments/futures.ts`; `symbols.ts` is
+a one-line re-export. **Forex/CFD** symbols known to `getInstrument` are NOT
+priced with that default: `TradeCollector.add` uses `pnlFromPrices` from
+`src/lib/instruments/` (USD account, quantity = lots, fees subtracted, rounded
+to cents); a row that needs a conversion rate nobody supplied is skipped with
+"needs a GBPUSD rate". A P&L already present in the file is always trusted.
+In this generic fallback `getInstrument` is called with `{ useAliases: false }`:
+only exact table symbols and their broker endings (XAUUSD, XAUUSD.r, EURUSDm)
+count, NEVER bare aliases (GOLD, SILVER, WTI, BRENT ...), so a stock ticker such
+as GOLD or WTI keeps the shares maths. The MT5 adapter supplies its own P&L and
+resolves aliases. Forex quantity here means LOTS: a forex row whose quantity is
+1000 or more is read as units (IBKR style, e.g. 20000) and skipped with a plain
+message ("EURUSD quantity 20000 looks like units, not lots ..."), never guessed;
+the rule applies only when P&L is computed (no P&L column).
+`generic` maps common column names (symbol/ticker, side/direction,
+qty/quantity/size, entry/exit price, times). `TradeCollector` rows take an
+optional `assetClass`, passed into the checked trade shape.
+
+**MetaTrader 5 adapter (`adapters/mt5.ts`, key `mt5`, label "MetaTrader 5")** — a
+FILE import of the MT5 "Positions" history table saved as comma CSV (not a live
+connector; see `docs/connectors.md`). Columns, in order:
+`Time, Position, Symbol, Type, Volume, Price, S / L, T / P, Time, Price,
+Commission, Swap, Profit`. Detect: has Position, Symbol, Volume, S / L, T / P
+(also claims the Deals table and a semicolon file so it can refuse them in plain
+English: `refusal`). Time and Price each appear twice; the adapter reads the
+open (first) and close (second) by column ORDER, never `headerIndex`. One row =
+one round trip (MT5 already matched fills). Mapping: quantity = Volume (lots);
+side buy→long, sell→short; `pnlGross` = Profit; `fees` = −(Commission + Swap)
+(a swap credit lowers fees; may be below zero); `pnl` = Profit + Commission +
+Swap (Profit is trusted: MT5 already converted it to the account currency, so
+the import route accepts only a USD target account, else 400 "MT5 import
+supports USD accounts for now. This account is set to EUR."); `externalId` =
+`mt5:<Position>` (dedupe by the unique [accountId, externalId]); `symbol` =
+table symbol from `getInstrument` (broker endings and aliases resolved);
+`assetClass` from the table (forex, or cfd for metals/energy/indices);
+`source` csv. Comment and account name/number are never read or stored. A row
+with no close time is an open position: skipped, counted in `openSkipped`
+(no error line). An unknown symbol (BTCUSD ...) skips that row with "symbol X is
+not supported yet"; a repeated Position keeps the first and reports the second.
+A saved History report (File > Save as report) has title rows above the table
+and Orders / Deals / summary sections below, maybe with blank spacer columns.
+`ingestCsv` (MT5 chosen, or auto-detect that would otherwise fall to generic,
+and only when row 1 is not already an MT5 header) calls `findMt5Table` on the
+raw records (`parseCsvRecords`): it scans the first 30 rows for the Positions
+header, reads rows until the next blank row or single-cell section title, and
+passes `ParseOptions.firstDataRow` so error row numbers are real file rows. A
+Deals header or semicolon header found in those rows is refused as before. Other
+adapters read files exactly as before.
+
+Times have no zone in the file; `parseMt5Time` parses the `YYYY.MM.DD HH:MM[:SS]`
+layout itself (never the machine zone) and converts with the chosen
+`ServerTime` (`ServerTimeSchema` in `types.ts`): `ny_close` (default; server =
+New York + 7 h year-round, via `etWallToUtc`: `2026.09.14 09:15:00` →
+`2026-09-14T06:15:00Z`, `2026.12.10 09:15:00` → `07:15:00Z`), `utc`, or
+`offset` (whole hours −12..+14). `timesReadAs` reports the choice.
+
+`POST /api/import` body gains an optional, zod-validated `serverTime`
+(`{mode:"ny_close"} | {mode:"utc"} | {mode:"offset",hours}`); its response gains
+optional `timesReadAs` and `openSkipped` (MT5 only). A `refusal` is returned as
+`400 {ok:false,error}` with nothing saved. Limits unchanged.
+
+## Package F — Instruments (`src/lib/instruments/`)
+Forex/CFD symbol table and maths, plus the futures point multipliers. Pure and
+deterministic, no DB, no live prices, no outbound calls. Plain JS numbers; money
+rounds to cents (`Math.round(n*100)/100`, like `backtest/simulate.ts`), pips to
+1 decimal, pip values to 4. Files: `table.ts` (38 rows, each with a source note
+and check date; aliases in `INSTRUMENT_ALIASES`, upper-case keys), `maths.ts`,
+`futures.ts`, `index.ts` (barrel).
+
+Exports (exact names; the position-size calculator consumes these):
+- `getInstrument(symbol): InstrumentRow | null` — copes with broker endings
+  (`EURUSD.r`, `EURUSDm`, `.pro`, `#`, trailing `.`) and aliases (`GOLD`, `USOIL`/`WTI`,
+  `NAS100`/`USTEC`, `US30`/`DJ30`, `GER40`/`DE40`, `US500`/`SPX500`, `JP225`/`JPN225`).
+- `pipSize(symbol)`, `pipValue(symbol, lots, accountCurrency, rate?)`,
+  `pnlFromPrices({symbol, side, lots, entryPrice, exitPrice, accountCurrency, rate?})`
+  (before fees), `pipsFromPrices(symbol, side, entryPrice, exitPrice)`,
+  `neededConversionPair(symbol, accountCurrency)` (`null` = none needed from the caller).
+- `pointMultiplier(symbol)`, `rootSymbol(symbol)`, `FUTURES_ROOTS` — futures, values unchanged.
+- `InstrumentError` (`code`: `unknown_symbol | bad_input | needs_rate`; `pair` set for `needs_rate`).
+
+Conversion-rate rule (no price feed): quote currency = account currency → none;
+account currency is the pair's base (USDJPY, USDCHF, USDCAD in USD) → the trade's own
+exit price is the rate (for `pipValue`, which has no price, the caller supplies it);
+otherwise (EURGBP, GBPJPY, GER40, UK100, JP225 in USD) the caller must supply the
+conversion pair's market price as quoted (GBPUSD 1.30, USDJPY 150.00) or the call is
+refused naming the pair ("needs a GBPUSD rate"). A supplied rate always beats the
+trade's own price; the code decides multiply or divide. Every number must be finite
+and above zero within `MAX_TRADE_PRICE` / `MAX_TRADE_QUANTITY`, and results within
+`MAX_TRADE_PNL`, else `InstrumentError`. Golden rule: no table symbol or alias may
+equal a futures root (ES, MES, NQ, MNQ, RTY, M2K, YM, MYM, CL, GC, MGC) — tested.
+Trade page (`/journal/[id]`): forex/cfd trades show Pips and Lots; the replay's dollar
+readout is "—" for them.
 
 ## Package E — Backtesting (`src/lib/backtest/`)
 Pure, deterministic, no DB access — persistence lives in `/api/backtests*` and
@@ -201,10 +329,320 @@ wipe demo user's data then recreate. Create:
   max_trades, behavioral(revenge), setup_validation (config JSON-stringified).
 - 1 PropAccount for the Topstep account (Topstep 50K preset:
   profitTarget 3000, maxDailyLoss 1000, maxDrawdown 2000 trailing, consistencyPct 0.5).
-- a few open Alerts.
+- no hand-planted Alerts: the closing recompute runs the real alert generator,
+  so demo alerts come from the seeded trades. The tracker's phase matches the
+  account's own kind (the account's status is the truth).
 End by calling `recomputeUserCompliance(user.id)` if available (dynamic import,
 try/catch) so evaluations + discipline snapshots exist. Log a summary.
 
 DO NOT edit files outside your package. Keep code clean, typed, and commented
 sparingly where logic is non-obvious. Do not run `npm`/`prisma` unless verifying
 your own file compiles conceptually — the orchestrator handles builds.
+
+## Package G — Pre-trade checklist and position size (`src/lib/checklist/`, `src/lib/sizing/`)
+
+Reminders and arithmetic only. **Nothing here reads or changes the rule engine, the discipline score, or any broker; nothing places, changes or cancels an order.** A test greps the code and the score/rule files to keep it that way.
+
+### Tables (additive; plain-String/Boolean/Int, SQLite + Postgres)
+- `ChecklistTemplate` — `userId`, `name`, `ruleBookId?` (SetNull), `isActive`, `order`. Max 10 per user.
+- `ChecklistItem` — `templateId` (cascade), `text` (max 140), `order`. 1 to 20 per template.
+- `ChecklistRun` — `userId`, `templateId?` (SetNull), `templateName`, `answers` (JSON string `[{text, checked}]`, its own copy of the wording), `checkedCount`, `totalCount`, `tradeId?` (**unique**, SetNull: a trade has at most one run; deleting the trade keeps the run), `createdAt` (the saved time). Max 5,000 per user.
+- "Ticked before entry" vs "Filled in after entry" is computed: `run.createdAt <= trade.entryTime`. No stored flag.
+
+### Routes (all session-checked, zod on every input, every query filtered by the signed-in user; another user's id answers 404 exactly like a missing one)
+| Route | Does | Limiter |
+|---|---|---|
+| `GET /api/checklists` | list templates | `checklists:read` (`USER_READ_LIMIT`) |
+| `POST /api/checklists` | create template (`name`, `ruleBookId?`, `items[]`) | `checklists:write` (`USER_WRITE_LIMIT`) |
+| `PATCH/DELETE /api/checklists/[id]` | edit (name, rulebook, on/off, items, `move: up/down`) / delete | `checklists:write` |
+| `GET /api/checklists/runs?limit&offset&unlinked=1` | recent runs | `checklists:read` |
+| `POST /api/checklists/runs` | save a run (`templateId`, `ticked[]` item ids, optional `tradeId` to link at once); 409 if the trade already has one | `checklists:write` |
+| `PATCH/DELETE /api/checklists/runs/[id]` | link (`tradeId`) / unlink (`null`) / delete a run | `checklists:write` |
+| `GET /api/checklists/suggestion?tradeId` | `{linked, suggestion, suggestionCount, entryTime, hasTemplates}`; the suggestion is the closest unlinked run saved 0 to 4 hours before the trade's entry; never links by itself | `checklists:read` |
+
+### Sizing (`src/lib/sizing/index.ts`, pure)
+`calculatePositionSize({symbol, accountSize, riskPercent, stopDistance, accountCurrency?, dollarsPerPoint?})` returns `{ok:true,...}` or `{ok:false, code, field, message}`; it never throws.
+- Money in whole cents, lots in hundredths, contracts integer; integer divide re-checked. **Always rounds down, never up**: if one contract (0.01 lot) already risks more than the limit the size is 0 with the reason.
+- Futures use `pointMultiplier` but only for symbols in the futures table (an unknown symbol is refused, never priced at 1; "Other futures" needs the typed `dollarsPerPoint`). Forex/CFD use `pipValue(symbol, 1, "USD")` from `src/lib/instruments`; **USD accounts only**, a non-USD account or a pair needing a conversion price is refused with a plain message.
+- Ranges: account $100 to $100,000,000; risk 0.01% to 100% (warning above 5%); stop above zero.
+- Golden: MES $50,000 / 1% / 8 pts = 12 contracts, real risk $480.00 (0.96%); EURUSD $10,000 / 1% / 20 pips = 0.50 lots.
+
+## Package H — "Why I entered" and trade screenshots (`src/lib/storage/`, `src/lib/attachments.ts`)
+
+Both are the trader's own record. **Neither changes the rule engine or the discipline score: the only link is that the existing `setup_validation` rule's `requireScreenshot` option reads whether the trade has a screenshot row, and an upload or delete just triggers the normal recompute.** Nothing here touches a broker.
+
+### Columns (additive; SQLite + Postgres)
+- `Trade.whyEntered` — `String?`, max 2,000 characters (zod on `POST /api/trades` and `PATCH /api/trades/[id]`; blank saves as null). Not part of the normalized `TradeRecord`; the trade page reads it through `getTradeDetail` (`whyEntered`, `screenshots: {id}[]`). It is included in the profile export with the other trade fields.
+- `Attachment.url` now holds the private storage KEY (`<userId>/<uuid>.<png|jpg|webp>`, generated by the server, never from user input). New columns `mimeType String?` and `sizeBytes Int @default(0)`. Ownership is always `trade.userId`.
+
+### Storage (`src/lib/storage/`, one interface: `put(key, bytes, contentType)`, `get(key)`, `delete(key)`)
+- Driver is chosen by environment: `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_REGION` all set gives the S3-compatible driver (Cloudflare R2, private bucket, no public URLs). Otherwise outside production the local-disk driver (`LOCAL_STORAGE_DIR`, default `.storage/screenshots`, outside `public/`). In production with nothing set, `getStorage()` is `null` and the trade page shows "Screenshots aren't switched on yet."
+- Every driver refuses a key that is not exactly `<userId>/<uuid>.<ext>`.
+
+### Routes (session-checked; another user's id answers 404 exactly like a missing one)
+| Route | Does | Limiter |
+|---|---|---|
+| `POST /api/trades/[id]/attachments` | multipart field `file`. Type decided from the file's bytes (PNG, JPEG, WebP only); 5 MB max; 5 per trade (409 `trade_full`); 200 pictures and 500 MB per user (429 `quota`); JPEG APP1 (EXIF, XMP) and APP13 (IPTC) removed losslessly, keeping only the orientation flag. Refused on the seeded demo desk (403). Then recomputes the user's compliance. | `attachments:write` (`USER_WRITE_LIMIT`) and `attachments:upload` (20 per 10 minutes) |
+| `GET /api/attachments/[id]` | streams the bytes to the owner only; stored image type, `Cache-Control: private, no-store`, `X-Content-Type-Options: nosniff` | `attachments:read` (`USER_READ_LIMIT`) |
+| `DELETE /api/attachments/[id]` | removes the stored file, then the row, then recomputes compliance | `attachments:write` |
+
+Errors are `{ ok:false, code, error }` with a plain-English `error`. Deleting a trade, a trading account or the whole user removes their stored files first (`purgeStoredFiles`).
+
+## Package I — First five minutes (demo desk, "not scored yet", import, sample trades)
+
+### Discipline score: the explicit "not scored yet" state (`src/lib/discipline/score.ts`)
+`DisciplineScore` gains two fields, display-only:
+- `ruleChecks: number` = how many rule evaluations applied to a trade (pass or fail; `not_applicable` does not count).
+- `scored: boolean` = `ruleChecks > 0`.
+
+**Every stored number is unchanged.** With no applicable evaluations `ruleAdherence` still reads 100 and `overall` is computed exactly as before (the stored `DisciplineSnapshot` rows are the same); screens must read `scored` and show "Not scored yet" instead of the overall number (dashboard: dashed ring, "Define your rulebook" when the trader has no active rule, "Not scored yet" with a note when rules exist but none has been checked; Rule adherence meter shows "Not scored yet"). Never "0", never "91". `DashboardData.activeRuleCount` tells the two cases apart. The scoring maths stay deterministic and AI-free. Pinned by `test/discipline-score-state.test.ts` (same fixtures, same numbers).
+
+### Demo desk is read-only (`src/lib/demo-desk.ts`, `src/lib/demo-guard.ts`)
+- `POST /api/auth/demo` signs in as `demo@tradeos.app`, takes no input, limited per visitor like login (10 per 15 minutes, `demo-login:ip:*`, 429 "Lots of people are looking around right now…").
+- Every write route (POST, PUT, PATCH, DELETE) calls `refuseDemo(user)` first and returns `403 { ok:false, code:"demo", error }` ("The demo desk is look-around only. Create a free account to save your own."). Exempt (not user writes): `auth/login`, `auth/register`, `auth/logout`, `auth/demo`, `billing/webhook`. `test/demo-read-only.test.ts` walks every `src/app/api/**/route.ts` and fails when a write handler lacks the guard.
+
+### Sign-up and import
+- `POST /api/auth/register` creates the account AND signs the user in. An email that already has an account answers `409 { ok:false, code:"email_taken", error:"That email already has an account. Sign in instead." }` (owner chose clarity over hiding it; the per-visitor sign-up limit stays).
+- `POST /api/import` takes either `accountId` or `newAccount: { name, startingBalance }` (exactly one). A new account is created only after the file proved to be a real broker CSV and fits the plan; it is user-scoped and counted against the plan's account limit (`accounts:write`, `USER_WRITE_LIMIT`). A file with no recognisable trade table answers `400 { code:"not_csv" }` and creates NO import record, NO account and NO trades (`IngestResult.notTradeFile`). The response gains `accountId`.
+- `Trade.source` gains the value `"sample"` (plain string, no migration) for trades made by "Load sample data". `DELETE /api/demo-data` removes only the signed-in user's `source = "sample"` trades (and their stored screenshots), never imported or hand-entered trades, accounts or rulebooks, then recomputes compliance. Limiter `demo-data:clear` (`USER_WRITE_LIMIT`).
+
+## Package J — Live links: honest alerts and TopstepX near-live (read-only)
+
+Everything here is READ-ONLY toward brokers. No module in `src/lib/connectors/` or
+`src/lib/live/` exports a function that places, changes or cancels an order or
+closes a position, no source file names such an address, and the connector's HTTP
+helper refuses any path that is not on `ALLOWED_PATHS` (`test/live-safety.test.ts`).
+
+### One shared limit calculation (`src/lib/risk/limits.ts`, pure, Node-safe)
+
+`computeLimitFigures({ startingBalance, trades, now, open?, livePeakEquity? })` is the
+ONLY place "today's loss" and "drawdown used" are worked out. The alert generator
+(`src/lib/alerts/generate.ts`) and the Prop page (`src/lib/prop.ts`) both call it, so
+the dashboard alert and the Prop-page buffer always show the same figure.
+- The day is midnight to midnight New York time (ET) for both.
+- Open P&L (from a fresh live read) is added to today's P&L and to equity, so it moves
+  both the daily loss and the drawdown. Profit-target progress (`netProfit`) ignores it.
+- Drawdown peak = the highest of the closed-trade peak, `BrokerConnection.livePeakEquity`
+  (highest equity, open profit included, seen at any live read) and the current equity.
+- A live read is "fresh" for 3 minutes (`LIVE_FRESH_MS`); older, the figures fall back to
+  closed trades only and say so.
+- `stepFor(used, limit)` gives the shared 50 / 80 / 100 steps. Prop-page bars use the
+  same steps: green under 50% used, amber 50 to under 80%, red from 80%.
+- `priceOpenPosition`: long = (last - average) x size x point value, short the reverse.
+  A contract with no entry in the point-value table (`knownPointValue` returns null; for
+  example MCL, NG, SI) or with no price is NOT guessed: `openPnl` is null with a reason
+  (`no_point_value` | `no_price`) and it is left out of totals ("not priced").
+
+### Alerts (`Alert`, additive column `dismissedAt DateTime?`)
+
+Identity is `meta.key`, "one live alert per account per measure". Generating alerts is
+an upsert by that key, never delete-and-recreate (so dismissals survive):
+- keys: `daily_loss:<propId>`, `drawdown:<propId>`, `profit_target:<propId>`,
+  `overtrading:<accountId>` (today's ET count over 10), `rule_violation:user`.
+- A step change updates the same row in place. When the condition ends the row becomes
+  `status = "resolved"` (with `meta.resolvedAt`). A later recurrence makes a new row.
+  Resolved auto alerts older than 30 days are deleted in the same pass. Hand-made alerts
+  (no `meta.auto`) are never touched.
+- `Alert.meta` JSON for auto alerts: `{ auto: true, key, measure, step: 50|80|100|null,
+  value, limit, left, usedPct, asAt (ISO), source: "live"|"closed", liveLinked,
+  openCount, openEstimated, unpricedCount, pendingCloseLoss?, dismissedStep?, resolvedAt? }`.
+  `pendingCloseLoss` (<= 0) is the loss of a position that just closed, still counted
+  (inside `value`) until its closed trade arrives. Each closed position is tracked on its
+  own (`BrokerConnection.pendingCloseItems`, additive JSON text: `key`, optional `ext`,
+  `symbol`, `side`, `size`, `loss`, `at`) and leaves the pending figure only when ITS trade
+  has landed: the same MT5 position id (`ext` = `mt5:<positionId>`), or else the same symbol
+  and side, with sizes that add up. A trade for another position does not clear it; a trade
+  that covers only part of it clears that share of the loss. Rows without the list (older
+  rows) use the old rule: any closed trade since the read clears it. A pending item lapses
+  after 35 minutes.
+  `value` is the headline number (loss, drawdown, profit or trade count), `left` is what
+  remains before the limit (or to the target), `asAt` is the live read time or when it
+  was worked out. `title` and `message` keep their plain-English wording.
+- Dismiss: `POST /api/alerts/[id]/dismiss` sets `dismissedAt` and `meta.dismissedStep`.
+  It stays hidden while the step is the same or lower; a higher step clears `dismissedAt`
+  in place. User-scoped (another user's id answers 404), `USER_WRITE_LIMIT`, demo refused.
+- A failed or stale live read never clears or lowers a warning that open P&L raised (for
+  up to a day); only a good read, or closed trades alone when the account is not live,
+  can end it. This includes an account whose key the broker REJECTED (its open figure is
+  unknown); the 24-hour cap applies to every case.
+- `GET /api/alerts` (`USER_READ_LIMIT`, user-scoped): `{ ok, alerts[], accounts[], positions[], now }`.
+  `accounts[]` is the freshness of each live link (`health`: live | stale | waiting |
+  rejected | off, `lastLiveAt`, `lastError`); `positions[]` is the latest snapshot.
+
+### Near-live reads (`src/lib/live/`, `src/lib/connectors/topstepx.ts`)
+
+- New columns on `BrokerConnection` (all additive): `nearLive Boolean @default(true)`,
+  `lastBalance Float?` (shown only, never used in limit maths), `lastLiveAt DateTime?`
+  (last GOOD read), `lastLiveError String?` (fixed plain-English text), `liveStatus String
+  @default("ok")` (`ok | unreachable | rejected`), `livePeakEquity Float?`,
+  `pendingCloseLoss Float?` + `pendingCloseAt DateTime?` (see "A position that closes
+  between reads" below). Live failures
+  never touch `status` / `lastError` (the 30-minute fill sync's own state).
+- New table `RunnerLease` (`name` PK like `runner:4927002`, `holder`, `expiresAt`,
+  `lastRunAt?`, `lastOkAt?`, `lastError?`): the "only one server copy runs this job" guard
+  and the job's health flag (shown by `/api/health` as `liveReads` and `fillSweep`).
+- New table `PositionSnapshot` (current open positions per connection, replaced on each
+  read, no history): `contractId, symbol, side (long|short), size, avgPrice, lastPrice?,
+  priceSource? (broker|bar), openPnl?, notPricedReason? (no_point_value|no_price), readAt`.
+  Cascades with the connection and the user. Not in "Download my data".
+- Allowed gateway paths (`ALLOWED_PATHS`): `Auth/loginKey`, `Account/search`,
+  `Trade/search`, `Position/searchOpen`, `History/retrieveBars` (only to estimate a price).
+  Only registry hosts (`isAllowedBaseUrl`), POST only.
+- Price: the position's own current price if the gateway sends one; else the latest
+  1-minute bar via `History/retrieveBars` (one call per open contract per read, counted in
+  the budget, labelled "Estimated"); else the position is "not priced".
+- `runLiveTick()` (`poller.ts`): every `LIVE_POLL_INTERVAL_SEC` (default 60, floor 60
+  enforced in `config.ts`; any smaller or junk value becomes 60), plus a per-connection
+  floor (a connection read under about a minute ago is skipped). Groups connections by the
+  trader's key (one login and one `Account/search` per key), stalest first. Server-wide
+  budget about 100 calls a minute (`budget.ts`) asked before EVERY call; when it is used
+  up the round stops and the rest go first next tick. On 429: `Retry-After` honoured up
+  to 30 minutes, else 30s / 60s / 120s, capped at 5 minutes. The 30-minute fill sweep
+  and the immediate fill sync draw from the SAME budget, and a 429 they see starts the
+  same back-off. Only the login endpoint's explicit `success:false` answer
+  (`ConnectorError.kind = "key_rejected"`) marks `liveStatus = "rejected"` (reads stop
+  until the trader reconnects). A bare 401/403 (kind `auth`), a 5xx or a network failure
+  is `unreachable`: retried next tick, then with a growing wait (about 2, 4, 8 minutes,
+  max 10), never permanent. After a good read for a trader the alert pass runs for that
+  trader only; phone warnings for it are sent after the pass, outside the lease, capped
+  at 8 seconds. Every gateway request is sent with `redirect: "error"`.
+- A position that closes between reads: when a position disappears or shrinks, its open
+  loss would leave the snapshot before the closed trade reaches us. The poller then
+  (a) fetches the fills for that connection at once (`syncConnection`, each call asked of
+  the budget) and (b) keeps the loss that left in `pendingCloseLoss` (clock:
+  `pendingCloseAt` = the last read that still saw it open); `openStateFor` adds it to
+  open P&L until a closed trade with `exitTime >= pendingCloseAt` exists (from the
+  fills, the sweep or an import), or 35 minutes pass. Only losses are kept (never a
+  vanished profit). The next tick keeps asking for the fills while it waits.
+- Time limit: a live tick stops itself after 45 seconds (calls are also cut off at that
+  deadline); the sweep after 25 minutes (oldest-synced connections go first next time).
+  Neither is abandoned while still working, so the in-process "running" flags only clear
+  when the work has really ended.
+- Session tokens (`connectors/session.ts`) live in memory only, reused for 23 hours (also
+  by the 30-minute sync), replaced by one fresh login on a 401. Never stored or logged.
+- Single runner: `src/lib/single-runner.ts` is a LEASE ROW in `RunnerLease`, taken with an
+  atomic conditional update (an expired lease only) or a first insert, renewed every
+  third of its length while the work runs, and given back at the end; a crashed copy's
+  lease just runs out (live poll lease 90 s, sweep 2 min). It needs no pinned
+  connection, so the work runs with `?pgbouncer=true&connection_limit=1` and works the
+  same on SQLite and Postgres. (History: the session-level advisory lock got stuck on
+  pooled sessions; the pinned-transaction lock starved the work behind a pool of one and
+  its errors were swallowed, so polling silently never ran.) The work receives a
+  `RunContext` (`expired()`, `remainingMs()`) and must stop by its deadline. A run that
+  throws is logged (`[label] run FAILED`), answered `"failed"` (never `"ran"`), and
+  recorded in `lastError` / `lastOkAt`. If the lease check itself fails the work runs
+  anyway (idempotent jobs). Keys: 4927001 (30-minute fill sweep), 4927002 (live poll).
+  A sweep where at least 3 connections were tried and ALL failed counts as a failed run.
+- `PATCH /api/connectors` `{ id, nearLive }`: `USER_WRITE_LIMIT`, user-scoped, demo refused;
+  a rejected connection cannot be switched on (409 "Reconnect first"). `POST /api/connectors`
+  `connect` on an already-connected account revives it with a fresh key only when its key
+  was rejected or its sync is in error.
+- The poll needs a persistent server (Railway, VPS, Docker). On Vercel there is no
+  long-running process, so near-live does not run there.
+
+### MT5 live link through MetaApi (`src/lib/connectors/metaapi.ts`, read-only, OFF by default)
+
+- Switch: `METAAPI_ENABLED=true` AND `METAAPI_TOKEN` (`metaApiSwitchedOn()`); anything
+  else is off. While off: `POST /api/connectors/mt5` answers 503 `{ code: "mt5_off" }`, no
+  row with `broker = "mt5"` is loaded by the poller, the 30-minute sweep, the cron route or
+  `scripts/sync-all.ts` (`readableConnectionsWhere()`), `syncConnection` refuses it without
+  recording an error, no MetaApi host is in `allowedHosts()` / `isAllowedBaseUrl()`, and
+  the Import page renders no MT5 card.
+- Storage, no schema change: a `BrokerConnection` with `broker = "mt5"`, `username` = the
+  MT5 login, `externalAccountId` = the MetaApi account id, `externalAccountName` =
+  `"<server> · <login>"`, `baseUrl` = the provisioning origin (informational; the adapter
+  uses fixed hosts), `apiKeyEnc` = an encrypted marker. The investor password is never
+  stored. The journal account is a `TradingAccount` with `broker = "mt5"`.
+- `POST /api/connectors/mt5` `{ server, login (digits), password }`: session, zod, demo
+  refused, `USER_EXTERNAL_LIMIT` plus 5 tries per 15 minutes, paid plan (`mt5PlanAllowed`:
+  pro/elite and `billingStatus = "active"`, else 403 `code: "plan"`), at most 2 MT5 links
+  (403 `code: "limit"`, re-checked after saving so two quick clicks cannot pass), one connect at a
+  time per trader. Flow: create the bridge account (type `cloud-g2`, platform `mt5`, region
+  `new-york`), wait for it to answer, read account information, then `mt5AccessProblem()`:
+  `investorMode` must be exactly `true`, `tradeAllowed` must not be `true`, currency must be
+  USD. On any failure the bridge account is deleted before answering. Answers: 422
+  `trading_rights` (with `clearPassword: true`), 422 `not_usd`, 401 `bad_login`, 400
+  `server_not_found`, 502 `bridge_down`, 503 `busy`. The bridge's own text is never passed on.
+- `POST /api/connectors/mt5` also takes an optional `accountId`: one of the trader's OWN
+  trading accounts (user-scoped, US dollars, not already linked to a broker). The link then
+  attaches to it instead of making a new "MT5 <login>" account, so trades from the MT5 file
+  import and the live link share `[accountId, externalId]` and dedupe on `mt5:<positionId>`.
+  Left out = a new account, as before. The answer carries `notes` (see below).
+- Disconnect (`DELETE /api/connectors`) deletes the MetaApi account first
+  (`removeBridgeAccounts`); a failure answers 502 and keeps the link. `POST
+  /api/profile/delete` tries every account (`removeBridgeAccountsReport`); if MetaApi does not
+  confirm, the profile is STILL deleted (the trader is not trapped) and the MetaApi account ids
+  are logged for the owner. With no `METAAPI_TOKEN`, "skipped" is logged with the ids too.
+- A plan that ENDS (moved to a free plan, or `billingStatus` `canceled`; `mt5PlanEnded`) stops
+  the read and removes the trader's bridge accounts and MT5 links (`removeMt5LinksForUser`, from
+  the billing webhook; the 30-minute sweep retries failures through `removeEndedMt5Links`).
+  `past_due` only pauses reading.
+- Creating the bridge account (`maProvisionAccount`) sends ONE `transaction-id` for every try.
+  If the answer is lost (timeout, dropped connection, 5xx, or six "still checking" 202s) it
+  asks again with the same id up to 3 times to learn the account id; the caller then runs the
+  investor check or deletes it. If the id stays unknown the account NAME (`TradeOS <8 hex>`,
+  never the password) is logged for the owner (`GO-LIVE.md`).
+- A link whose login can trade (found by the live read OR by `syncMt5` before it reads deals,
+  so links with near-live off are re-checked) has its bridge account DELETED
+  (`rejectMt5Link`) and is marked `liveStatus "rejected"`. `readableConnectionsWhere()` never
+  returns a rejected MT5 link; a sync of one is refused without a call.
+- Live read (`readMt5Group` in `poller.ts`): `account-information` (balance to `lastBalance`;
+  the investor flag is re-checked, failing = `liveStatus "rejected"`) and `positions` (one
+  `PositionSnapshot` per position: `contractId` = MetaApi position id, `symbol` tidied by the
+  instruments table, `size` = lots, `avgPrice` = open price, `lastPrice` = current price,
+  `priceSource "broker"`, `openPnl` = the bridge's `unrealizedProfit` in USD). A vanished
+  position triggers the same immediate fill sync and pending-close protection as TopstepX.
+- Deals to trades (`mapDealsToTrades`, same shape as Package C's MT5 file import): group the
+  `DEAL_TYPE_BUY` / `DEAL_TYPE_SELL` deals by `positionId`; `DEAL_ENTRY_IN` opens, `OUT` /
+  `OUT_BY` closes. One trade per CLOSE, so a partial close is a trade as soon as it happens
+  (a 2-lot position closed 1 lot at -$400 gives a trade for that lot, and the rest later). All
+  OUT deals sharing one `time` are one close. A close takes the oldest open lots first (FIFO):
+  `side` from the opening deal, entry = volume-weighted average of the lots it consumed, exit
+  = of its OUT deals, `quantity` = lots closed, `entryTime` = the first lot consumed,
+  `exitTime` = the close's time (the bridge's UTC `time`), `pnlGross` = sum of its OUT deals'
+  `profit` (else `pnlFromPrices` from `src/lib/instruments`), `fees` = -(the close's commission +
+  swap, plus the opening deals' commission and swap in proportion to the lots consumed), `pnl` =
+  profit + commission + swap, `source "api"`, `assetClass` from the instrument table (`forex` or
+  `cfd`). `externalId`: the first close of a position is `mt5:<positionId>` (the same id the
+  file import uses), later closes `mt5:<positionId>:<n>`; ids never change once made, because
+  later deals only add closes at the end. If the MT5 report FILE already put the whole position
+  into the account as one `mt5:<positionId>` trade (quantity above the first close), the later
+  closes are not saved again. Not made into trades, only counted and named: the part of a
+  position still open, positions opened before the 90-day window, reversals in one deal
+  (`DEAL_ENTRY_INOUT`), symbols not in the table. Balance and other non-trade deals are
+  ignored. `DealsResult.kinds` counts these; the sync result (`SyncResult.notes`, returned by
+  the connect route and `POST /api/connectors/sync`) turns them into plain-English notes for the
+  trader (for example positions opened before the 90-day window).
+- Allowed MetaApi routes (`ALLOWED_ROUTES`): client host GET `/users/current/accounts/:id/account-information`,
+  `.../positions`, `.../history-deals/time/:from/:to`; provisioning host POST
+  `/users/current/accounts` and DELETE `/users/current/accounts/:id` (the bridge account only). Hosts:
+  `mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai`, `mt-client-api-v1.new-york.agiliumtrade.ai`.
+  Every call: token in the `auth-token` header only, `redirect: "error"`, 15 s timeout, asked of
+  the shared call budget first.
+- `Trade.assetClass` is now also written by the broker sync (null for TopstepX futures).
+
+### Phone warnings (Web Push, additive tables `PushSubscription`, `PushSent`)
+
+- `PushSubscription`: one row per person and device `{ userId, endpoint (unique), p256dh,
+  auth, createdAt, lastSuccessAt?, lastFailureAt? }`, max 5 per person, deleted with the
+  account, never exported or returned by any route. The endpoint comes from the browser, so
+  it is saved and called only when it is https on a host in `src/lib/push/hosts.ts`.
+- `PushSent`: `{ userId, alertId, step }` unique per `(alertId, step)`. At the end of every
+  alert pass `notifyAlertSteps` (`src/lib/push/alerts.ts`) announces each open, un-dismissed
+  auto alert at its current step once (new alert, or a step up). Repeats and self-clears send
+  nothing. The step is recorded even when nobody has alerts on (so enabling later does not
+  replay old warnings). Profit-target alerts never push. Step 0 = measures with no ladder.
+- Off unless `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`,
+  `NEXT_PUBLIC_VAPID_PUBLIC_KEY` are all set (`/api/health` shows `phoneWarnings`).
+- Routes (session, zod, `USER_WRITE_LIMIT`, demo refused): `POST /api/push/subscribe`
+  (503 `not_configured`, 409 `device_limit`), `POST /api/push/unsubscribe`,
+  `POST /api/push/test` (also 5 per hour per person, 429 `test_limit`; 410 `gone` removes
+  the device). A 404 or 410 from the push service deletes that subscription.
+
+## Account kind "unspecified" (fix round, display only)
+
+`TradingAccount.kind` is one of `live | funded | evaluation | demo | unspecified`.
+Accounts made by a file import or the MT5 live link start as `unspecified`
+(shown "Not set") unless the trader picks a type in the import form; they are no
+longer called Live by default. Accounts created on the Accounts page still default
+to `live`. No column change (it is a plain string); scoring never reads it.

@@ -3,13 +3,19 @@
 // server boots. On serverless platforms this is skipped: Vercel sets VERCEL=1
 // and its cron hits /api/cron/sync instead — both paths share syncConnection().
 //
+// This is the 30-minute FILL sync. The 60-second near-live read of positions and
+// balance is a separate timer in src/lib/live/poller.ts.
+//
 // Config:
 //   AUTO_SYNC_INTERVAL_MIN  interval in minutes (default 30 in production;
 //                           set 0 to disable; fractional values allowed, which
 //                           is mainly useful in tests)
 
 import { prisma } from "@/lib/db";
-import { syncConnection } from "@/lib/connectors/sync";
+import { syncConnection, SyncDeferred } from "@/lib/connectors/sync";
+import { readableConnectionsWhere, removeEndedMt5Links } from "@/lib/connectors/mt5-access";
+import { withSingleRunner, type RunContext, type RunnerOutcome } from "@/lib/single-runner";
+import { CallBudget, liveBudget } from "@/lib/live/budget";
 
 // Survive dev hot-reloads / duplicate register() calls with a global singleton.
 const globalScheduler = globalThis as unknown as {
@@ -28,78 +34,100 @@ function intervalMinutes(): number {
 // ── Single-runner guard for horizontal scaling ───────────────────────────────
 // When TradeOS runs as several Railway instances, each one boots this same
 // scheduler, so without a guard every connection would be synced N times per
-// interval — wasted work and extra load on the broker's API.
+// interval — wasted work and extra load on the broker's API. Whichever instance
+// takes the lease (a row in the RunnerLease table) runs the sweep; the rest skip
+// this tick.
 //
-// Choice: a Postgres *advisory lock*, not an env "leader" flag. The advisory
-// lock needs zero configuration (the owner isn't a developer, so per-instance
-// env flags are easy to get wrong) and self-corrects if an instance dies. Each
-// sweep tries to grab one shared lock; whichever instance gets it runs the
-// sweep, the rest skip this tick. It only applies on Postgres (prod) — SQLite
-// (dev) has no such function and is single-instance by design, so we skip the
-// lock there entirely. Result: no behavior change on a single instance.
-//
-// Note on connection pooling: pg advisory locks are held by the DB session that
-// took them. Prisma pools connections, so the unlock may land on a different
-// session and be a no-op; that's harmless here because (a) the lock also frees
-// automatically when a session/instance ends, and (b) syncConnection de-dupes
-// at the trade level, so a rare double-sweep imports nothing twice. The lock is
-// an optimization, not a correctness dependency.
-const AUTO_SYNC_LOCK_KEY = 4927001; // arbitrary but stable 32-bit key for our one lock
+// The guard lives in src/lib/single-runner.ts, shared with the 60-second live
+// poller. It is a lease row, not a database lock: the old session-level lock got
+// stuck on pooled sessions, and the pinned-transaction version starved the work
+// behind PgBouncer's one-connection pool. A lease needs no pinned connection.
+export const AUTO_SYNC_LOCK_KEY = 4927001; // arbitrary but stable 32-bit key for the fill sweep
+// The sweep must stop on its own before the next one is due (the rest go first
+// next time: connections are worked oldest-sync first). Its lease is renewed
+// while it works, so this is a work limit, not a lock limit.
+const SWEEP_DEADLINE_MS = 25 * 60_000;
+const SWEEP_LEASE_MS = 2 * 60_000;
+// A sweep where at least this many connections were tried and ALL failed is a
+// failed run (a bad key for one trader is not).
+const SWEEP_ALL_FAILED_MIN = 3;
 
-function isPostgres(): boolean {
-  return (process.env.DATABASE_URL ?? "").startsWith("postgres");
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/**
+ * Before every broker call the sweep asks the same server-wide budget the live
+ * poller uses. It waits briefly for room in the minute; when the broker is
+ * backing off (or the sweep's own deadline hit) it stops and the rest wait for
+ * the next sweep.
+ */
+function sweepGate(ctx: RunContext, budget: CallBudget): () => Promise<void> {
+  return async () => {
+    for (;;) {
+      if (ctx.expired() || budget.inBackoff()) throw new SyncDeferred();
+      if (budget.take()) return;
+      await sleep(1_000);
+    }
+  };
 }
 
-async function runSweep(): Promise<void> {
-  // Try to become the single runner for this tick (Postgres/prod only).
-  let holdsLock = false;
-  if (isPostgres()) {
+async function sweepWork(ctx: RunContext, budget: CallBudget): Promise<void> {
+  // MT5 bridge accounts of traders whose plan has ended: retry any removal that failed before.
+  try {
+    const removed = await removeEndedMt5Links();
+    if (removed > 0) console.log(`[auto-sync] removed ${removed} MT5 link(s) of ended plans`);
+  } catch (err) {
+    console.error("[auto-sync] MT5 plan-end clean-up failed:", (err as Error).message);
+  }
+  const connections = await prisma.brokerConnection.findMany({
+    where: readableConnectionsWhere(), // MT5 rows only while the owner's switch is on and the plan allows
+    orderBy: { lastSyncAt: "asc" },
+    select: { id: true, userId: true, externalAccountName: true },
+  });
+  if (connections.length === 0) return;
+
+  let imported = 0;
+  let failed = 0;
+  let tried = 0;
+  const beforeCall = sweepGate(ctx, budget);
+  for (const conn of connections) {
+    if (ctx.expired()) break;
     try {
-      const rows = await prisma.$queryRaw<Array<{ locked: boolean }>>`
-        SELECT pg_try_advisory_lock(${AUTO_SYNC_LOCK_KEY}) AS locked
-      `;
-      holdsLock = rows[0]?.locked === true;
-      if (!holdsLock) return; // another instance owns this sweep — skip quietly
+      const r = await syncConnection(conn.id, conn.userId, {
+        beforeCall,
+        onRateLimit: (s) => budget.onRateLimited(s),
+      });
+      tried++;
+      imported += r.imported;
     } catch (err) {
-      // If the lock call itself fails, don't silently stop syncing — fall
-      // through and run (worst case a duplicate sweep, which is idempotent).
-      console.error("[auto-sync] advisory lock check failed:", (err as Error).message);
+      if (err instanceof SyncDeferred) break; // budget used / backing off: resume next sweep
+      tried++;
+      failed++; // recorded on the connection row by syncConnection
     }
   }
+  const left = connections.length - tried;
+  console.log(
+    `[auto-sync] ${tried}/${connections.length} connection(s) swept: +${imported} trades, ${failed} failed` +
+      (left > 0 ? `, ${left} left for the next sweep` : "")
+  );
+  if (failed > 0 && failed === tried && tried >= SWEEP_ALL_FAILED_MIN) {
+    throw new Error(`every one of ${tried} connections failed to sync`);
+  }
+}
 
+let sweeping = false;
+
+export async function runSweep(budget: CallBudget = liveBudget): Promise<RunnerOutcome | "already-running"> {
+  if (sweeping) return "already-running";
+  sweeping = true;
   try {
-    const connections = await prisma.brokerConnection.findMany({
-      orderBy: { lastSyncAt: "asc" },
-      select: { id: true, userId: true, externalAccountName: true },
-    });
-    if (connections.length === 0) return;
-
-    let imported = 0;
-    let failed = 0;
-    for (const conn of connections) {
-      try {
-        const r = await syncConnection(conn.id, conn.userId);
-        imported += r.imported;
-      } catch {
-        failed++; // recorded on the connection row by syncConnection
-      }
-    }
-    console.log(
-      `[auto-sync] ${connections.length} connection(s) swept: +${imported} trades, ${failed} failed`
+    return await withSingleRunner(
+      AUTO_SYNC_LOCK_KEY,
+      "auto-sync",
+      (ctx) => sweepWork(ctx, budget),
+      { deadlineMs: SWEEP_DEADLINE_MS, leaseMs: SWEEP_LEASE_MS }
     );
-  } catch (err) {
-    // Never let the scheduler take the server down.
-    console.error("[auto-sync] sweep error:", (err as Error).message);
   } finally {
-    // Release the advisory lock so the next tick (this or another instance) can
-    // take it. Best-effort — see the pooling note above.
-    if (holdsLock) {
-      try {
-        await prisma.$queryRaw`SELECT pg_advisory_unlock(${AUTO_SYNC_LOCK_KEY})`;
-      } catch {
-        /* lock frees on session end regardless */
-      }
-    }
+    sweeping = false;
   }
 }
 

@@ -11,7 +11,8 @@ import {
   ReferenceLine,
 } from "recharts";
 import type { EquityPoint } from "@/lib/types";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatDate, formatDateTime } from "@/lib/utils";
+import { useTimeZone } from "@/components/time-zone-provider";
 
 interface Props {
   data: EquityPoint[];
@@ -20,13 +21,14 @@ interface Props {
 }
 
 export function EquityChart({ data, height = 280, startingBalance = 0 }: Props) {
+  // Each point is a trade's exit instant: the axis shows its date and the
+  // tooltip its full time, both in the trader's display zone.
+  const tz = useTimeZone();
   const chartData = data.map((p) => ({
     time: p.time,
     value: p.value,
-    label: new Date(p.time * 1000).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-    }),
+    label: formatDate(new Date(p.time * 1000), tz, "short"),
+    when: formatDateTime(new Date(p.time * 1000), tz),
   }));
 
   const last = data[data.length - 1]?.value ?? startingBalance;
@@ -91,7 +93,7 @@ function EquityTooltip({ active, payload }: any) {
   const p = payload[0].payload;
   return (
     <div className="rounded-md border border-border bg-popover px-3 py-2 text-xs shadow-lg">
-      <p className="text-muted-foreground">{p.label}</p>
+      <p className="text-muted-foreground">{p.when}</p>
       <p className="mt-0.5 font-semibold tabular">{formatCurrency(p.value)}</p>
     </div>
   );

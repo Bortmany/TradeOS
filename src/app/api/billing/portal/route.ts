@@ -8,6 +8,7 @@ import {
   paddleConfig,
 } from "@/lib/billing/paddle";
 import { enforceUserRateLimit, USER_EXTERNAL_LIMIT } from "@/lib/rate-limit";
+import { refuseDemo } from "@/lib/demo-guard";
 
 // Opens the payment provider's customer portal so subscribers can update their
 // card, or cancel. A FRESH address is minted on every press — these links are
@@ -19,6 +20,8 @@ export async function POST() {
   } catch {
     return NextResponse.json({ ok: false, message: "Unauthorized" }, { status: 401 });
   }
+  const demoRefused = refuseDemo(user);
+  if (demoRefused) return demoRefused;
 
   // Tight limit: each call reaches out to the payment provider.
   const limited = enforceUserRateLimit("billing:portal", user.id, USER_EXTERNAL_LIMIT);

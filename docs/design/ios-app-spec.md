@@ -139,7 +139,7 @@ different product. Declare dark appearance app-wide.
   (trade history, P&L, account balances), linked to the user; no tracking,
   no ads, no data sold. Broker credentials are server-side only and never
   touch the device.
-- **Subscriptions:** Pro ($29) / Elite ($79) are digital subscriptions —
+- **Subscriptions:** Pro ($29) / Elite ($59) are digital subscriptions —
   inside the app they must go through Apple In-App Purchase or not be
   purchasable in-app at all. Recommended v1: show the user's current plan,
   gate features exactly as the web does, and do not link out to checkout

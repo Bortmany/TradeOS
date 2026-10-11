@@ -12,7 +12,8 @@ import { z } from "zod";
 export const SIDES = ["long", "short"] as const;
 export type Side = (typeof SIDES)[number];
 
-export const TRADE_SOURCES = ["csv", "api", "manual", "broker"] as const;
+// "sample" = trades from the one-click "Load sample data", so they can be cleared on their own.
+export const TRADE_SOURCES = ["csv", "api", "manual", "broker", "sample"] as const;
 export type TradeSource = (typeof TRADE_SOURCES)[number];
 
 export const BROKERS = [
@@ -21,12 +22,30 @@ export const BROKERS = [
   "ninjatrader",
   "rithmic",
   "ibkr",
+  "mt5",
   "generic",
   "manual",
 ] as const;
 export type Broker = (typeof BROKERS)[number];
 
-export const ACCOUNT_KINDS = ["live", "funded", "evaluation", "demo"] as const;
+// What kind of instrument a trade is. Stored as a plain string on Trade.assetClass;
+// null/absent means futures (every trade saved before forex/CFD support).
+export const ASSET_CLASSES = ["futures", "forex", "cfd"] as const;
+export type AssetClass = (typeof ASSET_CLASSES)[number];
+
+// Which clock the times in an MT5 file use (MetaTrader shows the broker's server
+// clock, not UTC). "ny_close" = GMT+2 winter / GMT+3 summer (New York close);
+// "offset" is a fixed whole number of hours from UTC.
+export const ServerTimeSchema = z.discriminatedUnion("mode", [
+  z.object({ mode: z.literal("ny_close") }),
+  z.object({ mode: z.literal("utc") }),
+  z.object({ mode: z.literal("offset"), hours: z.number().int().min(-12).max(14) }),
+]);
+export type ServerTime = z.infer<typeof ServerTimeSchema>;
+
+// "unspecified" = the trader has not said (accounts made by an import or a link
+// start here instead of being called Live).
+export const ACCOUNT_KINDS = ["live", "funded", "evaluation", "demo", "unspecified"] as const;
 export type AccountKind = (typeof ACCOUNT_KINDS)[number];
 
 export const PLANS = ["free", "pro", "elite"] as const;
@@ -116,6 +135,7 @@ export const NormalizedTradeSchema = z.object({
   tags: z.string().nullable().optional(),
   source: z.enum(TRADE_SOURCES).default("csv"),
   externalId: z.string().nullable().optional(),
+  assetClass: z.enum(ASSET_CLASSES).nullable().optional(),
 });
 export type NormalizedTrade = z.infer<typeof NormalizedTradeSchema>;
 
@@ -142,6 +162,7 @@ export interface TradeRecord {
   tags?: string | null;
   source: TradeSource;
   externalId?: string | null;
+  assetClass?: AssetClass | null;
   isWin: boolean | null;
   complianceScore?: number | null;
   violationCount?: number;
@@ -443,6 +464,17 @@ export interface DisciplineScore {
   riskDiscipline: number;
   emotionalDiscipline: number;
   consistency: number;
+  /**
+   * How many rule checks actually applied to a trade (passes plus fails; "not
+   * applicable" results don't count). 0 means nothing was graded against a rule.
+   */
+  ruleChecks: number;
+  /**
+   * False when `ruleChecks` is 0: the stored numbers are unchanged (rule
+   * adherence still reads 100 underneath) but screens must show "Not scored
+   * yet" instead of the overall number. True otherwise.
+   */
+  scored: boolean;
   breakdown: {
     label: string;
     score: number;

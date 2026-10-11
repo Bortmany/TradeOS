@@ -12,7 +12,9 @@ import { PrismaClient } from "@prisma/client";
   const prisma = new PrismaClient();
   try {
     const { syncConnection } = await import("../src/lib/connectors/sync");
+    const { readableConnectionsWhere } = await import("../src/lib/connectors/mt5-access");
     const connections = await prisma.brokerConnection.findMany({
+      where: readableConnectionsWhere(),
       orderBy: { lastSyncAt: "asc" },
       select: { id: true, userId: true, externalAccountName: true },
     });

@@ -14,7 +14,12 @@ export interface ParsedCsv {
   rows: string[][];
 }
 
-export function parseCsv(text: string): ParsedCsv {
+/**
+ * Every record of the file exactly as written (blank lines included, nothing
+ * trimmed). `parseCsv` builds on this; the MT5 report finder reads it directly
+ * because it needs to see title rows and blank section breaks.
+ */
+export function parseCsvRecords(text: string): string[][] {
   // Strip a UTF-8 BOM if present.
   if (text.charCodeAt(0) === 0xfeff) {
     text = text.slice(1);
@@ -89,6 +94,11 @@ export function parseCsv(text: string): ParsedCsv {
     pushRecord();
   }
 
+  return records;
+}
+
+export function parseCsv(text: string): ParsedCsv {
+  const records = parseCsvRecords(text);
   if (records.length === 0) {
     return { headers: [], rows: [] };
   }

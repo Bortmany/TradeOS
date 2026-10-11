@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { DemoDeskButton } from "@/components/demo-desk-button";
 import { GradeDemo } from "@/components/marketing/grade-demo";
 import type { SignupCtas } from "@/components/marketing/signup-cta";
 
@@ -20,8 +21,9 @@ export function Hero({ ctas }: { ctas: SignupCtas }) {
               <span className="text-primary"> your own rules.</span>
             </h1>
             <p className="mt-5 max-w-xl text-balance text-lg text-muted-foreground">
-              TradeOS imports your trades, grades every one against your rulebook,
-              and turns raw fills into a discipline score you can actually improve.
+              The trading journal that keeps you honest. TradeOS imports your trades,
+              grades every one against your rulebook, and warns you at 50%, 80% and
+              100% of a limit. You decide what to do next.
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <Button asChild size="lg" className="gap-2">
@@ -30,9 +32,7 @@ export function Hero({ ctas }: { ctas: SignupCtas }) {
                 </Link>
               </Button>
               {ctas.mode !== "closed" && (
-                <Button asChild size="lg" variant="secondary">
-                  <Link href="/login">Explore the demo desk</Link>
-                </Button>
+                <DemoDeskButton size="lg" />
               )}
             </div>
             <p className="mt-3 text-xs text-muted-foreground">

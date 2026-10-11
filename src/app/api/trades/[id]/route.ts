@@ -10,9 +10,12 @@ import { prisma } from "@/lib/db";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { recomputeCompliance } from "@/lib/rules/recompute-compliance";
 import { apiErrorResponse } from "@/lib/api-error";
+import { purgeStoredFiles } from "@/lib/attachments";
+import { refuseDemo } from "@/lib/demo-guard";
 
 const patchSchema = z.object({
   notes: z.string().max(5000).optional().nullable(),
+  whyEntered: z.string().max(2000).optional().nullable(),
   emotions: z.string().max(500).optional().nullable(),
   strategyTag: z.string().max(120).optional().nullable(),
   tags: z.string().max(500).optional().nullable(),
@@ -23,6 +26,8 @@ export const PATCH = withUser(async (
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) => {
+  const demoRefused = refuseDemo(user);
+  if (demoRefused) return demoRefused;
   const limited = enforceUserRateLimit("trades:update", user.id);
   if (limited) return limited;
 
@@ -39,6 +44,7 @@ export const PATCH = withUser(async (
     const d = patchSchema.parse(await req.json());
     const data: Record<string, string | null> = {};
     if ("notes" in d) data.notes = d.notes ? d.notes : null;
+    if ("whyEntered" in d) data.whyEntered = d.whyEntered?.trim() ? d.whyEntered.trim() : null;
     if ("emotions" in d) data.emotions = d.emotions ? d.emotions : null;
     if ("strategyTag" in d) data.strategyTag = d.strategyTag ? d.strategyTag : null;
     if ("tags" in d) data.tags = d.tags ? d.tags : null;
@@ -57,6 +63,8 @@ export const DELETE = withUser(async (
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) => {
+  const demoRefused = refuseDemo(user);
+  if (demoRefused) return demoRefused;
   const limited = enforceUserRateLimit("trades:delete", user.id);
   if (limited) return limited;
 
@@ -70,6 +78,8 @@ export const DELETE = withUser(async (
       return NextResponse.json({ ok: false, error: "Trade not found." }, { status: 404 });
     }
 
+    // Remove the trade's stored screenshots first; the rows go with the trade.
+    await purgeStoredFiles({ tradeId: id });
     try {
       await prisma.trade.delete({ where: { id } });
     } catch (err) {

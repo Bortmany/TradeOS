@@ -1,14 +1,19 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { getAccounts } from "@/lib/data";
+import { prisma } from "@/lib/db";
 import { ADAPTERS } from "@/lib/ingestion";
 import { PageHeader } from "@/components/page-header";
-import { EmptyState } from "@/components/ui/empty-state";
-import { Button } from "@/components/ui/button";
-import { Wallet, ShieldCheck, EyeOff, FileSpreadsheet } from "lucide-react";
-import Link from "next/link";
+import { ShieldCheck, EyeOff, FileSpreadsheet } from "lucide-react";
 import { ImportWizard } from "@/components/import/import-wizard";
 import { BrokerConnect } from "@/components/import/broker-connect";
+import { Mt5LiveCard } from "@/components/import/mt5-live-card";
+import { metaApiSwitchedOn } from "@/lib/connectors/firms";
+import {
+  MT5_MAX_ACCOUNTS,
+  countMt5Connections,
+  mt5PlanAllowed,
+} from "@/lib/connectors/mt5-access";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +25,21 @@ export default async function ImportPage() {
 
   // Broker options (excluding the generic fallback which is "Auto-detect" territory).
   const brokers = ADAPTERS.map((a) => ({ key: a.key, label: a.label }));
+
+  const mt5On = metaApiSwitchedOn();
+  const mt5Plan = mt5On && mt5PlanAllowed({ plan: user.plan, billingStatus: user.billingStatus });
+  const mt5Count = mt5On ? await countMt5Connections(user.id) : 0;
+  // Accounts a live MT5 link can attach to: the trader's own, in US dollars, not linked to a broker yet.
+  const linkedIds = mt5On
+    ? new Set(
+        (await prisma.brokerConnection.findMany({ where: { userId: user.id }, select: { accountId: true } })).map(
+          (c) => c.accountId
+        )
+      )
+    : new Set<string>();
+  const mt5Targets = accounts
+    .filter((a) => a.currency.trim().toUpperCase() === "USD" && !linkedIds.has(a.id))
+    .map((a) => ({ id: a.id, name: a.name }));
 
   return (
     <div className="container max-w-7xl space-y-6 py-6">
@@ -49,30 +69,17 @@ export default async function ImportPage() {
         />
       </div>
 
-      {accounts.length === 0 ? (
-        <EmptyState
-          icon={<Wallet className="h-8 w-8" />}
-          title="Add an account first"
-          description="Imports land in a trading account, so create one before bringing in trades."
-          steps={[
-            { label: "Create a trading account (live, prop, or paper)" },
-            { label: "Upload a broker CSV or connect TopstepX below" },
-            { label: "Trades hit your journal, graded against your rules" },
-          ]}
-          action={
-            <Button asChild>
-              <Link href="/accounts">Go to Accounts</Link>
-            </Button>
-          }
-        />
-      ) : (
-        <ImportWizard
-          accounts={accounts.map((a) => ({ id: a.id, name: a.name, kind: a.kind }))}
-          brokers={brokers}
-        />
-      )}
+      {/* The file picker is here from the first visit. With no trading account yet the
+          "Import into" control starts on "Create a new account" (name + balance). */}
+      <ImportWizard
+        accounts={accounts.map((a) => ({ id: a.id, name: a.name, kind: a.kind }))}
+        brokers={brokers}
+      />
 
       <BrokerConnect />
+
+      {/* MT5 live link: HIDDEN until the owner switches it on (METAAPI_ENABLED + token). */}
+      {mt5On && <Mt5LiveCard planAllowed={mt5Plan} count={mt5Count} max={MT5_MAX_ACCOUNTS} accounts={mt5Targets} />}
     </div>
   );
 }

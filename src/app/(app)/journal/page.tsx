@@ -1,81 +1,49 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { BookOpen, ArrowRight } from "lucide-react";
+import { BookOpen } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth";
-import { getAccounts, getTrades } from "@/lib/data";
+import { getAccounts, getTradesPage, getJournalFilterOptions } from "@/lib/data";
 import { PageHeader } from "@/components/page-header";
 import { JournalFilters } from "@/components/journal/journal-filters";
+import { JournalList } from "@/components/journal/journal-list";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { formatNumber } from "@/lib/utils";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { formatCurrency, formatNumber, pnlColor, formatDateTime } from "@/lib/utils";
-import type { TradeRecord } from "@/lib/types";
+  JOURNAL_PAGE_SIZE,
+  parseJournalFilters,
+  journalFilterQuery,
+  toJournalRow,
+  type JournalFilterKey,
+} from "@/lib/journal-rows";
 
 export const dynamic = "force-dynamic";
-
-const PAGE_SIZE = 150;
-
-/** Score-band chip classes — same bands the dashboard ring uses (>=80/60-79/<60). */
-function scoreChipClass(score: number): string {
-  if (score >= 80) return "bg-score-high/15 text-score-high";
-  if (score >= 60) return "bg-score-mid/15 text-score-mid";
-  return "bg-score-low/15 text-score-low";
-}
-
-function isWinner(t: TradeRecord): boolean {
-  return t.exitTime !== null && t.pnl > 0;
-}
-function isLoser(t: TradeRecord): boolean {
-  return t.exitTime !== null && t.pnl < 0;
-}
 
 export default async function JournalPage({
   searchParams,
 }: {
-  searchParams: Promise<{
-    account?: string;
-    strategy?: string;
-    symbol?: string;
-    outcome?: string;
-    source?: string;
-  }>;
+  searchParams: Promise<Partial<Record<JournalFilterKey, string>>>;
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  const sp = await searchParams;
+  const filter = parseJournalFilters(await searchParams);
+  const filterQuery = journalFilterQuery(filter);
 
-  const [accounts, accountTrades] = await Promise.all([
+  // Everything is filtered, counted and paged in the database. This renders
+  // the first page only; "Load older trades" fetches the rest from
+  // /api/trades/page. Times in the list print in the trader's zone (the list
+  // reads it from the TimeZoneProvider the app layout sets up).
+  const [accounts, options, page] = await Promise.all([
     getAccounts(user.id),
-    getTrades(user.id, sp.account ? { accountId: sp.account } : {}),
+    getJournalFilterOptions(user.id, filter.accountId),
+    getTradesPage(user.id, { filter, limit: JOURNAL_PAGE_SIZE }),
   ]);
-
-  // Distinct option lists derived from the account-scoped set so the dropdowns
-  // only offer values that actually exist for the current account.
-  const symbols = [...new Set(accountTrades.map((t) => t.symbol))].sort();
-  const strategies = [
-    ...new Set(accountTrades.map((t) => t.strategyTag).filter((s): s is string => !!s)),
-  ].sort();
-  const sources = [...new Set(accountTrades.map((t) => t.source))].sort();
-
-  // Apply the remaining filters in memory (getTrades handles accountId at the DB).
-  let filtered = accountTrades;
-  if (sp.symbol) filtered = filtered.filter((t) => t.symbol === sp.symbol);
-  if (sp.strategy) filtered = filtered.filter((t) => t.strategyTag === sp.strategy);
-  if (sp.source) filtered = filtered.filter((t) => t.source === sp.source);
-  if (sp.outcome === "win") filtered = filtered.filter(isWinner);
-  else if (sp.outcome === "loss") filtered = filtered.filter(isLoser);
-
-  const total = filtered.length;
-  const rows = filtered.slice(0, PAGE_SIZE);
+  const total = page.total;
+  // No symbols at all means the account (or the whole journal) has no trades,
+  // so the "journal is empty" steps apply rather than "no trades match".
+  const noTradesAtAll = options.symbols.length === 0;
 
   return (
     <div className="container max-w-7xl space-y-6 py-6">
@@ -90,15 +58,15 @@ export default async function JournalPage({
 
       <JournalFilters
         accounts={accounts}
-        strategies={strategies}
-        symbols={symbols}
-        sources={sources}
+        strategies={options.strategies}
+        symbols={options.symbols}
+        sources={options.sources}
       />
 
-      {rows.length === 0 ? (
+      {page.rows.length === 0 ? (
         <Card>
           <CardContent className="p-0">
-            {accountTrades.length === 0 ? (
+            {noTradesAtAll ? (
               <EmptyState
                 icon={<BookOpen className="h-8 w-8" />}
                 title="Your journal is empty"
@@ -129,195 +97,14 @@ export default async function JournalPage({
           </CardContent>
         </Card>
       ) : (
-        <Card>
-          <CardContent className="p-0">
-            {/* Phone layout: stacked trade cards — one clear tap target each. */}
-            <div className="sm:hidden">
-              {rows.map((t) => {
-                const open = t.exitTime === null || t.exitPrice === null;
-                const score = t.complianceScore;
-                const viol = t.violationCount ?? 0;
-                return (
-                  <Link
-                    key={t.id}
-                    href={`/journal/${t.id}`}
-                    aria-label={`Open ${t.symbol} trade`}
-                    className="flex items-center gap-3 border-b border-border px-4 py-3 transition-colors last:border-0 hover:bg-surface-raised active:bg-surface-raised"
-                  >
-                    <div className="min-w-0 flex-1 space-y-1">
-                      <div className="flex items-baseline gap-2">
-                        <span className="font-medium">{t.symbol}</span>
-                        <span
-                          className={`text-2xs font-semibold uppercase tracking-wide ${
-                            t.side === "long" ? "text-profit" : "text-loss"
-                          }`}
-                        >
-                          {t.side}
-                        </span>
-                        <span
-                          className={`ml-auto tabular font-medium ${pnlColor(t.pnl)}`}
-                        >
-                          {open ? "—" : formatCurrency(t.pnl, { sign: true })}
-                        </span>
-                      </div>
-                      <p className="text-xs tabular text-muted-foreground">
-                        {formatDateTime(t.entryTime)}
-                        <span className="mx-1.5 text-muted-foreground/50">·</span>
-                        {formatNumber(t.quantity)} @ {formatNumber(t.entryPrice, 2)}
-                        <span className="mx-1 text-muted-foreground/50">→</span>
-                        {open ? (
-                          <span className="text-warning">open</span>
-                        ) : (
-                          formatNumber(t.exitPrice as number, 2)
-                        )}
-                      </p>
-                      {/* Stacked on a phone the numbers lose their column headers,
-                          so each chip carries its own label. */}
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        {score == null ? (
-                          <span
-                            role="img"
-                            aria-label="No compliance score yet"
-                            className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-2xs font-semibold tabular text-muted-foreground"
-                          >
-                            —<span className="font-normal opacity-80">score</span>
-                          </span>
-                        ) : (
-                          <span
-                            role="img"
-                            aria-label={`Compliance score ${score} out of 100`}
-                            className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-2xs font-semibold tabular ${scoreChipClass(score)}`}
-                          >
-                            {score}
-                            <span className="font-normal opacity-80">score</span>
-                          </span>
-                        )}
-                        {viol > 0 && (
-                          <span
-                            role="img"
-                            aria-label={`${viol} rule ${viol === 1 ? "violation" : "violations"}`}
-                            className="inline-flex items-center gap-1 rounded bg-loss-muted px-1.5 py-0.5 text-2xs font-semibold tabular text-loss"
-                          >
-                            {viol}
-                            <span className="font-normal opacity-80">viol.</span>
-                          </span>
-                        )}
-                        {t.strategyTag && (
-                          <Badge variant="secondary" className="normal-case tracking-normal">
-                            {t.strategyTag}
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
-                    <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground/70" />
-                  </Link>
-                );
-              })}
-            </div>
-            {/* sm and up: the full 10-column table, unchanged. */}
-            <div className="hidden sm:block">
-              <Table>
-                <TableHeader>
-                  <TableRow className="hover:bg-transparent">
-                    <TableHead>Date</TableHead>
-                    <TableHead>Symbol</TableHead>
-                    <TableHead>Side</TableHead>
-                    <TableHead className="text-right">Qty</TableHead>
-                    <TableHead className="text-right">Entry → Exit</TableHead>
-                    <TableHead className="text-right">Net P&amp;L</TableHead>
-                    <TableHead className="text-center">Compliance</TableHead>
-                    <TableHead>Strategy</TableHead>
-                    <TableHead className="text-center">Viol.</TableHead>
-                    <TableHead className="w-8" />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {rows.map((t) => {
-                    const open = t.exitTime === null || t.exitPrice === null;
-                    const score = t.complianceScore;
-                    const viol = t.violationCount ?? 0;
-                    return (
-                      <TableRow key={t.id} className="group relative cursor-pointer">
-                        <TableCell className="whitespace-nowrap text-xs tabular text-muted-foreground">
-                          <Link
-                            href={`/journal/${t.id}`}
-                            className="absolute inset-0 z-10"
-                            aria-label={`Open ${t.symbol} trade`}
-                          />
-                          {formatDateTime(t.entryTime)}
-                        </TableCell>
-                        <TableCell className="font-medium">{t.symbol}</TableCell>
-                        <TableCell>
-                          <span
-                            className={`text-2xs font-semibold uppercase tracking-wide ${
-                              t.side === "long" ? "text-profit" : "text-loss"
-                            }`}
-                          >
-                            {t.side}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-right tabular">
-                          {formatNumber(t.quantity)}
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap text-right tabular text-muted-foreground">
-                          {formatNumber(t.entryPrice, 2)}
-                          <span className="mx-1 text-muted-foreground/50">→</span>
-                          {open ? (
-                            <span className="text-warning">open</span>
-                          ) : (
-                            formatNumber(t.exitPrice as number, 2)
-                          )}
-                        </TableCell>
-                        <TableCell className={`text-right tabular font-medium ${pnlColor(t.pnl)}`}>
-                          {open ? "—" : formatCurrency(t.pnl, { sign: true })}
-                        </TableCell>
-                        <TableCell className="text-center">
-                          {score == null ? (
-                            <span className="text-2xs text-muted-foreground">—</span>
-                          ) : (
-                            <span
-                              className={`inline-flex min-w-[2rem] justify-center rounded px-1.5 py-0.5 text-2xs font-semibold tabular ${scoreChipClass(score)}`}
-                            >
-                              {score}
-                            </span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {t.strategyTag ? (
-                            <Badge variant="secondary" className="normal-case tracking-normal">
-                              {t.strategyTag}
-                            </Badge>
-                          ) : (
-                            <span className="text-2xs text-muted-foreground">—</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-center">
-                          {viol > 0 ? (
-                            <span className="inline-flex min-w-[1.5rem] justify-center rounded bg-loss-muted px-1.5 py-0.5 text-2xs font-semibold tabular text-loss">
-                              {viol}
-                            </span>
-                          ) : (
-                            <span className="text-2xs tabular text-muted-foreground/60">0</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <ArrowRight className="h-4 w-4 text-muted-foreground/70 transition-colors group-hover:text-foreground" />
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {total > rows.length && (
-        <p className="text-center text-2xs text-muted-foreground">
-          Showing latest {formatNumber(rows.length)} of {formatNumber(total)} trades. Narrow with
-          filters to see more.
-        </p>
+        // Keyed by the filters: any filter change starts again from the newest.
+        <JournalList
+          key={filterQuery}
+          initialRows={page.rows.map(toJournalRow)}
+          initialCursor={page.nextCursor}
+          total={total}
+          filterQuery={filterQuery}
+        />
       )}
     </div>
   );

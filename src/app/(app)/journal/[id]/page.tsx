@@ -6,19 +6,26 @@ import { getTradeDetail } from "@/lib/journal";
 import { TradeContextChart } from "@/components/journal/trade-context-chart";
 import { TradeReplay } from "@/components/journal/trade-replay";
 import { TradeEditor } from "@/components/journal/trade-editor";
+import { WhyReadout } from "@/components/journal/why-readout";
+import { isDemoDesk } from "@/lib/demo-desk";
+import { storageEnabled } from "@/lib/storage";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { pointMultiplier } from "@/lib/ingestion/symbols";
+import { pipsFromPrices } from "@/lib/instruments";
+import { formatPrice } from "@/lib/instruments/format";
 import {
   formatCurrency,
   formatNumber,
   formatDuration,
   formatDateTime,
   pnlColor,
+  resolveTimeZone,
 } from "@/lib/utils";
+import { accountDisplay } from "@/lib/account-display";
 import type { EvalStatus } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -47,7 +54,10 @@ export default async function TradeDetailPage({
   const detail = await getTradeDetail(user.id, id);
   if (!detail) notFound();
 
-  const { trade, account, evaluations } = detail;
+  const { trade, account, evaluations, whyEntered, screenshots } = detail;
+  const shownAccount = account ? accountDisplay(account, trade.source) : null;
+  // Display zone only — the rule verdicts below keep the engine's own "ET".
+  const tz = resolveTimeZone(user.timezone);
   const open = trade.exitTime === null || trade.exitPrice === null;
 
   const holdMinutes =
@@ -58,6 +68,17 @@ export default async function TradeDetailPage({
   const mult = pointMultiplier(trade.symbol);
   const grossPnl = trade.pnlGross ?? trade.pnl + trade.fees;
   const points = !open && mult > 0 && trade.quantity > 0 ? grossPnl / (trade.quantity * mult) : null;
+
+  // Forex / CFD trades are read in pips and lots; futures keep points and contracts.
+  const isFx = trade.assetClass === "forex" || trade.assetClass === "cfd";
+  let pips: number | null = null;
+  if (isFx && !open) {
+    try {
+      pips = pipsFromPrices(trade.symbol, trade.side, trade.entryPrice, trade.exitPrice as number);
+    } catch {
+      pips = null; // unknown symbol or odd prices: show a dash, never a guess
+    }
+  }
 
   // R-multiple approximation using a 1%-of-account risk convention (only
   // derivable when the account has a starting balance).
@@ -83,9 +104,12 @@ export default async function TradeDetailPage({
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-semibold tracking-tight">{trade.symbol}</h1>
           <Badge variant={trade.side === "long" ? "profit" : "loss"}>{trade.side}</Badge>
-          {account && (
-            <span className="text-sm text-muted-foreground">
-              {account.name} · {account.kind}
+          {shownAccount && (
+            <span className="flex min-w-0 flex-wrap items-center gap-2 text-sm text-muted-foreground">
+              <span className="truncate">
+                {shownAccount.name} · {shownAccount.broker}
+              </span>
+              <Badge variant={shownAccount.statusVariant}>{shownAccount.status}</Badge>
             </span>
           )}
         </div>
@@ -99,8 +123,10 @@ export default async function TradeDetailPage({
           <div className="hidden h-9 w-px bg-border sm:block" />
           <div className="text-right">
             <p className="text-2xs uppercase tracking-wide text-muted-foreground">Compliance</p>
-            {trade.complianceScore == null ? (
-              <p className="text-xl font-semibold text-muted-foreground">—</p>
+            {trade.complianceScore == null || evaluations.length === 0 ? (
+              // No rule judged this trade: say so (the stored number, if any,
+              // is untouched) instead of printing a perfect-looking 100.
+              <p className="text-sm font-medium text-muted-foreground">Not scored yet</p>
             ) : (
               <p
                 className={`text-xl font-semibold tabular ${scoreTextClass(trade.complianceScore)}`}
@@ -111,6 +137,8 @@ export default async function TradeDetailPage({
           </div>
         </div>
       </div>
+
+      <WhyReadout text={whyEntered} />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Left column — the chart workspace */}
@@ -141,6 +169,8 @@ export default async function TradeDetailPage({
                 </TabsList>
                 <TabsContent value="context">
                   <TradeContextChart
+                    symbol={trade.symbol}
+                    assetClass={trade.assetClass}
                     tradeId={trade.id}
                     side={trade.side}
                     entryPrice={trade.entryPrice}
@@ -160,6 +190,7 @@ export default async function TradeDetailPage({
                     exitTime={trade.exitTime}
                     quantity={trade.quantity}
                     pnl={trade.pnl}
+                    assetClass={trade.assetClass}
                   />
                 </TabsContent>
               </Tabs>
@@ -172,13 +203,22 @@ export default async function TradeDetailPage({
             </CardHeader>
             <CardContent>
               <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3">
-                <Fact label="Entry" value={formatNumber(trade.entryPrice, 2)} sub={formatDateTime(trade.entryTime)} />
+                <Fact label="Entry" value={formatPrice(trade.entryPrice, trade.symbol, trade.assetClass)} sub={formatDateTime(trade.entryTime, tz)} />
                 <Fact
                   label="Exit"
-                  value={open ? "Open" : formatNumber(trade.exitPrice as number, 2)}
-                  sub={open ? "Position still open" : formatDateTime(trade.exitTime as Date)}
+                  value={open ? "Open" : formatPrice(trade.exitPrice as number, trade.symbol, trade.assetClass)}
+                  sub={open ? "Position still open" : formatDateTime(trade.exitTime as Date, tz)}
                 />
-                <Fact label="Quantity" value={formatNumber(trade.quantity)} sub={`${mult}× point mult`} />
+                {isFx ? (
+                  <Fact
+                    label="Lots"
+                    value={formatNumber(trade.quantity, 2)}
+                    sub="1 lot = standard size"
+                    title="1.00 lot is the standard size, 0.10 is a mini, 0.01 is a micro"
+                  />
+                ) : (
+                  <Fact label="Quantity" value={formatNumber(trade.quantity)} sub={`${mult}× point mult`} />
+                )}
                 <Fact
                   label="Net P&L"
                   value={open ? "—" : formatCurrency(trade.pnl, { sign: true })}
@@ -187,11 +227,19 @@ export default async function TradeDetailPage({
                 <Fact label="Gross P&L" value={open ? "—" : formatCurrency(grossPnl, { sign: true })} />
                 <Fact label="Fees" value={formatCurrency(trade.fees)} />
                 <Fact label="Hold time" value={formatDuration(holdMinutes)} />
-                <Fact
-                  label="Points"
-                  value={points == null ? "—" : `${points >= 0 ? "+" : ""}${formatNumber(points, 2)}`}
-                  valueClass={points == null ? undefined : pnlColor(points)}
-                />
+                {isFx ? (
+                  <Fact
+                    label="Pips"
+                    value={pips == null ? "—" : `${pips >= 0 ? "+" : ""}${formatNumber(pips, 1)}`}
+                    valueClass={pips == null ? undefined : pnlColor(pips)}
+                  />
+                ) : (
+                  <Fact
+                    label="Points"
+                    value={points == null ? "—" : `${points >= 0 ? "+" : ""}${formatNumber(points, 2)}`}
+                    valueClass={points == null ? undefined : pnlColor(points)}
+                  />
+                )}
                 <Fact
                   label="R ≈ (1% risk)"
                   value={rMultiple == null ? "—" : `${rMultiple >= 0 ? "+" : ""}${formatNumber(rMultiple, 2)}R`}
@@ -280,6 +328,16 @@ export default async function TradeDetailPage({
                 notes={trade.notes}
                 emotions={trade.emotions}
                 strategyTag={trade.strategyTag}
+                whyEntered={whyEntered}
+                symbol={trade.symbol}
+                side={trade.side}
+                startingBalance={account?.startingBalance ?? null}
+                accountCurrency={account?.currency ?? "USD"}
+                quantity={trade.quantity}
+                isOpen={trade.exitTime === null}
+                demo={isDemoDesk(user.email)}
+                screenshotIds={screenshots.map((s) => s.id)}
+                screenshotsEnabled={storageEnabled()}
               />
             </CardContent>
           </Card>
@@ -294,14 +352,16 @@ function Fact({
   value,
   sub,
   valueClass,
+  title,
 }: {
   label: string;
   value: string;
   sub?: string;
   valueClass?: string;
+  title?: string;
 }) {
   return (
-    <div>
+    <div title={title}>
       <dt className="text-2xs uppercase tracking-wide text-muted-foreground">{label}</dt>
       <dd className={`mt-0.5 text-sm font-medium tabular ${valueClass ?? ""}`}>{value}</dd>
       {sub && <dd className="text-2xs text-muted-foreground">{sub}</dd>}

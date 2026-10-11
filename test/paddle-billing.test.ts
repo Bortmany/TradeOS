@@ -192,7 +192,9 @@ describe("what a year costs", () => {
   it("is ten months of the monthly price on every paid plan", () => {
     expect(PLAN_DEFINITIONS.free.priceAnnual).toBe(0);
     expect(PLAN_DEFINITIONS.pro.priceAnnual).toBe(290);
-    expect(PLAN_DEFINITIONS.elite.priceAnnual).toBe(790);
+    expect(PLAN_DEFINITIONS.pro.priceMonthly).toBe(29);
+    expect(PLAN_DEFINITIONS.elite.priceMonthly).toBe(59);
+    expect(PLAN_DEFINITIONS.elite.priceAnnual).toBe(590);
     expect(annualSavings("pro").months).toBe(2);
     expect(annualSavings("elite").months).toBe(2);
     expect(annualSavings("free")).toEqual({ amount: 0, months: 0 });
@@ -373,6 +375,37 @@ describe("what an event means for an account", () => {
   it("a yearly price on a deployment that never set one falls back to the checkout note", () => {
     const event = readWebhookEvent(subscriptionPayload({ priceId: "pri_pro_annual_789" }))!;
     expect(billingUpdateFor(event, MONTHLY_ONLY)).toEqual({ plan: "pro", billingStatus: "active" });
+  });
+
+  describe("an old Elite price (the retired $79 one) no longer in the settings", () => {
+    const oldElite = (note: string | null, eventType = "subscription.updated", status = "active") =>
+      JSON.stringify({
+        event_id: "evt_old",
+        event_type: eventType,
+        occurred_at: "2026-10-01T10:00:00Z",
+        data: {
+          id: "sub_old",
+          status,
+          customer_id: "ctm_old",
+          custom_data: note ? { user_id: "clxuser000000000000000001", plan: note } : {},
+          items: [{ price: { id: "pri_elite_old_79" } }],
+        },
+      });
+
+    it("with an Elite checkout note, stays on Elite", () => {
+      expect(update(oldElite("elite"))).toEqual({ plan: "elite", billingStatus: "active" });
+    });
+
+    it("with no note, leaves the plan exactly where it is", () => {
+      expect(update(oldElite(null))).toEqual({ plan: null, billingStatus: "active" });
+    });
+
+    it("a cancellation still moves them to Starter", () => {
+      expect(update(oldElite(null, "subscription.canceled", "canceled"))).toEqual({
+        plan: "free",
+        billingStatus: "canceled",
+      });
+    });
   });
 
   it("a price we don't recognise never grants a plan on its own", () => {

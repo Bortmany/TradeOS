@@ -2,7 +2,7 @@
   "name": "tradeos",
   "version": "0.1.0",
   "private": true,
-  "description": "TradeOS — AI-assisted trading discipline & analytics platform for day traders",
+  "description": "TradeOS — the trading journal that keeps you honest: grades your trades against your own rules and warns you at 50/80/100% of a limit",
   "engines": {
     "node": "22.x"
   },
@@ -28,6 +28,7 @@
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1144.0",
     "@prisma/client": "^5.22.0",
     "@radix-ui/react-dialog": "^1.1.4",
     "@radix-ui/react-dropdown-menu": "^2.1.4",
@@ -51,6 +52,7 @@
     "react-dom": "^19.0.0",
     "recharts": "^2.15.0",
     "tailwind-merge": "^2.6.0",
+    "web-push": "^3.6.7",
     "zod": "^3.24.1"
   },
   "devDependencies": {
@@ -58,6 +60,7 @@
     "@types/node": "^22.10.5",
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
+    "@types/web-push": "^3.6.4",
     "autoprefixer": "^10.4.20",
     "husky": "^9.1.7",
     "postcss": "^8.4.49",

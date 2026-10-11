@@ -15,10 +15,13 @@
 import {
   NormalizedTradeSchema,
   type NormalizedTrade,
+  type AssetClass,
   type Broker,
+  type ServerTime,
   type Side,
 } from "@/lib/types";
 import { pointMultiplier } from "@/lib/ingestion/symbols";
+import { getInstrument, pnlFromPrices, InstrumentError } from "@/lib/instruments";
 import { isValidTradeTimeOrder } from "@/lib/validation";
 
 // --------------------------------------------------------------------------
@@ -29,13 +32,30 @@ export interface ParseResult {
   trades: NormalizedTrade[];
   skipped: number;
   errors: string[];
+  // Whole-file refusal in plain English (wrong table, semicolons ...). When set,
+  // nothing was imported and the import route answers with this message.
+  refusal?: string;
+  // MT5 only: rows skipped because the position is still open.
+  openSkipped?: number;
+  // MT5 only: the symbols of those open positions (each once, at most 10).
+  openSkippedSymbols?: string[];
+  // MT5 only: how the file's times were read, e.g. "UTC+3".
+  timesReadAs?: string;
+}
+
+// Optional extras an import can pass down. Existing adapters ignore them.
+export interface ParseOptions {
+  serverTime?: ServerTime;
+  // MT5 only: the file row number of the first data row (2 when the header is
+  // on row 1; larger when a report has title rows above the table).
+  firstDataRow?: number;
 }
 
 export interface BrokerAdapter {
   key: Broker;
   label: string;
   detect(headers: string[]): boolean;
-  parse(headers: string[], rows: string[][]): ParseResult;
+  parse(headers: string[], rows: string[][], options?: ParseOptions): ParseResult;
 }
 
 // Cap the number of human-readable error strings we surface so a broken file
@@ -175,6 +195,7 @@ export interface RawTradeFields {
   emotions?: string | null;
   tags?: string | null;
   externalId?: string | null;
+  assetClass?: AssetClass | null;
 }
 
 // Compute realized P&L from prices when the source lacks it. Open trades
@@ -195,6 +216,9 @@ export function computePnl(f: {
       : (f.entryPrice - f.exitPrice) * f.quantity * mult;
   return gross - f.fees;
 }
+
+// A forex quantity at or above this is read as units, not lots (see TradeCollector.add).
+const FOREX_UNITS_FROM = 1000;
 
 // A small accumulator adapters push rows into. Handles pnl computation, zod
 // validation, skip counting, and error capping uniformly.
@@ -222,17 +246,52 @@ export class TradeCollector {
       return this.fail(rowNumber, "exit time is before entry time");
     }
 
-    const pnl =
-      f.pnl != null
-        ? f.pnl
-        : computePnl({
+    let pnl: number;
+    if (f.pnl != null) {
+      pnl = f.pnl;
+    } else {
+      // A known forex/CFD symbol must not be priced with the futures default of
+      // 1 (that gives wildly wrong P&L). It goes through the instruments maths,
+      // in dollars; a row that needs a conversion rate we don't have is skipped
+      // with the pair named. Everything else (futures, shares) is unchanged.
+      // Only exact table symbols (and broker endings) count here, never bare
+      // aliases: GOLD or WTI in a shares file are stocks, not gold or oil CFDs.
+      // (The MT5 adapter always supplies its own P&L and resolves aliases itself.)
+      const inst = exitPrice != null ? getInstrument(f.symbol, { useAliases: false }) : null;
+      if (inst && exitPrice != null) {
+        // Forex quantity here means LOTS. A figure this big is units (IBKR style,
+        // e.g. 20000): skip the row rather than guess a conversion.
+        if (inst.assetClass === "forex" && f.quantity >= FOREX_UNITS_FROM) {
+          return this.fail(
+            rowNumber,
+            `${inst.symbol} quantity ${f.quantity} looks like units, not lots (1 lot = ${inst.contractSize} units). Enter the size in lots and import again`
+          );
+        }
+        try {
+          const gross = pnlFromPrices({
+            symbol: f.symbol,
             side: f.side,
+            lots: f.quantity,
             entryPrice: f.entryPrice,
             exitPrice,
-            quantity: f.quantity,
-            fees,
-            symbol: f.symbol,
+            accountCurrency: "USD",
           });
+          pnl = Math.round((gross - fees) * 100) / 100;
+        } catch (e) {
+          if (e instanceof InstrumentError) return this.fail(rowNumber, e.message);
+          throw e;
+        }
+      } else {
+        pnl = computePnl({
+          side: f.side,
+          entryPrice: f.entryPrice,
+          exitPrice,
+          quantity: f.quantity,
+          fees,
+          symbol: f.symbol,
+        });
+      }
+    }
 
     const parsed = NormalizedTradeSchema.safeParse({
       symbol: f.symbol,
@@ -251,6 +310,7 @@ export class TradeCollector {
       tags: f.tags ?? null,
       source: "csv",
       externalId: f.externalId ?? null,
+      assetClass: f.assetClass ?? null,
     });
 
     if (!parsed.success) {
@@ -294,6 +354,15 @@ const PNL_ALIASES = ["pnl", "p/l", "realized", "realized pnl", "profit", "net pn
 const ID_ALIASES = ["id", "trade id", "tradeid", "order id", "orderid", "ref", "reference"];
 const STRATEGY_ALIASES = ["strategy", "setup", "strategytag", "tag"];
 const NOTES_ALIASES = ["notes", "note", "comment", "comments"];
+
+// True when the header row looks like a table of trades (a symbol column plus a
+// size or entry-price column). Used to tell "a CSV with no trades yet" from "a
+// file that isn't a broker CSV at all" before any import record is created.
+export function looksLikeTradeTable(headers: string[]): boolean {
+  const idx = headerIndex(headers);
+  const has = (aliases: string[]) => aliases.some((a) => idx.has(a));
+  return has(SYMBOL_ALIASES) && (has(QTY_ALIASES) || has(ENTRY_PRICE_ALIASES));
+}
 
 export const genericAdapter: BrokerAdapter = {
   key: "generic",

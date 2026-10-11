@@ -35,4 +35,12 @@ describe("registerUser — no account enumeration", () => {
     const count = await prisma.user.count({ where: { email } });
     expect(count).toBe(1);
   });
+
+  it("refuses the demo desk's email outright, creating nothing", async () => {
+    await prisma.user.deleteMany({ where: { email: "demo@tradeos.app" } });
+    await expect(registerUser("demo@tradeos.app", "another-password-123")).rejects.toThrow(
+      "That email address can't be used."
+    );
+    expect(await prisma.user.count({ where: { email: "demo@tradeos.app" } })).toBe(0);
+  });
 });

@@ -32,7 +32,7 @@ const FEATURES = [
   {
     icon: Trophy,
     title: "Prop-firm tracker",
-    body: "Topstep, Apex & TPT presets. Watch daily loss limits and trailing drawdown before you breach them.",
+    body: "Topstep, Apex & TPT presets. Warnings at 50%, 80% and 100% of your daily loss limit and trailing drawdown.",
   },
   {
     icon: LineChart,
@@ -43,16 +43,17 @@ const FEATURES = [
 
 export function Features() {
   return (
-    <section id="features" className="border-b border-border">
+    <section id="features" className="scroll-mt-14 border-b border-border">
       <div className="container py-20">
         <Reveal>
           <div className="mx-auto max-w-2xl text-center">
             <h2 className="text-3xl font-semibold tracking-tight md:text-4xl">
-              Not a journal. A discipline system.
+              A journal that keeps you honest.
             </h2>
             <p className="mt-3 text-muted-foreground">
-              Journals tell you what happened. TradeOS tells you whether you followed
-              your process — and what to fix next.
+              Most journals only tell you what happened. TradeOS also tells you whether
+              you followed your own process, warns you as you near a limit, and shows
+              what to fix next. Every trading decision stays yours.
             </p>
           </div>
           <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

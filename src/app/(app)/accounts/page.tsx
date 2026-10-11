@@ -18,15 +18,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn, formatCurrency, formatPercent, pnlColor } from "@/lib/utils";
+import { accountDisplay } from "@/lib/account-display";
 
 export const dynamic = "force-dynamic";
-
-const KIND_VARIANT: Record<string, "profit" | "info" | "warning" | "secondary"> = {
-  funded: "profit",
-  live: "info",
-  evaluation: "warning",
-  demo: "secondary",
-};
 
 function pf(v: number): string {
   return isFinite(v) ? v.toFixed(2) : "∞";
@@ -84,7 +78,9 @@ export default async function AccountsPage() {
           </div>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {accounts.map((a) => (
+            {accounts.map((a) => {
+              const shown = accountDisplay(a);
+              return (
               <Card key={a.id} className="overflow-hidden">
                 <CardContent className="p-4">
                   <div className="flex items-start justify-between gap-2">
@@ -94,15 +90,11 @@ export default async function AccountsPage() {
                         style={{ backgroundColor: a.color }}
                       />
                       <div className="min-w-0">
-                        <p className="truncate font-medium">{a.name}</p>
-                        <p className="text-2xs uppercase tracking-wide text-muted-foreground">
-                          {a.broker}
-                        </p>
+                        <p className="truncate font-medium">{shown.name}</p>
+                        <p className="text-2xs text-muted-foreground">{shown.broker}</p>
                       </div>
                     </div>
-                    <Badge variant={KIND_VARIANT[a.kind] ?? "secondary"} className="capitalize">
-                      {a.kind}
-                    </Badge>
+                    <Badge variant={shown.statusVariant}>{shown.status}</Badge>
                   </div>
 
                   <div className="mt-4 flex items-end justify-between">
@@ -131,7 +123,8 @@ export default async function AccountsPage() {
                   </div>
                 </CardContent>
               </Card>
-            ))}
+              );
+            })}
           </div>
 
           <Card>
@@ -157,7 +150,7 @@ export default async function AccountsPage() {
                             />
                             <span className="font-medium">{a.name}</span>
                             <span className="text-2xs uppercase tracking-wide text-muted-foreground">
-                              {a.kind}
+                              {accountDisplay(a).status}
                             </span>
                           </div>
                         </TableCell>

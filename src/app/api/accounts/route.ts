@@ -6,6 +6,8 @@ import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { BROKERS, ACCOUNT_KINDS, type Plan } from "@/lib/types";
 import { withinLimit } from "@/lib/billing/plans";
 import { apiErrorResponse } from "@/lib/api-error";
+import { purgeStoredFiles } from "@/lib/attachments";
+import { refuseDemo } from "@/lib/demo-guard";
 
 const createSchema = z.object({
   name: z.string().min(1).max(80),
@@ -43,6 +45,8 @@ async function auth() {
 export async function POST(req: Request) {
   const user = await auth();
   if (!user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  const demoRefused = refuseDemo(user);
+  if (demoRefused) return demoRefused;
 
   const limited = enforceUserRateLimit("accounts:write", user.id);
   if (limited) return limited;
@@ -81,6 +85,8 @@ export async function POST(req: Request) {
 export async function PATCH(req: Request) {
   const user = await auth();
   if (!user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  const demoRefused = refuseDemo(user);
+  if (demoRefused) return demoRefused;
 
   const limited = enforceUserRateLimit("accounts:write", user.id);
   if (limited) return limited;
@@ -101,6 +107,8 @@ export async function PATCH(req: Request) {
 export async function DELETE(req: Request) {
   const user = await auth();
   if (!user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  const demoRefused = refuseDemo(user);
+  if (demoRefused) return demoRefused;
 
   const limited = enforceUserRateLimit("accounts:write", user.id);
   if (limited) return limited;
@@ -111,6 +119,7 @@ export async function DELETE(req: Request) {
     const existing = await prisma.tradingAccount.findFirst({ where: { id, userId: user.id } });
     if (!existing) return NextResponse.json({ ok: false, error: "Account not found." }, { status: 404 });
 
+    await purgeStoredFiles({ trade: { accountId: id } });
     await prisma.tradingAccount.delete({ where: { id } });
     return NextResponse.json({ ok: true });
   } catch (err) {

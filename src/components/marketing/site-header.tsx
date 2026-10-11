@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Activity } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { LandingMenu } from "@/components/marketing/landing-menu";
 import type { SignupCtas } from "@/components/marketing/signup-cta";
 
 export function SiteHeader({ ctas }: { ctas: SignupCtas }) {
@@ -33,6 +34,7 @@ export function SiteHeader({ ctas }: { ctas: SignupCtas }) {
               </Button>
             </>
           )}
+          <LandingMenu />
         </div>
       </div>
     </header>

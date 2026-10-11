@@ -35,8 +35,9 @@ export default async function AuthLayout({
             Your edge isn&apos;t a better setup. It&apos;s doing the same right thing every time.
           </h2>
           <p className="mt-4 max-w-md text-muted-foreground">
-            TradeOS imports your trades, scores them against your own rulebook, and
-            shows you exactly where discipline breaks down — before it costs you a payout.
+            The trading journal that keeps you honest. TradeOS imports your trades,
+            scores them against your own rulebook, and shows you exactly where discipline
+            breaks down — before it costs you a payout. It warns; you decide.
           </p>
           <ul className="mt-8 space-y-4">
             <Feature icon={TrendingUp} title="Analytics that mean something">
@@ -46,7 +47,7 @@ export default async function AuthLayout({
               Every trade graded pass/fail against the rules you actually trade.
             </Feature>
             <Feature icon={Trophy} title="Prop-firm guardrails">
-              Track daily loss limits and trailing drawdown before you breach them.
+              Warnings at 50%, 80% and 100% of your daily loss limit and trailing drawdown.
             </Feature>
           </ul>
         </div>

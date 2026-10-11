@@ -13,6 +13,7 @@ import { hasFeature } from "@/lib/billing/plans";
 import { getTrades } from "@/lib/data";
 import { parseRuleConfig } from "@/lib/rules/config";
 import type { EvalContext, RuleLike } from "@/lib/rules/engine";
+import { refuseDemo } from "@/lib/demo-guard";
 import {
   ReplayConfigSchema,
   SimConfigSchema,
@@ -44,6 +45,8 @@ const TRADE_QUERY_CAP = 10000; // getTrades' hard take — surfaced as `truncate
 const MAX_RUNS_PER_USER = 200; // total recorded tests — rate limits bound only the rate
 
 export const POST = withUser(async (user, req: Request) => {
+  const demoRefused = refuseDemo(user);
+  if (demoRefused) return demoRefused;
   // Runs are CPU-heavy relative to normal writes — import-route tier limit.
   const rl = rateLimit(`backtests:${user.id}`, { limit: 20, windowMs: 10 * 60 * 1000 });
   if (!rl.ok) {

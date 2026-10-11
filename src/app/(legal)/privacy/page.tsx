@@ -13,7 +13,7 @@ export default function PrivacyPage() {
     <article className="space-y-8">
       <header>
         <h1 className="text-3xl font-semibold tracking-tight">Privacy Policy</h1>
-        <p className="mt-2 text-sm text-muted-foreground">Last updated: September 28, 2026</p>
+        <p className="mt-2 text-sm text-muted-foreground">Last updated: October 2, 2026</p>
       </header>
 
       <div className="rounded-lg border border-warning/40 bg-warning-muted p-4 text-sm">
@@ -44,15 +44,86 @@ export default function PrivacyPage() {
           </li>
           <li>
             <strong>Journal content</strong> — the notes, emotion tags and labels you attach
-            to trades, the written answers you save in a weekly review, and any notes
-            you add to a saved strategy test.
+            to trades, the &quot;Why I entered&quot; text you write for a trade, the written
+            answers you save in a weekly review, and any notes you add to a saved
+            strategy test.
+          </li>
+          <li>
+            <strong>Pre-trade checklists</strong> — the checklist questions you write, and
+            each run you save (the wording of the questions, which ones you ticked, and when
+            you saved it), including which trade you linked it to.
+          </li>
+          <li>
+            <strong>Trade screenshots</strong> — the PNG, JPEG or WebP pictures you add to a
+            trade (up to 5 per trade, 5 MB each, 200 pictures and 500 MB per person). They
+            are kept in private storage that has no public links; only you can open them,
+            and each time the app checks it is you. Before a JPEG, PNG or WebP is
+            saved, its hidden metadata (including any GPS location a phone adds) is removed
+            without changing the picture. A screenshot can
+            show things like account numbers or balances, so crop out anything you don&apos;t
+            want stored.
           </li>
           <li>
             <strong>Broker connection (optional)</strong> — if you link a TopstepX account:
             your broker username and API key. The key is encrypted at rest with
             AES-256-GCM, is never shown again, never appears in logs or exports, and is
-            used only for <em>read-only</em> requests that fetch your fills. TradeOS never
-            places, changes, or cancels orders.
+            used only for <em>read-only</em> requests that fetch your fills, your open
+            positions and your account balance. TradeOS never places, changes, or cancels
+            orders. With &quot;Near-live updates&quot; on (the default, and you can switch it
+            off per account), TradeOS reads your open positions and balance about once a
+            minute while a server is running. It keeps only the latest snapshot: the
+            current open positions (contract, long or short, size, average price, the latest
+            price and the open profit or loss), your last balance, and the time of the last
+            read. Each new read replaces the old one and no history of positions is kept.
+            The short-lived login token for the broker is held in the server&apos;s memory
+            only and is never saved. The alerts you see (for example &quot;80% of today&apos;s
+            loss limit used&quot;) are worked out from your closed trades plus those open
+            positions, and you can dismiss any of them. Disconnecting a broker or deleting
+            your account removes the saved snapshot and balance. If you link a MetaTrader 5
+            (MT5) account, once that option is switched on and your plan includes it: we
+            keep your MT5 server name, your MT5 login number and the id of the account
+            that our bridge provider, MetaApi, creates for it. TradeOS asks for your
+            read-only <em>investor</em> password only and refuses the main trading
+            password. TradeOS does not keep the investor password: it goes straight to
+            MetaApi, which holds it so it can read your account, and it is never saved by
+            TradeOS, shown again, logged or exported. The link is read-only: it reads
+            your balance, open positions and closed trades, and can never place, change or
+            cancel an order. Disconnecting the account deletes it, and the password stored
+            with it, at MetaApi; if MetaApi cannot confirm that, the link stays and we ask
+            you to try again. If your paid plan ends or is cancelled, we stop reading the
+            account and delete it at MetaApi too (while a failed payment is being retried,
+            reading only pauses and the account stays at MetaApi until the payment goes
+            through, you disconnect, or the plan ends). If we find that a linked login can
+            place trades, we delete it at MetaApi straight away. If you delete your TradeOS
+            account, we delete the MT5 account at MetaApi first; if MetaApi cannot be reached
+            at that moment, your TradeOS account is still deleted and the owner removes the
+            MetaApi account by hand afterwards.
+          </li>
+          <li>
+            <strong>Phone warnings (optional)</strong> — if you press &quot;Enable alerts&quot; in
+            Settings: your browser&apos;s push address for that device and its two public
+            encryption keys, plus the time of the last send. They are used only to send you
+            your own risk warnings and the test message you ask for, through your browser
+            maker&apos;s push service (Google, Mozilla, Apple or Microsoft), which sees the
+            address and the delivery but not a readable message. They are removed when you
+            turn alerts off on that device, when the push service says the device is gone, or
+            when you delete your account, and they are not part of your data export. We also
+            keep a small note of which warning step we already sent for each alert, so the
+            same warning is not sent twice; it goes when the alert or your account does.
+          </li>
+          <li>
+            <strong>On your device</strong> — the position-size calculator remembers the last
+            account size and risk percentage you typed, in your browser&apos;s own storage on
+            that device only. It is never sent to us. The app also registers a small service
+            worker that only shows phone warnings; it stores none of your data. Clearing your
+            browser data removes both.
+          </li>
+          <li>
+            <strong>The demo desk</strong> — &quot;Explore the demo desk&quot; signs you in to a
+            shared look-around account filled with made-up trades. It is read-only: nothing
+            you do there is saved, and it collects no details from you. &quot;Load sample
+            data&quot; adds made-up trades to your own account, marked as samples, and you can
+            clear them in one click.
           </li>
           <li>
             <strong>Billing</strong> — if paid subscriptions are enabled, payments are
@@ -79,7 +150,10 @@ export default function PrivacyPage() {
       <Section title="Who processes data for us">
         <p>
           Your data lives in our hosting provider&apos;s database. If paid billing is enabled,
-          Paddle processes payments. If error tracking is enabled, crash reports
+          Paddle processes payments. Your trade screenshots are stored with our private
+          file-storage provider (Cloudflare R2), which holds the files for us and never
+          makes them public. If you link an MT5 account, MetaApi (a cloud bridge to
+          MetaTrader 5) holds its investor password and reads that account for us. If error tracking is enabled, crash reports
           (technical details about an error, with credentials automatically redacted) may
           be sent to Sentry so problems can be fixed. These providers process data only to
           provide their service to us.
@@ -90,17 +164,22 @@ export default function PrivacyPage() {
         <ul className="list-disc space-y-1.5 pl-5">
           <li>
             <strong>Export</strong> — download a copy of your profile, trading accounts,
-            trades, rulebooks, prop-firm data, weekly reviews and saved strategy tests
+            trades, rulebooks, prop-firm data, pre-trade checklists and the runs you saved,
+            weekly reviews and saved strategy tests
             (plus the name and date range of each uploaded price-data file) as a JSON
-            file from
+            file (your &quot;Why I entered&quot; text is included; screenshot pictures are not) from
             Settings → Data &amp; privacy. (Derived records the app computes for
             you — alerts, rule evaluations, score history and import logs — are
             not included, and broker connections are never exported because
-            they contain your encrypted API key.)
+            they contain your encrypted API key. The live snapshot of open positions and
+            balance is current state, not part of your record, so it is not exported
+            either.)
           </li>
           <li>
             <strong>Delete</strong> — permanently delete your account and all of its data
-            from the same place. Deletion is immediate and cannot be undone.
+            from the same place, including your stored screenshots. Deletion is immediate
+            and cannot be undone. You can also delete a single screenshot, or a whole
+            trade with its screenshots, in the app at any time.
           </li>
           <li>
             <strong>Edit</strong> — trades, journal entries, rules and profile details can
@@ -109,7 +188,9 @@ export default function PrivacyPage() {
           <li>
             <strong>Broker access</strong> — you can disconnect a broker connection at any
             time, which deletes the stored credentials. You can also revoke the API key on
-            the broker&apos;s side.
+            the broker&apos;s side. For an MT5 account, disconnecting also removes it, and
+            the investor password stored with it, from MetaApi (if MetaApi cannot confirm,
+            the link stays and you can try again).
           </li>
         </ul>
       </Section>

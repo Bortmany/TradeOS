@@ -138,6 +138,19 @@ describe("POST /api/auth/register — invite-only and closed modes", () => {
     await prisma.$disconnect();
   });
 
+  it("never lets anyone register the demo desk's email, seeded or not (any letter case)", async () => {
+    await prisma.user.deleteMany({ where: { email: "demo@tradeos.app" } });
+    for (const email of ["demo@tradeos.app", " Demo@TradeOS.app "]) {
+      const res = await registerPOST(post({ email, password: "invite-pass-123" }, "198.51.100.9"));
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({
+        ok: false,
+        error: "That email address can't be used. Please try a different one.",
+      });
+    }
+    expect(await prisma.user.count({ where: { email: "demo@tradeos.app" } })).toBe(0);
+  });
+
   it("refuses with 403 when sign-up is closed", async () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("SIGNUP_INVITE_CODES", "");

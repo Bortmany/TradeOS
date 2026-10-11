@@ -16,7 +16,8 @@ import {
   ReferenceLine,
 } from "recharts";
 import type { EquityPoint } from "@/lib/types";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatDate, formatDateTime } from "@/lib/utils";
+import { useTimeZone } from "@/components/time-zone-provider";
 
 interface Props {
   variant: EquityPoint[];
@@ -33,6 +34,7 @@ export function ComparisonChart({
   baselineLabel = "Baseline",
   height = 280,
 }: Props) {
+  const tz = useTimeZone();
   if (variant.length === 0 && baseline.length === 0) {
     return (
       <div
@@ -61,10 +63,8 @@ export function ComparisonChart({
       time,
       variant: lastVariant,
       baseline: baseline.length > 0 ? lastBaseline : null,
-      label: new Date(time * 1000).toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-      }),
+      label: formatDate(new Date(time * 1000), tz, "short"),
+      when: formatDateTime(new Date(time * 1000), tz),
     };
   });
 
@@ -130,7 +130,7 @@ function ComparisonTooltip({ active, payload, variantLabel, baselineLabel }: any
   const p = payload[0].payload;
   return (
     <div className="rounded-md border border-border bg-popover px-3 py-2 text-xs shadow-lg">
-      <p className="text-muted-foreground">{p.label}</p>
+      <p className="text-muted-foreground">{p.when}</p>
       {p.variant != null && (
         <p className="mt-0.5 font-semibold tabular">
           {variantLabel}: {formatCurrency(p.variant)}

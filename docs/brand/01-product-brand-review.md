@@ -1,7 +1,7 @@
 # TradeOS: Product and Brand Review
 
 **PRODUCT**
-TradeOS is a trading discipline engine for day traders. It imports trades (CSV from Topstep, Apex, Tradovate, NinjaTrader, Rithmic, IBKR, plus a live read-only TopstepX/ProjectX connector), grades each one against the trader's own no-code rulebook, and gives a deterministic, explainable 0 to 100 discipline score per trade and per day with rule-by-rule pass/fail. Also: analytics, a prop-firm tracker with Topstep/Apex/TPT presets and guardrails, trade replay, PDF reports. Plans: Starter free, Pro $29/mo, Elite $79/mo; 14-day trial, no card. Source: `README.md`.
+TradeOS is a trading discipline engine for day traders. It imports trades (CSV from Topstep, Apex, Tradovate, NinjaTrader, Rithmic, IBKR, plus a live read-only TopstepX/ProjectX connector), grades each one against the trader's own no-code rulebook, and gives a deterministic, explainable 0 to 100 discipline score per trade and per day with rule-by-rule pass/fail. Also: analytics, a prop-firm tracker with Topstep/Apex/TPT presets and guardrails, trade replay, PDF reports. Plans: Starter free, Pro $29/mo, Elite $59/mo; 14-day trial, no card. Source: `README.md`.
 
 **TARGET CUSTOMER**
 Funded (prop) and live futures day traders, mostly men 24 to 45, who blow accounts by breaking rules they already wrote.

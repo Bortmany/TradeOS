@@ -9,6 +9,7 @@ import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { recomputeCompliance } from "@/lib/rules/recompute-compliance";
 import { apiErrorResponse } from "@/lib/api-error";
 import { isValidTradeTimeOrder, TRADE_TIME_ORDER_ERROR } from "@/lib/validation";
+import { refuseDemo } from "@/lib/demo-guard";
 
 const schema = z
   .object({
@@ -26,6 +27,7 @@ const schema = z
     strategyTag: z.string().max(120).optional().nullable(),
     // Match the length caps the PATCH route already enforces.
     notes: z.string().max(5000).optional().nullable(),
+    whyEntered: z.string().max(2000).optional().nullable(),
     emotions: z.string().max(500).optional().nullable(),
     tags: z.string().max(500).optional().nullable(),
     // Optional caller-supplied dedupe token. Retrying the same create with the
@@ -41,6 +43,8 @@ const schema = z
   });
 
 export const POST = withUser(async (user, req: Request) => {
+  const demoRefused = refuseDemo(user);
+  if (demoRefused) return demoRefused;
   const limited = enforceUserRateLimit("trades:create", user.id);
   if (limited) return limited;
 
@@ -86,6 +90,7 @@ export const POST = withUser(async (user, req: Request) => {
           pnl,
           strategyTag: d.strategyTag || null,
           notes: d.notes || null,
+          whyEntered: d.whyEntered?.trim() || null,
           emotions: d.emotions || null,
           tags: d.tags || null,
           source: "manual",

@@ -26,9 +26,10 @@ export default function TermsPage() {
 
       <Section title="1. What TradeOS is — and is not">
         <p>
-          TradeOS is an analytics and journaling tool for traders. It imports the trades
-          you give it, grades them against rules you define yourself, and shows you
-          statistics about your own trading.
+          TradeOS is a trading journal and analytics tool for traders. It imports the
+          trades you give it, grades them against rules you define yourself, warns you
+          as you approach limits you set, and shows you statistics about your own
+          trading. It only warns: it never blocks a trade or acts for you.
         </p>
         <p>
           <strong>

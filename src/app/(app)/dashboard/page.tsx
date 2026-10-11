@@ -6,28 +6,44 @@ import {
   Scale,
   Activity,
   AlertTriangle,
-  ArrowRight,
+  ChevronRight,
 } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth";
-import { getAccounts, getDashboardData, getOpenAlerts } from "@/lib/data";
+import { countSampleTrades, getAccounts, getDashboardData } from "@/lib/data";
+import { getLiveSnapshot } from "@/lib/live/snapshot";
+import { LiveProvider } from "@/components/live/live-provider";
+import { LiveAlerts } from "@/components/live/live-alerts";
+import { OpenPositionsCard } from "@/components/live/open-positions";
+import { SampleTradesStrip } from "@/components/sample-trades-strip";
 import { PageHeader } from "@/components/page-header";
 import { AccountSwitcher } from "@/components/account-switcher";
 import { EquityChart } from "@/components/charts/equity-chart";
 import { BucketBar } from "@/components/charts/bucket-bar";
-import { ScoreRing, ScoreMeter } from "@/components/charts/score-ring";
+import { ScoreRing, ScoreMeter, ProvisionalScoreRing } from "@/components/charts/score-ring";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { LoadSampleData } from "@/components/load-sample-data";
+import { drawdownTile } from "@/lib/analytics/drawdown-display";
 import {
   formatCurrency,
   formatPercent,
   pnlColor,
   formatDuration,
   formatDateTime,
-  formatDate,
+  resolveTimeZone,
 } from "@/lib/utils";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { collapseViolations } from "@/lib/violation-rows";
+import { isDemoDesk } from "@/lib/demo-desk";
+import { getLastRun, listTemplates, rulebookIdsForAccount } from "@/lib/checklist/data";
+import { BeforeYouTradeCard } from "@/components/checklist/before-you-trade-card";
 
 export const dynamic = "force-dynamic";
 
@@ -40,14 +56,23 @@ export default async function DashboardPage({
   if (!user) redirect("/login");
   const { account } = await searchParams;
 
-  const [accounts, data, alerts] = await Promise.all([
+  const [accounts, data, liveSnapshot, sampleCount] = await Promise.all([
     getAccounts(user.id),
     getDashboardData(user.id, account),
-    getOpenAlerts(user.id),
+    getLiveSnapshot(user.id),
+    countSampleTrades(user.id),
   ]);
 
   const activeAccount = account ? accounts.find((a) => a.id === account) : null;
   const m = data.metrics;
+  const ddTile = drawdownTile(m.maxDrawdown, m.maxDrawdownPct);
+
+  // "Before you trade" card. A failed load shows a line inside the card, never
+  // breaks the dashboard; the checklist never feeds the score.
+  let checklist: Awaited<ReturnType<typeof loadChecklistCard>> | null = null;
+  if (data.tradeCount > 0) {
+    checklist = await loadChecklistCard(user.id, activeAccount?.id ?? null);
+  }
 
   if (data.tradeCount === 0) {
     return (
@@ -83,9 +108,15 @@ export default async function DashboardPage({
   // feed to read like a journal entry — built from the same trades the rest of
   // the dashboard uses, so nothing is loaded twice.
   const violations = data.recentViolations;
+  // Same rule broken more than once on the same trade reads as one row + count.
+  const violationRows = collapseViolations(violations);
+  const tz = resolveTimeZone(user.timezone);
 
   return (
+    <LiveProvider initial={liveSnapshot}>
     <div className="container max-w-7xl space-y-6 py-6">
+      {/* The demo desk's look-around-only notice is the banner in the app shell. */}
+      {sampleCount > 0 && !isDemoDesk(user.email) && <SampleTradesStrip />}
       <PageHeader
         title="Dashboard"
         description={
@@ -94,6 +125,10 @@ export default async function DashboardPage({
       >
         <AccountSwitcher accounts={accounts} />
       </PageHeader>
+
+      {/* Open alerts sit directly under the header: a warning read under pressure
+          must not be below five screens of charts. Refreshes itself every minute. */}
+      <LiveAlerts />
 
       {/* Discipline hero — the score is the product's anchor metric */}
       <Card>
@@ -112,23 +147,57 @@ export default async function DashboardPage({
             it as a compact strip so nothing competes with the anchor metric. */}
         <CardContent className="space-y-5">
           <div className="flex flex-col items-center gap-1.5 py-2">
-            <ScoreRing
-              score={data.discipline.overall}
-              size={208}
-              strokeWidth={14}
-              label="Overall"
-            />
+            {data.discipline.scored ? (
+              <ScoreRing
+                score={data.discipline.overall}
+                size={208}
+                strokeWidth={14}
+                label="Overall"
+              />
+            ) : (
+              <ProvisionalScoreRing
+                size={208}
+                strokeWidth={14}
+                hasRules={data.activeRuleCount > 0}
+              />
+            )}
             <p className="text-2xs uppercase tracking-wide text-muted-foreground">
-              Out of 100 · {m.tradeCount} trades graded
+              {data.discipline.scored
+                ? `Out of 100 · ${m.tradeCount} trades graded`
+                : `Not scored yet · ${m.tradeCount} ${m.tradeCount === 1 ? "trade" : "trades"} imported`}
             </p>
           </div>
           <div className="grid grid-cols-2 gap-x-6 gap-y-4 border-t border-border pt-4 sm:grid-cols-4">
             {data.discipline.breakdown.map((b) => (
-              <ScoreMeter key={b.label} label={b.label} score={b.score} detail={b.detail} compact />
+              <ScoreMeter
+                key={b.label}
+                label={b.label}
+                score={b.score}
+                compact
+                unscored={!data.discipline.scored && b.label === "Rule adherence"}
+                detail={
+                  !data.discipline.scored && b.label === "Rule adherence"
+                    ? "Add a rule and this fills in."
+                    : b.detail
+                }
+              />
             ))}
           </div>
         </CardContent>
       </Card>
+
+      {checklist && (
+        <BeforeYouTradeCard
+          templates={checklist.templates}
+          preselectId={checklist.preselectId}
+          lastRun={checklist.lastRun}
+          demo={isDemoDesk(user.email)}
+          loadFailed={checklist.loadFailed}
+        />
+      )}
+
+      {/* Only while something is open (or the last list is stale). Watch-only. */}
+      <OpenPositionsCard />
 
       {/* KPI row — compact, secondary to the score */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -153,10 +222,11 @@ export default async function DashboardPage({
         />
         <Kpi
           label="Max Drawdown"
-          value={formatCurrency(-m.maxDrawdown)}
+          labelHint="Your biggest fall from your best profit so far. Shown as a share of that profit, or in dollars when the fall is bigger than the profit it fell from."
+          value={ddTile.value}
           valueClass="text-loss"
           icon={AlertTriangle}
-          hint={formatPercent(m.maxDrawdownPct)}
+          hint={ddTile.hint}
         />
       </div>
 
@@ -207,13 +277,13 @@ export default async function DashboardPage({
                 No rule violations in this view. 🎯
               </p>
             ) : (
-              violations.map((v, i) => (
-                <Link
-                  key={i}
-                  href={`/journal/${v.tradeId}`}
-                  className="block rounded-lg border border-border bg-surface-raised px-3 py-2.5 transition-colors hover:border-loss/40"
-                >
-                  <div className="flex items-center gap-2">
+              <TooltipProvider delayDuration={300}>
+                {violationRows.map((v) => (
+                  <Link
+                    key={`${v.tradeId}-${v.ruleId}`}
+                    href={`/journal/${v.tradeId}`}
+                    className="flex min-h-[48px] items-center gap-2 rounded-lg border border-border bg-surface-raised px-3 py-2 transition-colors hover:border-loss/40 active:bg-surface-overlay focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
                     <span
                       className={`h-1.5 w-1.5 shrink-0 rounded-full ${
                         v.severity === "high"
@@ -223,19 +293,36 @@ export default async function DashboardPage({
                             : "bg-muted-foreground"
                       }`}
                     />
-                    <p className="min-w-0 flex-1 truncate text-sm font-medium">{v.ruleName}</p>
-                    <span className={`shrink-0 text-2xs font-semibold tabular ${pnlColor(v.pnl)}`}>
-                      {v.isOpen ? "Open" : formatCurrency(v.pnl, { sign: true })}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-2xs leading-relaxed text-muted-foreground">
-                    {v.explanation}
-                  </p>
-                  <p className="mt-1 text-2xs uppercase tracking-wide text-muted-foreground/60">
-                    {v.symbol} · {formatDate(v.entryTime)}
-                  </p>
-                </Link>
-              ))
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm">
+                        <span className="font-medium">{v.ruleName}</span>{" "}
+                        <span className="text-muted-foreground">
+                          {v.symbol} {v.side}
+                        </span>
+                      </p>
+                      <p className="text-2xs tabular text-muted-foreground">
+                        {formatDateTime(v.entryTime, tz)} ·{" "}
+                        <span className={v.isOpen ? undefined : pnlColor(v.pnl)}>
+                          {v.isOpen ? "open" : formatCurrency(v.pnl)}
+                        </span>
+                      </p>
+                    </div>
+                    {v.count > 1 && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Badge variant="loss" className="shrink-0 tabular">
+                            x{v.count}
+                          </Badge>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          Same rule broken {v.count} times on this trade
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
+                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/70" />
+                  </Link>
+                ))}
+              </TooltipProvider>
             )}
           </CardContent>
         </Card>
@@ -262,74 +349,75 @@ export default async function DashboardPage({
         </Card>
       </div>
 
-      {/* Open alerts */}
-      {alerts.length > 0 && (
-        <Card>
-          <CardHeader className="flex-row items-center justify-between">
-            <CardTitle>Open Alerts</CardTitle>
-            <Link
-              href="/prop"
-              className="flex items-center gap-1 text-xs text-primary hover:underline"
-            >
-              View all <ArrowRight className="h-3 w-3" />
-            </Link>
-          </CardHeader>
-          <CardContent className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {alerts.map((a) => (
-              <div
-                key={a.id}
-                className="flex items-start gap-3 rounded-lg border border-border bg-surface-raised px-3 py-2.5"
-              >
-                <AlertTriangle
-                  className={`mt-0.5 h-4 w-4 shrink-0 ${
-                    a.severity === "high"
-                      ? "text-loss"
-                      : a.severity === "medium"
-                        ? "text-warning"
-                        : "text-muted-foreground"
-                  }`}
-                />
-                <div className="min-w-0">
-                  <p className="text-sm font-medium">{a.title}</p>
-                  <p className="text-2xs text-muted-foreground">{a.message}</p>
-                  <p className="mt-0.5 text-2xs text-muted-foreground/60">
-                    {formatDateTime(a.createdAt)}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      )}
-
       <p className="pt-2 text-center text-2xs text-muted-foreground">
         Avg hold {formatDuration(m.avgHoldMinutes)} · Largest win{" "}
         {formatCurrency(m.largestWin)} · Largest loss {formatCurrency(m.largestLoss)}
       </p>
     </div>
+    </LiveProvider>
   );
+}
+
+async function loadChecklistCard(userId: string, accountId: string | null) {
+  try {
+    const [all, last, bookIds] = await Promise.all([
+      listTemplates(userId),
+      getLastRun(userId),
+      rulebookIdsForAccount(userId, accountId),
+    ]);
+    const templates = all.filter((t) => t.isActive);
+    const preselectId =
+      templates.find((t) => t.ruleBookId && bookIds.includes(t.ruleBookId))?.id ?? null;
+    return {
+      templates,
+      preselectId,
+      lastRun: last
+        ? { checkedCount: last.checkedCount, totalCount: last.totalCount, createdAt: last.createdAt }
+        : null,
+      loadFailed: false,
+    };
+  } catch {
+    return { templates: [], preselectId: null, lastRun: null, loadFailed: true };
+  }
 }
 
 function Kpi({
   label,
+  labelHint,
   value,
   valueClass,
   hint,
   icon: Icon,
 }: {
   label: string;
+  /** Optional hover hint explaining what the number means. */
+  labelHint?: string;
   value: string;
   valueClass?: string;
   hint?: string;
   icon: React.ComponentType<{ className?: string }>;
 }) {
+  const labelText = (
+    <p className="text-2xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+  );
   return (
     <Card>
       <CardContent className="p-4">
         <div className="flex items-center justify-between">
-          <p className="text-2xs font-medium uppercase tracking-wide text-muted-foreground">
-            {label}
-          </p>
+          {labelHint ? (
+            <TooltipProvider delayDuration={300}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span tabIndex={0} className="cursor-help rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                    {labelText}
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs">{labelHint}</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          ) : (
+            labelText
+          )}
           <Icon className="h-4 w-4 text-muted-foreground" />
         </div>
         {/* Steps down a size where the column is narrow (2-up on phones, 4-up at

@@ -4,22 +4,41 @@ import { Prisma } from "@prisma/client";
 import { withUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { ingestCsv } from "@/lib/ingestion";
-import { getFeatures, effectivePlan } from "@/lib/billing/plans";
-import { rateLimit } from "@/lib/rate-limit";
+import { getFeatures, effectivePlan, withinLimit } from "@/lib/billing/plans";
+import { rateLimit, enforceUserRateLimit } from "@/lib/rate-limit";
 import { recomputeCompliance } from "@/lib/rules/recompute-compliance";
 import { apiErrorResponse } from "@/lib/api-error";
-import type { Broker } from "@/lib/types";
-import { BROKERS } from "@/lib/types";
+import type { Broker, Plan } from "@/lib/types";
+import { NOT_A_CSV_ERROR } from "@/lib/validation";
+import { ACCOUNT_KINDS, BROKERS, ServerTimeSchema } from "@/lib/types";
+import { mt5AccountCurrencyProblem } from "@/lib/ingestion/adapters/mt5";
 
 import { MAX_CSV_CHARS, importRowLimit } from "@/lib/import-limits";
+import { refuseDemo } from "@/lib/demo-guard";
+
+// Either an existing account, or a name + starting balance to create one as part of
+// the import (so a brand-new trader never has to detour through Accounts).
+const newAccountSchema = z.object({
+  // What the trader chose; left out = "not set" (never guessed as Live).
+  kind: z.enum(ACCOUNT_KINDS).optional(),
+  name: z.string().trim().min(1, "Give the account a name.").max(80),
+  startingBalance: z.coerce.number().finite().min(0).default(0),
+});
 
 const schema = z.object({
-  accountId: z.string().min(1),
+  accountId: z.string().min(1).optional(),
+  newAccount: newAccountSchema.optional(),
   csvText: z.string().min(1).max(MAX_CSV_CHARS, "That file is too large to import in one go (2 MB limit). Split it and try again."),
   broker: z.enum(BROKERS).optional(),
+  // Which clock an MT5 file's times use. Other formats ignore it.
+  serverTime: ServerTimeSchema.optional(),
+}).refine((v) => Boolean(v.accountId) !== Boolean(v.newAccount), {
+  message: "Choose an account or name a new one.",
 });
 
 export const POST = withUser(async (user, req: Request) => {
+  const demoRefused = refuseDemo(user);
+  if (demoRefused) return demoRefused;
   // Imports loop many DB writes — cap the rate. 20 per user / 10 min.
   const rl = rateLimit(`import:${user.id}`, { limit: 20, windowMs: 10 * 60 * 1000 });
   if (!rl.ok) {
@@ -30,16 +49,34 @@ export const POST = withUser(async (user, req: Request) => {
   }
 
   try {
-    const { accountId, csvText, broker } = schema.parse(await req.json());
+    const { accountId, newAccount, csvText, broker, serverTime } = schema.parse(await req.json());
 
-    const account = await prisma.tradingAccount.findFirst({
-      where: { id: accountId, userId: user.id },
-    });
-    if (!account) {
+    // Look the existing account up first (user-scoped). A new account is only
+    // created further down, once the file has proved to be a real broker CSV.
+    let account = accountId
+      ? await prisma.tradingAccount.findFirst({ where: { id: accountId, userId: user.id } })
+      : null;
+    if (accountId && !account) {
       return NextResponse.json({ ok: false, error: "Account not found." }, { status: 404 });
     }
 
-    const result = ingestCsv(csvText, broker as Broker | undefined);
+    const result = ingestCsv(csvText, broker as Broker | undefined, { serverTime });
+
+    // Not a spreadsheet of trades at all: plain error, and NO import record,
+    // NO account and NO trades are created.
+    if (result.notTradeFile && !result.refusal) {
+      return NextResponse.json({ ok: false, code: "not_csv", error: NOT_A_CSV_ERROR }, { status: 400 });
+    }
+
+    // A whole-file problem (wrong MT5 table, semicolons): say so plainly, save nothing.
+    if (result.refusal) {
+      return NextResponse.json({ ok: false, error: result.refusal }, { status: 400 });
+    }
+    // MT5 profit is taken as dollars, so only a USD account can receive it.
+    if (result.broker === "mt5") {
+      const problem = account ? mt5AccountCurrencyProblem(account.currency) : null;
+      if (problem) return NextResponse.json({ ok: false, error: problem }, { status: 400 });
+    }
 
     // Feature gate: cap the number of parsed rows BEFORE any insert. The plan's
     // own limit applies when it has one; otherwise a fixed ceiling.
@@ -53,6 +90,31 @@ export const POST = withUser(async (user, req: Request) => {
         },
         { status: 403 }
       );
+    }
+
+    // Create the inline account now: the file is good and inside the plan's row limit.
+    if (!account && newAccount) {
+      const writeLimited = enforceUserRateLimit("accounts:write", user.id);
+      if (writeLimited) return writeLimited;
+      const currentCount = await prisma.tradingAccount.count({ where: { userId: user.id } });
+      if (!withinLimit(user.plan as Plan, user.billingStatus, "maxAccounts", currentCount)) {
+        return NextResponse.json(
+          { ok: false, error: "You've reached your plan's account limit. Upgrade to add more accounts." },
+          { status: 403 }
+        );
+      }
+      account = await prisma.tradingAccount.create({
+        data: {
+          userId: user.id,
+          name: newAccount.name,
+          broker: result.broker,
+          kind: newAccount.kind ?? "unspecified",
+          startingBalance: newAccount.startingBalance,
+        },
+      });
+    }
+    if (!account) {
+      return NextResponse.json({ ok: false, error: "Account not found." }, { status: 404 });
     }
 
     const batch = await prisma.importBatch.create({
@@ -91,6 +153,7 @@ export const POST = withUser(async (user, req: Request) => {
             tags: t.tags ?? null,
             source: "csv",
             externalId: t.externalId ?? null,
+            assetClass: t.assetClass ?? null,
             importBatchId: batch.id,
             isWin: t.exitTime ? (t.pnl ?? 0) > 0 : null,
           },
@@ -128,10 +191,15 @@ export const POST = withUser(async (user, req: Request) => {
 
     return NextResponse.json({
       ok: true,
+      accountId: account.id,
       broker: result.broker,
       imported,
       skipped,
       errors,
+      // MT5 only: how the file's times were read, and how many open positions were left out.
+      ...(result.timesReadAs ? { timesReadAs: result.timesReadAs } : {}),
+      ...(result.openSkipped !== undefined ? { openSkipped: result.openSkipped } : {}),
+      ...(result.openSkippedSymbols ? { openSkippedSymbols: result.openSkippedSymbols } : {}),
     });
   } catch (err) {
     // Never echo a raw error message to the client — the shared helper maps it

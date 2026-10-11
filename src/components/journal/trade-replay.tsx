@@ -11,7 +11,8 @@ import {
 } from "@/components/ui/tooltip";
 import { pointMultiplier } from "@/lib/ingestion/symbols";
 import { clamp, formatCurrency, formatNumber, pnlColor } from "@/lib/utils";
-import type { Side } from "@/lib/types";
+import { formatPrice } from "@/lib/instruments/format";
+import type { AssetClass, Side } from "@/lib/types";
 
 // Animated, deterministic replay of a single trade's price action. TradeOS's MVP
 // has NO live market data, so — exactly like trade-context-chart — we synthesize
@@ -28,6 +29,8 @@ interface Props {
   exitTime: Date | null;
   quantity: number;
   pnl: number;
+  // forex / cfd: the dollar readout is not shown yet (null or futures: as before).
+  assetClass?: AssetClass | null;
 }
 
 const W = 640;
@@ -70,7 +73,9 @@ export function TradeReplay({
   exitTime,
   quantity,
   pnl,
+  assetClass,
 }: Props) {
+  const isFx = assetClass === "forex" || assetClass === "cfd";
   const open = exitPrice == null || exitTime == null;
 
   // --- deterministic price model (same technique as trade-context-chart) ---
@@ -441,12 +446,19 @@ export function TradeReplay({
       {/* Live readout */}
       <div className="mt-3 grid grid-cols-3 gap-3">
         <Readout label="Current price">
-          <span className="tabular text-foreground">{formatNumber(currentPrice, 2)}</span>
+          <span className="tabular text-foreground">{formatPrice(currentPrice, symbol, assetClass)}</span>
         </Readout>
-        <Readout label={pnlLabel}>
-          <span className={`tabular ${entered ? pnlColor(unreal) : "text-muted-foreground"}`}>
-            {entered ? formatCurrency(unreal, { sign: true }) : "—"}
-          </span>
+        <Readout
+          label={pnlLabel}
+          title={isFx ? "Dollar value isn't shown for forex replays yet." : undefined}
+        >
+          {isFx ? (
+            <span className="tabular text-muted-foreground">—</span>
+          ) : (
+            <span className={`tabular ${entered ? pnlColor(unreal) : "text-muted-foreground"}`}>
+              {entered ? formatCurrency(unreal, { sign: true }) : "—"}
+            </span>
+          )}
         </Readout>
         <Readout label="Elapsed in trade">
           <span className="tabular text-foreground">
@@ -525,9 +537,17 @@ export function TradeReplay({
   );
 }
 
-function Readout({ label, children }: { label: string; children: React.ReactNode }) {
+function Readout({
+  label,
+  children,
+  title,
+}: {
+  label: string;
+  children: React.ReactNode;
+  title?: string;
+}) {
   return (
-    <div className="rounded-lg border border-border bg-surface-raised px-3 py-2">
+    <div title={title} className="rounded-lg border border-border bg-surface-raised px-3 py-2">
       <p className="text-2xs uppercase tracking-wide text-muted-foreground">{label}</p>
       <p className="mt-0.5 text-sm font-semibold">{children}</p>
     </div>

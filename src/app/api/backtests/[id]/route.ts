@@ -7,6 +7,7 @@ import { z } from "zod";
 import { withUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
+import { refuseDemo } from "@/lib/demo-guard";
 
 const patchSchema = z.object({
   name: z.string().min(1).max(120).optional(),
@@ -18,6 +19,8 @@ export const PATCH = withUser(async (
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) => {
+  const demoRefused = refuseDemo(user);
+  if (demoRefused) return demoRefused;
   const limited = enforceUserRateLimit("backtests:update", user.id);
   if (limited) return limited;
 
@@ -54,6 +57,8 @@ export const DELETE = withUser(async (
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) => {
+  const demoRefused = refuseDemo(user);
+  if (demoRefused) return demoRefused;
   const limited = enforceUserRateLimit("backtests:delete", user.id);
   if (limited) return limited;
 

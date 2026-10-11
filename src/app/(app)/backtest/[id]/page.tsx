@@ -28,6 +28,8 @@ import {
   formatDateTime,
   formatPercent,
   pnlColor,
+  resolveTimeZone,
+  DEFAULT_TIME_ZONE,
 } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { SimulatedDisclaimer } from "@/components/backtest/simulated-disclaimer";
@@ -71,10 +73,11 @@ export default async function BacktestDetailPage({
   const results = run.results;
   const cfg = (run.config ?? {}) as StoredConfig;
   const kindLabel = BACKTEST_KIND_LABELS[run.kind as BacktestKind] ?? run.kind;
+  const tz = resolveTimeZone(user.timezone);
 
   return (
     <div className="container max-w-7xl space-y-6 py-6">
-      <PageHeader title={run.name} description={`${kindLabel} test · ${formatDate(run.createdAt)}`}>
+      <PageHeader title={run.name} description={`${kindLabel} test · ${formatDate(run.createdAt, tz)}`}>
         <div className="flex items-center gap-2">
           <RunRowActions id={run.id} name={run.name} notes={run.notes} redirectTo="/backtest" />
           <Button asChild variant="outline" size="sm">
@@ -100,7 +103,7 @@ export default async function BacktestDetailPage({
           </CardContent>
         </Card>
       ) : (
-        <BacktestResultsView run={run} results={results} cfg={cfg} />
+        <BacktestResultsView run={run} results={results} cfg={cfg} tz={tz} />
       )}
     </div>
   );
@@ -110,10 +113,12 @@ function BacktestResultsView({
   run,
   results,
   cfg,
+  tz,
 }: {
   run: NonNullable<Awaited<ReturnType<typeof getBacktestRun>>>;
   results: NonNullable<NonNullable<Awaited<ReturnType<typeof getBacktestRun>>>["results"]>;
   cfg: StoredConfig;
+  tz: string;
 }) {
   const variant = results.variant as StoredMetrics | undefined;
   const baseline = (results.baseline ?? null) as StoredMetrics | null;
@@ -322,7 +327,7 @@ function BacktestResultsView({
                 {(results.exclusions ?? []).map((x) => (
                   <TableRow key={x.tradeId}>
                     <TableCell className="text-muted-foreground">
-                      {formatDateTime(new Date(x.entryTime))}
+                      {formatDateTime(new Date(x.entryTime), tz)}
                     </TableCell>
                     <TableCell className="tabular">{x.symbol}</TableCell>
                     <TableCell className={`text-right tabular ${pnlColor(x.pnl)}`}>
@@ -371,7 +376,7 @@ function BacktestResultsView({
                 {(results.trades ?? []).map((t) => (
                   <TableRow key={t.id}>
                     <TableCell className="text-muted-foreground">
-                      {formatDateTime(new Date(t.entryTime))}
+                      {formatDateTime(new Date(t.entryTime), tz)}
                     </TableCell>
                     <TableCell className="tabular">{t.symbol}</TableCell>
                     <TableCell>
@@ -420,7 +425,9 @@ function configRows(
         label: "Window",
         value:
           cfg.from || cfg.to
-            ? `${cfg.from ? formatDate(new Date(cfg.from)) : "start"} – ${cfg.to ? formatDate(new Date(cfg.to)) : "now"}`
+            ? // The window's from/to are New York day keys: printed as those
+              // calendar dates, never shifted by any zone.
+              `${cfg.from ? formatDate(cfg.from, DEFAULT_TIME_ZONE) : "start"} – ${cfg.to ? formatDate(cfg.to, DEFAULT_TIME_ZONE) : "now"}`
             : "All history",
       },
       { label: "Rulebook filter", value: cfg.ruleBookId ? "Skip rule-breaking trades" : "None" },

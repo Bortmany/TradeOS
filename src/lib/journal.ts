@@ -27,6 +27,10 @@ export interface TradeDetail {
     startingBalance: number;
   } | null;
   evaluations: TradeEvaluation[];
+  /** The trader's own "why I entered" text (not part of the normalized TradeRecord). */
+  whyEntered: string | null;
+  /** This trade's screenshots, oldest first. Only ids: pictures load through /api/attachments/[id]. */
+  screenshots: { id: string }[];
 }
 
 /**
@@ -43,6 +47,11 @@ export async function getTradeDetail(
       account: true,
       evaluations: {
         include: { rule: { select: { name: true } } },
+        orderBy: { createdAt: "asc" },
+      },
+      attachments: {
+        where: { kind: "screenshot" },
+        select: { id: true },
         orderBy: { createdAt: "asc" },
       },
     },
@@ -69,5 +78,11 @@ export async function getTradeDetail(
       }
     : null;
 
-  return { trade: mapTrade(row), account, evaluations };
+  return {
+    trade: mapTrade(row),
+    account,
+    evaluations,
+    whyEntered: row.whyEntered ?? null,
+    screenshots: row.attachments.map((a) => ({ id: a.id })),
+  };
 }

@@ -26,6 +26,11 @@ export async function register() {
 
     const { startAutoSync } = await import("@/lib/auto-sync");
     startAutoSync();
+
+    // Near-live reads (positions + balance, every 60 seconds, read-only). A
+    // separate timer and its own single-runner lock, beside the 30-minute sweep.
+    const { startLivePoller } = await import("@/lib/live/poller");
+    startLivePoller();
   }
 }
 
