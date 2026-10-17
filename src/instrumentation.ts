@@ -6,6 +6,10 @@
 
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
+    // Refuse to boot in production with TRUST_PROXY unset (shared rate-limit bucket).
+    const { assertProxyConfigured } = await import("@/lib/rate-limit");
+    assertProxyConfigured();
+
     // Stamp the real TCP peer address onto an internal header for every request
     // (via Node's diagnostics_channel) so the anonymous rate limiter can key a
     // cookie-less caller on its true source IP instead of the shared bucket.

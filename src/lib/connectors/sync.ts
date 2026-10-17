@@ -24,6 +24,7 @@ import {
   pxSearchTrades,
   pairFills,
   ConnectorError,
+  type ProjectXFill,
 } from "@/lib/connectors/topstepx";
 import {
   isAllowedBaseUrl,
@@ -48,6 +49,8 @@ const WINDOW_DAYS = 90;
 export interface SyncResult {
   imported: number;
   skipped: number;
+  /** Trades that could not be saved because of a real error (not a duplicate). */
+  failed?: number;
   /** Plain-English notes for the trader (for example positions that were left out and why). */
   notes?: string[];
 }
@@ -130,8 +133,15 @@ export async function syncConnection(
         throw err;
       }
     }
-    const trades = pairFills(fills);
-    return await saveTrades(conn, userId, trades);
+    const orphans: ProjectXFill[] = [];
+    const trades = pairFills(fills, orphans);
+    const notes = orphans.length
+      ? [
+          `${orphans.length} closing fill${orphans.length === 1 ? " was" : "s were"} left out because ` +
+            `the matching opening trade is older than the ${WINDOW_DAYS}-day sync window.`,
+        ]
+      : [];
+    return await saveTrades(conn, userId, trades, notes);
   } catch (err) {
     // A budget "not now" is not a failure of the connection: record nothing.
     if (err instanceof SyncDeferred) throw err;
@@ -156,14 +166,23 @@ export async function syncConnection(
 }
 
 
+/** True only for Prisma's unique-constraint error (P2002) — i.e. the trade is already saved. */
+export function isUniqueViolation(err: unknown): boolean {
+  return (
+    typeof err === "object" && err !== null && (err as { code?: unknown }).code === "P2002"
+  );
+}
+
 /** Save paired trades (deduped by [accountId, externalId]), mark the connection synced, refresh the scores. */
 async function saveTrades(
   conn: { id: string; accountId: string },
   userId: string,
-  trades: NormalizedTrade[]
+  trades: NormalizedTrade[],
+  notes: string[] = []
 ): Promise<SyncResult> {
   let imported = 0;
   let skipped = 0;
+  let failed = 0;
   for (const t of trades) {
     try {
       await prisma.trade.create({
@@ -187,15 +206,28 @@ async function saveTrades(
         },
       });
       imported++;
-    } catch {
-      skipped++; // unique-constraint dedupe on [accountId, externalId]
+    } catch (err) {
+      if (isUniqueViolation(err)) {
+        skipped++; // unique-constraint dedupe on [accountId, externalId]
+      } else {
+        failed++; // a real error (database down, bad data) — never hide it as a duplicate
+      }
     }
   }
 
-  await prisma.brokerConnection.update({
-    where: { id: conn.id },
-    data: { status: "connected", lastSyncAt: new Date(), lastError: null },
-  });
+  if (failed > 0) {
+    const message = `${failed} trade${failed === 1 ? "" : "s"} could not be saved. Try syncing again.`;
+    await prisma.brokerConnection.update({
+      where: { id: conn.id },
+      data: { status: "error", lastError: message },
+    });
+    notes = [...notes, message];
+  } else {
+    await prisma.brokerConnection.update({
+      where: { id: conn.id },
+      data: { status: "connected", lastSyncAt: new Date(), lastError: null },
+    });
+  }
 
   if (imported > 0) {
     try {
@@ -205,7 +237,7 @@ async function saveTrades(
       /* best-effort */
     }
   }
-  return { imported, skipped };
+  return { imported, skipped, ...(failed ? { failed } : {}), ...(notes.length ? { notes } : {}) };
 }
 
 /**

@@ -334,7 +334,11 @@ interface OpenLot {
   feesPerUnit: number;
 }
 
-export function pairFills(fills: ProjectXFill[]): NormalizedTrade[] {
+export function pairFills(
+  fills: ProjectXFill[],
+  /** Optional: receives closing fills whose opening trade is outside the fetched window. */
+  orphans?: ProjectXFill[]
+): NormalizedTrade[] {
   const sorted = [...fills].sort(
     (a, b) =>
       new Date(a.creationTimestamp).getTime() - new Date(b.creationTimestamp).getTime()
@@ -357,6 +361,13 @@ export function pairFills(fills: ProjectXFill[]): NormalizedTrade[] {
     let remaining = fill.size;
 
     const positionSide = lots[0]?.side;
+    // The gateway fills in profitAndLoss only on position-CLOSING fills. A closing
+    // fill with nothing open to close means its opening fill is older than the
+    // fetched window; stacking it as a new opposite-side open would invent a trade.
+    if (!positionSide && typeof fill.profitAndLoss === "number") {
+      orphans?.push(fill);
+      continue;
+    }
     if (!positionSide || positionSide === fillSide) {
       // Opening / adding — just stack the lot.
       lots.push({ side: fillSide, size: remaining, price: fill.price, time, feesPerUnit });
