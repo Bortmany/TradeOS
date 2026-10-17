@@ -26,6 +26,10 @@ model User {
   id           String   @id @default(cuid())
   email        String   @unique
   passwordHash String
+  // Session sign-out-everywhere: a session token issued before this moment is
+  // rejected. Null = never revoked. Bumped by revokeAllSessions() in src/lib/auth.ts
+  // (logout-everywhere, and any future password change).
+  sessionsValidAfter DateTime?
   displayName  String?
   timezone     String   @default("America/New_York")
   createdAt    DateTime @default(now())

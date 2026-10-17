@@ -28,7 +28,20 @@ function assertSecureSecret(): string {
         "e.g. `openssl rand -base64 32`) in your environment before running TradeOS."
     );
   }
+  // Reject the copy-paste placeholders from .env.example / .env.production.example:
+  // they are long enough to pass the length check but are public constants.
+  if (process.env.NODE_ENV === "production" && isPlaceholderSecret(value)) {
+    throw new Error(
+      "AUTH_SECRET is still a placeholder from the example env file. Generate a real one " +
+        "with `openssl rand -base64 32` before running TradeOS in production."
+    );
+  }
   return value;
+}
+
+export function isPlaceholderSecret(value: string): boolean {
+  const v = value.toLowerCase();
+  return v.includes("change-me") || v.includes("replace_with");
 }
 
 // The confirmed AUTH_SECRET as a plain string. Other server-only modules (the
@@ -92,6 +105,20 @@ export async function setSessionCookie(userId: string) {
     path: "/",
     maxAge: 60 * 60 * 24 * 30,
   });
+}
+
+// True when a token (its issued-at, in whole seconds) predates the user's
+// sign-out-everywhere moment. Tokens carry whole seconds, so compare in seconds.
+export function isTokenRevoked(issuedAtSec: number | undefined, validAfter: Date | null): boolean {
+  if (!validAfter) return false;
+  if (typeof issuedAtSec !== "number") return true; // no issued-at: cannot prove it is newer
+  return issuedAtSec < Math.floor(validAfter.getTime() / 1000);
+}
+
+// Sign this user out of every device: all tokens issued before now stop working.
+// Call it on "log out everywhere" and whenever the password changes.
+export async function revokeAllSessions(userId: string): Promise<void> {
+  await prisma.user.update({ where: { id: userId }, data: { sessionsValidAfter: new Date() } });
 }
 
 export async function clearSessionCookie() {
@@ -186,9 +213,13 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
         billingStatus: true,
         timezone: true,
         trialEndsAt: true,
+        sessionsValidAfter: true,
       },
     });
-    return user;
+    if (!user || isTokenRevoked(payload.iat, user.sessionsValidAfter)) return null;
+    const { sessionsValidAfter: _omit, ...sessionUser } = user;
+    void _omit;
+    return sessionUser;
   } catch {
     return null;
   }

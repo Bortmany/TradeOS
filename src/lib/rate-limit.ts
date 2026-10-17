@@ -53,6 +53,23 @@ if (process.env.NODE_ENV === "production" && !isProxyTrusted()) {
   );
 }
 
+// Boot guard (called from instrumentation.ts). In production, an UNSET proxy
+// setting means every cookieless visitor shares the proxy's single bucket, so we
+// refuse to start. Set TRUST_PROXY="true" behind Railway, or "false" explicitly
+// to confirm there is no proxy in front.
+export function assertProxyConfigured(): void {
+  if (process.env.NODE_ENV !== "production") return;
+  const unset =
+    (process.env.TRUST_PROXY ?? "").trim() === "" &&
+    (process.env.PROXY_HOPS ?? "").trim() === "";
+  if (unset) {
+    throw new Error(
+      "TRUST_PROXY is not set in production. Set TRUST_PROXY=\"true\" (and PROXY_HOPS) behind a " +
+        "proxy such as Railway, or TRUST_PROXY=\"false\" if there is none. See .env.example."
+    );
+  }
+}
+
 export interface RateLimitResult {
   ok: boolean; // false means the caller has gone over the limit
   retryAfter: number; // seconds until they can try again

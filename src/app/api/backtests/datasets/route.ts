@@ -11,6 +11,7 @@ import { rateLimit } from "@/lib/rate-limit";
 import { hasFeature } from "@/lib/billing/plans";
 import { parseCandleCsv } from "@/lib/backtest";
 import type { Plan } from "@/lib/types";
+import { apiErrorResponse } from "@/lib/api-error";
 import { refuseDemo } from "@/lib/demo-guard";
 
 const MAX_CANDLES = 25000;
@@ -95,13 +96,7 @@ export const POST = withUser(async (user, req: Request) => {
       errors: errors.slice(0, 10),
     });
   } catch (err) {
-    const message =
-      err instanceof z.ZodError
-        ? "Please check the dataset fields."
-        : err instanceof Error
-          ? err.message
-          : "Upload failed.";
-    return NextResponse.json({ ok: false, error: message }, { status: 400 });
+    return apiErrorResponse(err, { validationMessage: "Please check the dataset fields." });
   }
 });
 
@@ -134,7 +129,6 @@ export const DELETE = withUser(async (user, req: Request) => {
     await prisma.marketDataset.delete({ where: { id } });
     return NextResponse.json({ ok: true });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed.";
-    return NextResponse.json({ ok: false, error: message }, { status: 400 });
+    return apiErrorResponse(err, { validationMessage: "Please check the dataset id." });
   }
 });
