@@ -177,8 +177,17 @@ the merchant of record, so it handles worldwide sales tax/VAT.
   then the UI shows a graceful "not switched on" notice and gating still works.
   The whole integration is one file (`src/lib/billing/paddle.ts`); the account
   sign-up sequence is in `GO-LIVE.md`.
-- **AI coaching:** implement a `CoachingProvider` (see `src/lib/ai/types.ts`),
-  register it in `src/lib/ai/index.ts`, and set `AI_COACHING_ENABLED=true`.
+- **AI coaching:** set `AI_COACHING_ENABLED=true` and `ANTHROPIC_API_KEY` (both
+  required; either missing = off). Optional: `AI_MODEL` (default
+  `claude-sonnet-5-5`), `AI_DAILY_CAP_PER_USER` (default 10) and
+  `AI_DAILY_CAP_GLOBAL` (default 500), counted over a rolling 24 hours in the
+  `AiUsage` table. Process coaching only, summary numbers only; code in
+  `src/lib/ai/anthropic.ts`. `/api/health` reports `aiCoaching`.
+- **Email (alert copies and "Forgot password"):** set `RESEND_API_KEY` (from
+  resend.com) and `EMAIL_FROM` (a sender on your verified domain); both
+  required, either missing = dormant (nothing sent, nothing breaks). Emailed
+  links use `NEXT_PUBLIC_APP_URL`, which is required in production (without it email stays dormant). Code in `src/lib/email/`; `/api/health`
+  reports `email`.
 - **Legal-page contact address:** `PRIVACY_CONTACT_EMAIL` (optional) is the
   address shown as the "Contact" line on `/terms`, `/privacy` and `/refunds`.
   Unset, it defaults to the owner's address (`naeljam@hotmail.com`). Read

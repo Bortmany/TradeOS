@@ -60,7 +60,11 @@ export const POST = withUser(async (user, req: Request) => {
 
     // Stored screenshots go too (the rows go with the account).
     await purgeStoredFiles({ trade: { userId: user.id } });
-    await prisma.user.delete({ where: { id: user.id } });
+    // AiUsage keeps a plain userId (no relation), so its rows are removed here.
+    await prisma.$transaction([
+      prisma.aiUsage.deleteMany({ where: { userId: user.id } }),
+      prisma.user.delete({ where: { id: user.id } }),
+    ]);
     await clearSessionCookie();
 
     return NextResponse.json({ ok: true });

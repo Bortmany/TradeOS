@@ -13,8 +13,10 @@ const schema = z
     // Display zone only (grading stays on New York time). Must be a real zone:
     // one from the app's label table or a zone name this runtime's Intl lists.
     timezone: z.string().refine(isAllowedTimeZone, { message: TIME_ZONE_ERROR }).optional(),
+    // Email copy of each new risk alert (Settings, "Email warnings").
+    emailAlerts: z.boolean().optional(),
   })
-  .refine((d) => d.displayName !== undefined || d.timezone !== undefined, {
+  .refine((d) => d.displayName !== undefined || d.timezone !== undefined || d.emailAlerts !== undefined, {
     message: "Nothing to update.",
   });
 
@@ -45,6 +47,7 @@ export const PATCH = withUser(async (user, req: Request) => {
       data: {
         ...(d.displayName !== undefined ? { displayName: d.displayName || null } : {}),
         ...(d.timezone !== undefined ? { timezone: d.timezone } : {}),
+        ...(d.emailAlerts !== undefined ? { emailAlerts: d.emailAlerts } : {}),
       },
     });
 

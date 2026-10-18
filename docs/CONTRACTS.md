@@ -399,7 +399,14 @@ Errors are `{ ok:false, code, error }` with a plain-English `error`. Deleting a 
 
 ### Demo desk is read-only (`src/lib/demo-desk.ts`, `src/lib/demo-guard.ts`)
 - `POST /api/auth/demo` signs in as `demo@tradeos.app`, takes no input, limited per visitor like login (10 per 15 minutes, `demo-login:ip:*`, 429 "Lots of people are looking around right now…").
-- Every write route (POST, PUT, PATCH, DELETE) calls `refuseDemo(user)` first and returns `403 { ok:false, code:"demo", error }` ("The demo desk is look-around only. Create a free account to save your own."). Exempt (not user writes): `auth/login`, `auth/register`, `auth/logout`, `auth/demo`, `billing/webhook`. `test/demo-read-only.test.ts` walks every `src/app/api/**/route.ts` and fails when a write handler lacks the guard.
+- Every write route (POST, PUT, PATCH, DELETE) calls `refuseDemo(user)` first and returns `403 { ok:false, code:"demo", error }` ("The demo desk is look-around only. Create a free account to save your own."). Exempt (not user writes): `auth/login`, `auth/register`, `auth/logout`, `auth/demo`, `auth/forgot-password`, `auth/reset-password`, `billing/webhook`. `test/demo-read-only.test.ts` walks every `src/app/api/**/route.ts` and fails when a write handler lacks the guard.
+
+### Email and password reset (`src/lib/email/`, `src/lib/password-reset.ts`)
+- Email goes out through Resend (`api.resend.com`, fetch, no package). Dormant unless BOTH `RESEND_API_KEY` and `EMAIL_FROM` are set; `sendEmail()` never throws and returns a boolean; bodies are never logged. `/api/health` reports `checks.email` as `configured` | `dormant`.
+- `User.emailAlerts Boolean @default(true)` — email copy of each NEWLY created auto alert (not profit-target, not updates). Set with `PATCH /api/profile { emailAlerts: boolean }`. Alert creation never waits on or fails because of email. Scoring is untouched.
+- `PasswordResetToken { id, userId, tokenHash (sha256, unique), expiresAt, usedAt?, createdAt }`, cascade on user delete. Token = 32 random bytes, valid 1 hour, single use.
+- `POST /api/auth/forgot-password { email }` always answers the same `200 { ok:true, message }` for any well-formed address (account or not, email on or off); limits: 5/hour per visitor, 3/hour per address (429). A new request cancels earlier unused tokens. The demo desk is never reset.
+- `POST /api/auth/reset-password { token, password }` — password rules are the sign-up rules (`PASSWORD_MIN/MAX` in `src/lib/validation.ts`); 10/hour per visitor; unknown, expired or used tokens all answer `400` with one generic message. The token claim (`updateMany` where unused and unexpired, count must be 1), the password change and `sessionsValidAfter = now` (signs out every device) run in one transaction; the user's other unused tokens are cancelled. It does not sign the user in.
 
 ### Sign-up and import
 - `POST /api/auth/register` creates the account AND signs the user in. An email that already has an account answers `409 { ok:false, code:"email_taken", error:"That email already has an account. Sign in instead." }` (owner chose clarity over hiding it; the per-visitor sign-up limit stays).
