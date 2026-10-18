@@ -7,6 +7,8 @@ import { TradeContextChart } from "@/components/journal/trade-context-chart";
 import { TradeReplay } from "@/components/journal/trade-replay";
 import { TradeEditor } from "@/components/journal/trade-editor";
 import { WhyReadout } from "@/components/journal/why-readout";
+import { isCoachingEnabled } from "@/lib/ai";
+import { TradeCoachCard } from "@/components/coach/trade-coach-card";
 import { isDemoDesk } from "@/lib/demo-desk";
 import { storageEnabled } from "@/lib/storage";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -317,6 +319,12 @@ export default async function TradeDetailPage({
               )}
             </CardContent>
           </Card>
+
+          <TradeCoachCard
+            tradeId={detail.trade.id}
+            enabled={isCoachingEnabled()}
+            demo={isDemoDesk(user.email)}
+          />
 
           <Card>
             <CardHeader>

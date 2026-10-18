@@ -8,6 +8,8 @@ import { ProfileForm } from "@/components/settings/profile-form";
 import { DataPrivacy } from "@/components/settings/data-privacy";
 import { EmailWarnings } from "@/components/settings/email-warnings";
 import { isEmailEnabled } from "@/lib/email";
+import { AiCoachSettings } from "@/components/settings/ai-coach";
+import { isCoachingEnabled } from "@/lib/ai";
 import { PhoneWarnings } from "@/components/settings/phone-warnings";
 import { isPushConfigured, pushPublicKeyForBrowser } from "@/lib/push/config";
 import { isDemoDesk } from "@/lib/demo-desk";
@@ -25,8 +27,22 @@ export default async function SettingsPage() {
 
   const dbUser = await prisma.user.findUnique({
     where: { id: user.id },
-    select: { createdAt: true, emailAlerts: true },
+    select: { createdAt: true, emailAlerts: true,
+      coachingEnabled: true,
+      coachingTone: true,
+      coachingFocusAreas: true,
+      coachingWeekly: true,
+      coachingWeeklyEmail: true,
+    },
   });
+
+  let focusAreas: string[] = [];
+  try {
+    const parsed: unknown = dbUser?.coachingFocusAreas ? JSON.parse(dbUser.coachingFocusAreas) : [];
+    if (Array.isArray(parsed)) focusAreas = parsed.filter((x): x is string => typeof x === "string");
+  } catch {
+    focusAreas = [];
+  }
 
   const planName = PLAN_DEFINITIONS[user.plan as Plan]?.name ?? user.plan;
 
@@ -89,6 +105,19 @@ export default async function SettingsPage() {
           configured={isEmailEnabled()}
           initial={dbUser?.emailAlerts ?? true}
           demo={isDemoDesk(user.email)}
+        />
+
+        <AiCoachSettings
+          switchedOn={isCoachingEnabled()}
+          emailConfigured={isEmailEnabled()}
+          demo={isDemoDesk(user.email)}
+          initial={{
+            coachingEnabled: dbUser?.coachingEnabled ?? false,
+            coachingTone: dbUser?.coachingTone === "direct" ? "direct" : "gentle",
+            coachingFocusAreas: focusAreas,
+            coachingWeekly: dbUser?.coachingWeekly ?? false,
+            coachingWeeklyEmail: dbUser?.coachingWeeklyEmail ?? false,
+          }}
         />
 
         <Card className="lg:col-span-3">

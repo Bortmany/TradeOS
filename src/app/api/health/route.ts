@@ -5,6 +5,7 @@ import { signupMode } from "@/lib/signup-mode";
 import { isCoachingEnabled } from "@/lib/ai";
 import { isPushConfigured } from "@/lib/push/config";
 import { isEmailEnabled } from "@/lib/email";
+import { WEEKLY_COACHING_LOCK_KEY } from "@/lib/ai/weekly";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +32,7 @@ export async function GET() {
       const { LIVE_LOCK_KEY } = await import("@/lib/live/poller");
       for (const [name, key] of [
         ["liveReads", LIVE_LOCK_KEY],
+        ["weeklyCoaching", WEEKLY_COACHING_LOCK_KEY], // the weekly AI coach job's own lock key
         ["fillSweep", AUTO_SYNC_LOCK_KEY],
       ] as const) {
         const h = await runnerHealth(key);

@@ -6,6 +6,7 @@ import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { apiErrorResponse } from "@/lib/api-error";
 import { isAllowedTimeZone, TIME_ZONE_ERROR } from "@/lib/utils";
 import { refuseDemo } from "@/lib/demo-guard";
+import { FOCUS_AREAS, TONES } from "@/lib/ai/types";
 
 const schema = z
   .object({
@@ -15,8 +16,14 @@ const schema = z
     timezone: z.string().refine(isAllowedTimeZone, { message: TIME_ZONE_ERROR }).optional(),
     // Email copy of each new risk alert (Settings, "Email warnings").
     emailAlerts: z.boolean().optional(),
+    // AI coach preferences (Settings, "AI coach"). Fixed labels only, never free text.
+    coachingEnabled: z.boolean().optional(),
+    coachingTone: z.enum(TONES).optional(),
+    coachingFocusAreas: z.array(z.enum(FOCUS_AREAS)).max(5).optional(),
+    coachingWeekly: z.boolean().optional(),
+    coachingWeeklyEmail: z.boolean().optional(),
   })
-  .refine((d) => d.displayName !== undefined || d.timezone !== undefined || d.emailAlerts !== undefined, {
+  .refine((d) => Object.values(d).some((v) => v !== undefined), {
     message: "Nothing to update.",
   });
 
@@ -48,6 +55,17 @@ export const PATCH = withUser(async (user, req: Request) => {
         ...(d.displayName !== undefined ? { displayName: d.displayName || null } : {}),
         ...(d.timezone !== undefined ? { timezone: d.timezone } : {}),
         ...(d.emailAlerts !== undefined ? { emailAlerts: d.emailAlerts } : {}),
+        ...(d.coachingEnabled !== undefined ? { coachingEnabled: d.coachingEnabled } : {}),
+        ...(d.coachingTone !== undefined ? { coachingTone: d.coachingTone } : {}),
+        ...(d.coachingFocusAreas !== undefined
+          ? {
+              coachingFocusAreas: d.coachingFocusAreas.length
+                ? JSON.stringify(FOCUS_AREAS.filter((a) => d.coachingFocusAreas!.includes(a)))
+                : null,
+            }
+          : {}),
+        ...(d.coachingWeekly !== undefined ? { coachingWeekly: d.coachingWeekly } : {}),
+        ...(d.coachingWeeklyEmail !== undefined ? { coachingWeeklyEmail: d.coachingWeeklyEmail } : {}),
       },
     });
 

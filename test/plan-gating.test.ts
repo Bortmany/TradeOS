@@ -82,8 +82,19 @@ describe("prop-firm module gate (prop create)", () => {
   });
 });
 
+describe("AI coach", () => {
+  it("is available on every plan; the plan only sets the daily note count", () => {
+    for (const plan of ["free", "pro", "elite"] as const) {
+      expect(getFeatures(plan).aiCoaching, plan).toBe(true);
+      expect(hasFeature(plan, "active", "aiCoaching"), plan).toBe(true);
+    }
+    expect(hasFeature("free", "canceled", "aiCoaching")).toBe(true);
+  });
+});
+
 describe("nobody loses a feature in the pricing change", () => {
-  // The plan table as it stood before the October 2026 pricing change.
+  // The plan table as it stood before the October 2026 pricing change. (aiCoaching
+  // was false then; it is now true on every plan, which loses nothing.)
   const before = {
     free: { maxAccounts: 1, maxTradesPerImport: 200, historyDays: 30, maxRuleBooks: 1, maxRules: 3, ruleEngine: true, propFirmModule: false, reports: false, advancedAnalytics: false, backtesting: false, aiCoaching: false },
     pro: { maxAccounts: Infinity, maxTradesPerImport: 10_000, historyDays: Infinity, maxRuleBooks: Infinity, maxRules: Infinity, ruleEngine: true, propFirmModule: false, reports: true, advancedAnalytics: true, backtesting: true, aiCoaching: false },

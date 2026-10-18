@@ -1,22 +1,17 @@
+// TradeOS — the coaching desk's state. Read-only; never calls the model.
+
 import { NextResponse } from "next/server";
-import { requireUser } from "@/lib/auth";
-import { getCoachingProvider, isCoachingEnabled } from "@/lib/ai";
+import { withUser } from "@/lib/auth";
+import { enforceUserRateLimit, USER_READ_LIMIT } from "@/lib/rate-limit";
+import { apiErrorResponse } from "@/lib/api-error";
+import { getCoachingStatus } from "@/lib/ai/status";
 
-// AI coaching endpoint — architecture-ready, disabled by default (Phase 4).
-// Returns a structured "disabled" response so the UI can invite users to the
-// roadmap without any AI dependency existing in the codebase.
-export async function GET() {
+export const GET = withUser(async (user) => {
+  const limited = enforceUserRateLimit("coaching:read", user.id, USER_READ_LIMIT);
+  if (limited) return limited;
   try {
-    await requireUser();
-  } catch {
-    return NextResponse.json({ ok: false, message: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ ok: true, ...(await getCoachingStatus(user)) });
+  } catch (err) {
+    return apiErrorResponse(err);
   }
-
-  const provider = getCoachingProvider();
-  return NextResponse.json({
-    ok: true,
-    enabled: isCoachingEnabled() && provider.enabled,
-    message:
-      "AI coaching is on the Elite roadmap. Trade summaries, mistake clustering, and daily journaling will plug in here — with no impact on the deterministic core.",
-  });
-}
+});

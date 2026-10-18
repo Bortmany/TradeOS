@@ -151,13 +151,16 @@ describe("concurrency, pruning and cleanup", () => {
     expect(create.mock.calls.length).toBe(served);
     expect(await prisma.aiUsage.count({ where: { userId: "u1" } })).toBeLessThanOrEqual(3);
   });
-  it("prunes rows older than two days", async () => {
+  it("prunes rows older than 16 days and keeps a 10-day-old one", async () => {
     on();
-    await prisma.aiUsage.create({ data: { userId: "old", createdAt: new Date(Date.now() - 3 * 24 * 3600_000) } });
+    await prisma.aiUsage.create({ data: { userId: "old", createdAt: new Date(Date.now() - 17 * 24 * 3600_000) } });
+    await prisma.aiUsage.create({ data: { userId: "recent10", createdAt: new Date(Date.now() - 10 * 24 * 3600_000) } });
     create.mockResolvedValue(ok(SUGGESTIONS));
     await getCoachingProvider().suggestImprovements(ctx("u1"));
     await new Promise((r) => setTimeout(r, 100));
     expect(await prisma.aiUsage.count({ where: { userId: "old" } })).toBe(0);
+    expect(await prisma.aiUsage.count({ where: { userId: "recent10" } })).toBe(1);
+    await prisma.aiUsage.deleteMany({ where: { userId: "recent10" } });
   });
 });
 
