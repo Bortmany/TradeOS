@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { isBillingConfigured } from "@/lib/billing/paddle";
 import { signupMode } from "@/lib/signup-mode";
+import { isCoachingEnabled } from "@/lib/ai";
 import { isPushConfigured } from "@/lib/push/config";
+import { isEmailEnabled } from "@/lib/email";
 
 export const dynamic = "force-dynamic";
 
@@ -40,10 +42,18 @@ export async function GET() {
   }
 
   checks.billing = isBillingConfigured() ? "configured" : "dev-mode";
-  checks.aiCoaching = process.env.AI_COACHING_ENABLED === "true" ? "enabled" : "disabled";
+  // "enabled" only when the switch is on AND the key is set; "dormant" if the switch
+  // is on but the key is missing; otherwise "disabled".
+  checks.aiCoaching = isCoachingEnabled()
+    ? "enabled"
+    : process.env.AI_COACHING_ENABLED === "true"
+      ? "dormant"
+      : "disabled";
   checks.errorTracking = process.env.SENTRY_DSN ? "configured" : "dormant";
   // Phone warnings (Web Push): "configured" once all four VAPID keys are set.
   checks.phoneWarnings = isPushConfigured() ? "configured" : "dormant";
+  // Email (alerts + password reset): "configured" once the key and from-address are set.
+  checks.email = isEmailEnabled() ? "configured" : "dormant";
   // Who can create an account right now: "open" | "invite" | "closed".
   checks.signups = signupMode();
 

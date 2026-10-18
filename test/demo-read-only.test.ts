@@ -46,6 +46,8 @@ const EXEMPT = new Set([
   "auth/register",
   "auth/logout",
   "auth/demo",
+  "auth/forgot-password",
+  "auth/reset-password",
   "billing/webhook",
 ]);
 const WRITE_METHODS = ["POST", "PUT", "PATCH", "DELETE"] as const;

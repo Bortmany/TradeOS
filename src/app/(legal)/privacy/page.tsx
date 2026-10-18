@@ -112,6 +112,15 @@ export default function PrivacyPage() {
             same warning is not sent twice; it goes when the alert or your account does.
           </li>
           <li>
+            <strong>Email (only if the site owner has switched email on)</strong> — your email
+            address is used to send you a password-reset link when you ask for one, and a copy
+            of each new risk warning unless you turn &quot;Email warnings&quot; off in Settings
+            (we store that on/off choice). A reset link is a random one-time code that works
+            once and expires after 1 hour; we keep only a one-way hash of it, with its expiry
+            and the time it was used, and delete it when you delete your account. Changing your
+            password this way signs you out on every device.
+          </li>
+          <li>
             <strong>On your device</strong> — the position-size calculator remembers the last
             account size and risk percentage you typed, in your browser&apos;s own storage on
             that device only. It is never sent to us. The app also registers a small service
@@ -152,10 +161,10 @@ export default function PrivacyPage() {
           Your data lives in our hosting provider&apos;s database. If paid billing is enabled,
           Paddle processes payments. Your trade screenshots are stored with our private
           file-storage provider (Cloudflare R2), which holds the files for us and never
-          makes them public. If you link an MT5 account, MetaApi (a cloud bridge to
+          makes them public. If email is switched on, Resend delivers our emails (your address and the message text pass through it). If you link an MT5 account, MetaApi (a cloud bridge to
           MetaTrader 5) holds its investor password and reads that account for us. If error tracking is enabled, crash reports
           (technical details about an error, with credentials automatically redacted) may
-          be sent to Sentry so problems can be fixed. These providers process data only to
+          be sent to Sentry so problems can be fixed. If AI coaching is switched on, a short summary of your numbers (discipline score parts, how often each of your rules was broken, shown only as numbered labels such as "Rule 1" and never by the names you gave your rules, and trade counts) is sent to Anthropic to write the coaching note. We do not send your name, email, account details, rule names, instruments, prices, notes or screenshots, and we keep only a count of how many coaching requests you made, not their content. These providers process data only to
           provide their service to us.
         </p>
       </Section>

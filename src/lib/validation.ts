@@ -19,6 +19,11 @@ export const EMAIL_EXAMPLE = "JohnDoe@gmail.com";
 /** Import of a file that has no trade rows at all (not a broker CSV). */
 export const NOT_A_CSV_ERROR =
   "This file doesn't look like a broker CSV. We couldn't find any trade rows.";
+/** Password rules, shared by sign-up and password reset so they can never drift apart. */
+export const PASSWORD_MIN = 8;
+export const PASSWORD_MAX = 200;
+export const PASSWORD_SHORT_ERROR = `Password must be at least ${PASSWORD_MIN} characters.`;
+export const PASSWORD_LONG_ERROR = "Password is too long.";
 /** Sign-up with an address that already has an account. */
 export const EMAIL_TAKEN_ERROR = "That email already has an account. Sign in instead.";
 export const EMAIL_ERROR =`Please enter a real email address, like ${EMAIL_EXAMPLE}.`;

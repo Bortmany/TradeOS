@@ -6,6 +6,8 @@ import type { Plan } from "@/lib/types";
 import { PageHeader } from "@/components/page-header";
 import { ProfileForm } from "@/components/settings/profile-form";
 import { DataPrivacy } from "@/components/settings/data-privacy";
+import { EmailWarnings } from "@/components/settings/email-warnings";
+import { isEmailEnabled } from "@/lib/email";
 import { PhoneWarnings } from "@/components/settings/phone-warnings";
 import { isPushConfigured, pushPublicKeyForBrowser } from "@/lib/push/config";
 import { isDemoDesk } from "@/lib/demo-desk";
@@ -23,7 +25,7 @@ export default async function SettingsPage() {
 
   const dbUser = await prisma.user.findUnique({
     where: { id: user.id },
-    select: { createdAt: true },
+    select: { createdAt: true, emailAlerts: true },
   });
 
   const planName = PLAN_DEFINITIONS[user.plan as Plan]?.name ?? user.plan;
@@ -83,19 +85,11 @@ export default async function SettingsPage() {
           demo={isDemoDesk(user.email)}
         />
 
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between gap-2">
-              <CardTitle>Email warnings</CardTitle>
-              <Badge variant="secondary">Coming soon</Badge>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">
-              Email warnings are coming once email is set up.
-            </p>
-          </CardContent>
-        </Card>
+        <EmailWarnings
+          configured={isEmailEnabled()}
+          initial={dbUser?.emailAlerts ?? true}
+          demo={isDemoDesk(user.email)}
+        />
 
         <Card className="lg:col-span-3">
           <CardHeader>

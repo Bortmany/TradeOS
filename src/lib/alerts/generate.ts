@@ -29,6 +29,7 @@ import {
 } from "@/lib/risk/limits";
 import { loadLiveState, openStateFor } from "@/lib/live/state";
 import { notifyAlertSteps } from "@/lib/push/alerts";
+import { emailNewAlert } from "@/lib/email/alert-email";
 
 export type AlertMeasure =
   | "daily_loss"
@@ -452,6 +453,11 @@ async function reconcile(
           meta: JSON.stringify({ auto: true, key: spec.key, ...spec.meta }),
         },
       });
+      // Email copy of a NEWLY created alert only (never on updates). Fire and
+      // forget: it never throws and is never awaited.
+      if (spec.meta.measure !== "profit_target") {
+        void emailNewAlert(userId, { title: spec.title, message: spec.message });
+      }
       continue;
     }
     const old = parseMeta(row.meta) ?? {};

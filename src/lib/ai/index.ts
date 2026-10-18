@@ -1,8 +1,9 @@
 // TradeOS — coaching provider resolver. Returns the disabled no-op provider
 // unless AI_COACHING_ENABLED is explicitly "true" AND a real provider is wired.
-// Today only the NullCoachingProvider exists, so coaching is always reported as
-// disabled — by design (Phase 4). No AI dependency is imported here.
+// The Anthropic provider (./anthropic.ts) is used only when the flag is "true"
+// AND ANTHROPIC_API_KEY is set; otherwise the no-op provider answers.
 
+import { anthropicConfigured, anthropicProvider } from "./anthropic";
 import type {
   CoachingProvider,
   CoachingContext,
@@ -39,14 +40,12 @@ class NullCoachingProvider implements CoachingProvider {
 const nullProvider = new NullCoachingProvider();
 
 export function isCoachingEnabled(): boolean {
-  // Enabled only when the flag is on AND a real provider has been registered.
-  // No real provider exists yet, so this returns false.
-  return process.env.AI_COACHING_ENABLED === "true" && false;
+  // Read fresh each call: flag on AND a key present.
+  return anthropicConfigured();
 }
 
 export function getCoachingProvider(): CoachingProvider {
-  // When a real provider is added, return it here when isCoachingEnabled().
-  return nullProvider;
+  return isCoachingEnabled() ? anthropicProvider : nullProvider;
 }
 
 export type { CoachingProvider, CoachingContext, CoachingResult } from "./types";

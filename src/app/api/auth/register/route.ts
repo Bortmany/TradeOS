@@ -3,7 +3,15 @@ import { z } from "zod";
 import { registerUser } from "@/lib/auth";
 import { rateLimit, anonymousRateKey, socketAddress } from "@/lib/rate-limit";
 import { RESERVED_EMAIL_ERROR, isDemoDesk } from "@/lib/demo-desk";
-import { EMAIL_ERROR, EMAIL_TAKEN_ERROR, isPossibleEmail } from "@/lib/validation";
+import {
+  EMAIL_ERROR,
+  EMAIL_TAKEN_ERROR,
+  PASSWORD_LONG_ERROR,
+  PASSWORD_MAX,
+  PASSWORD_MIN,
+  PASSWORD_SHORT_ERROR,
+  isPossibleEmail,
+} from "@/lib/validation";
 import {
   isValidInviteCode,
   signupMode,
@@ -15,7 +23,7 @@ const schema = z.object({
   // Same shape check the form runs — an address the browser let through still
   // has to look real here.
   email: z.string().trim().refine(isPossibleEmail, EMAIL_ERROR),
-  password: z.string().min(8, "Password must be at least 8 characters.").max(200, "Password is too long."),
+  password: z.string().min(PASSWORD_MIN, PASSWORD_SHORT_ERROR).max(PASSWORD_MAX, PASSWORD_LONG_ERROR),
   displayName: z.string().max(80).optional(),
   // Only looked at when sign-up is invitation-only (see src/lib/signup-mode.ts).
   inviteCode: z.string().max(200).optional(),

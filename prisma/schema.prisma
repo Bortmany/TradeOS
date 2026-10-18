@@ -34,6 +34,9 @@ model User {
   timezone     String   @default("America/New_York")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+  // Email copy of each new risk alert. On by default; only sent when the owner
+  // has switched email on (RESEND_API_KEY + EMAIL_FROM). Settings toggle.
+  emailAlerts  Boolean  @default(true)
 
   // Billing / feature gating. plan: free | pro | elite
   plan            String    @default("free")
@@ -68,9 +71,26 @@ model User {
   marketDatasets  MarketDataset[]
   checklistTemplates ChecklistTemplate[]
   checklistRuns   ChecklistRun[]
+  passwordResetTokens PasswordResetToken[]
 
   @@index([email])
   @@index([paddleSubscriptionId])
+}
+
+// One-time "forgot password" links. Only a SHA-256 hash of the random token is
+// stored (the token itself exists only in the emailed link). Valid 1 hour,
+// single use (usedAt), earlier unused links are cancelled when a new one is asked for.
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@index([tokenHash])
 }
 
 model Session {
@@ -623,4 +643,17 @@ model PushSent {
 
   @@unique([alertId, step])
   @@index([userId])
+}
+
+// One row per real AI-provider call. Counted over a rolling 24h to enforce the
+// per-user and app-wide daily caps (works across several server instances).
+// No content is stored. userId is a plain string (no relation) so rows can be
+// kept for cap accounting without extra coupling.
+model AiUsage {
+  id        String   @id @default(cuid())
+  userId    String
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([createdAt])
 }
