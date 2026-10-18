@@ -19,6 +19,7 @@ import {
   ChevronRight,
   ListChecks,
   Calculator,
+  Sparkles,
 } from "lucide-react";
 import { Dialog, DialogOverlay, DialogPortal, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
@@ -36,13 +37,14 @@ const MORE_ITEMS = [
   { href: "/checklist", label: "Checklist", icon: ListChecks },
   { href: "/size", label: "Position size", icon: Calculator },
   { href: "/reports", label: "Reports", icon: FileText },
+  { href: "/coach", label: "Coach", icon: Sparkles },
   { href: "/accounts", label: "Accounts", icon: Wallet },
   { href: "/settings", label: "Settings", icon: Settings },
   { href: "/settings/billing", label: "Billing & Plan", icon: CreditCard },
   { href: "/import", label: "Import", icon: Upload },
 ] as const;
 
-const MORE_PREFIXES = ["/checklist", "/size", "/reports", "/accounts", "/settings", "/import"];
+const MORE_PREFIXES = ["/checklist", "/size", "/reports", "/coach", "/accounts", "/settings", "/import"];
 
 function matches(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(href + "/");

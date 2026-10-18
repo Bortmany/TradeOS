@@ -16,6 +16,7 @@ import {
   Activity,
   ListChecks,
   Calculator,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -30,6 +31,7 @@ const NAV = [
   { href: "/accounts", label: "Accounts", icon: Wallet },
   { href: "/prop", label: "Prop Firm", icon: Trophy },
   { href: "/reports", label: "Reports", icon: FileText },
+  { href: "/coach", label: "Coach", icon: Sparkles },
 ] as const;
 
 const SECONDARY = [

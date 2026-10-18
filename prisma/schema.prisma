@@ -73,6 +73,16 @@ model User {
   checklistRuns   ChecklistRun[]
   passwordResetTokens PasswordResetToken[]
 
+  // AI coach preferences (src/lib/ai). Tone: gentle | direct. Focus areas: JSON
+  // string array of rules | sizing | emotions | journaling | consistency.
+  coachingEnabled     Boolean @default(true)
+  coachingTone        String  @default("gentle")
+  coachingFocusAreas  String?
+  coachingWeekly      Boolean @default(true)
+  coachingWeeklyEmail Boolean @default(true)
+  coachingNotes       CoachingNote[]
+  coachingFocus       CoachingFocus[]
+
   @@index([email])
   @@index([paddleSubscriptionId])
 }
@@ -653,7 +663,53 @@ model AiUsage {
   id        String   @id @default(cuid())
   userId    String
   createdAt DateTime @default(now())
+  // kind: suggestions | clusters | day | trade | weekly | unknown
+  kind         String  @default("unknown")
+  inputTokens  Int     @default(0)
+  outputTokens Int     @default(0)
+  ok           Boolean @default(true)
+  // true = made by the weekly job; not charged to the user's daily cap
+  scheduled    Boolean @default(false)
 
   @@index([userId, createdAt])
   @@index([createdAt])
+}
+
+// Saved AI coaching notes (src/lib/ai). content is a JSON string per kind,
+// zod-validated before saving. Cascade-deleted with the user.
+model CoachingNote {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind        String   // suggestions | clusters | day | trade | weekly
+  subjectKey  String   // suggestions/clusters: "30d"; day: YYYY-MM-DD (ET); trade: trade id; weekly: Monday YYYY-MM-DD
+  inputHash   String   // sha256 of the exact payload sent to the model (the cache key)
+  content     String   // JSON string, shape per kind
+  model       String   // model id used, "demo" for samples
+  source      String   @default("ai") // ai | demo
+  servedCount Int      @default(0)
+  feedback    String?  // up | down
+  feedbackAt  DateTime?
+  createdAt   DateTime @default(now())
+  focus       CoachingFocus[]
+
+  @@index([userId, createdAt])
+  @@index([userId, kind, subjectKey, createdAt])
+}
+
+// A coach suggestion the trader turned into something to do. text is copied
+// server-side from a saved note (written by the model), never user-typed.
+model CoachingFocus {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  noteId    String?
+  note      CoachingNote? @relation(fields: [noteId], references: [id], onDelete: SetNull)
+  noteKind  String
+  text      String   // max 600 chars
+  status    String   @default("open") // open | done | dismissed
+  createdAt DateTime @default(now())
+  doneAt    DateTime?
+
+  @@index([userId, status])
 }

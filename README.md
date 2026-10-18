@@ -179,10 +179,19 @@ the merchant of record, so it handles worldwide sales tax/VAT.
   sign-up sequence is in `GO-LIVE.md`.
 - **AI coaching:** set `AI_COACHING_ENABLED=true` and `ANTHROPIC_API_KEY` (both
   required; either missing = off). Optional: `AI_MODEL` (default
-  `claude-sonnet-5-5`), `AI_DAILY_CAP_PER_USER` (default 10) and
-  `AI_DAILY_CAP_GLOBAL` (default 500), counted over a rolling 24 hours in the
-  `AiUsage` table. Process coaching only, summary numbers only; code in
-  `src/lib/ai/anthropic.ts`. `/api/health` reports `aiCoaching`.
+  `claude-sonnet-5-5`), per-plan daily caps `AI_DAILY_CAP_FREE` (3),
+  `AI_DAILY_CAP_PRO` (10), `AI_DAILY_CAP_ELITE` (25), an optional ceiling
+  `AI_DAILY_CAP_PER_USER`, the app-wide `AI_DAILY_CAP_GLOBAL` (500),
+  `AI_CACHE_HOURS` (24) and the cost-estimate prices `AI_PRICE_INPUT_PER_MTOK` /
+  `AI_PRICE_OUTPUT_PER_MTOK`; counted over a rolling 24 hours in the `AiUsage`
+  table. Process coaching only, summary numbers only; code in `src/lib/ai/`.
+  `/api/health` reports `aiCoaching`. **Monday weekly review:** each Monday from
+  06:00 US Eastern the server writes a review for every trader who traded the
+  week before (in-process timer on Railway/VPS; it is not charged to the trader's
+  daily cap but does count toward the global cap). Emailed through the email
+  setup below and pushed to phones if enabled. On serverless, or as a backup, hit
+  `GET /api/cron/coaching-weekly` with `Authorization: Bearer $CRON_SECRET`; it is
+  safe to call repeatedly.
 - **Email (alert copies and "Forgot password"):** set `RESEND_API_KEY` (from
   resend.com) and `EMAIL_FROM` (a sender on your verified domain); both
   required, either missing = dormant (nothing sent, nothing breaks). Emailed

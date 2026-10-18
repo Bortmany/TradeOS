@@ -2,7 +2,11 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { BookOpen } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth";
-import { getAccounts, getTradesPage, getJournalFilterOptions } from "@/lib/data";
+import { getAccounts, getTradesPage, getJournalFilterOptions, getLatestTradeDayKey } from "@/lib/data";
+import { isCoachingEnabled } from "@/lib/ai";
+import { isDemoDesk } from "@/lib/demo-desk";
+import { etDayKey } from "@/lib/backtest/time";
+import { DaySummaryDialog } from "@/components/coach/day-summary-dialog";
 import { PageHeader } from "@/components/page-header";
 import { JournalFilters } from "@/components/journal/journal-filters";
 import { JournalList } from "@/components/journal/journal-list";
@@ -35,10 +39,12 @@ export default async function JournalPage({
   // the first page only; "Load older trades" fetches the rest from
   // /api/trades/page. Times in the list print in the trader's zone (the list
   // reads it from the TimeZoneProvider the app layout sets up).
-  const [accounts, options, page] = await Promise.all([
+  const coachOn = isCoachingEnabled();
+  const [accounts, options, page, latestDay] = await Promise.all([
     getAccounts(user.id),
     getJournalFilterOptions(user.id, filter.accountId),
     getTradesPage(user.id, { filter, limit: JOURNAL_PAGE_SIZE }),
+    coachOn ? getLatestTradeDayKey(user.id) : Promise.resolve(null),
   ]);
   const total = page.total;
   // No symbols at all means the account (or the whole journal) has no trades,
@@ -54,6 +60,13 @@ export default async function JournalPage({
         <Badge variant="outline" className="tabular">
           {formatNumber(total)} {total === 1 ? "trade" : "trades"}
         </Badge>
+        <DaySummaryDialog
+          enabled={coachOn}
+          defaultDate={latestDay}
+          todayKey={etDayKey(new Date())}
+          demo={isDemoDesk(user.email)}
+          hasTrades={latestDay !== null || total > 0}
+        />
       </PageHeader>
 
       <JournalFilters

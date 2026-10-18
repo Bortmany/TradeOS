@@ -164,9 +164,40 @@ export default function PrivacyPage() {
           makes them public. If email is switched on, Resend delivers our emails (your address and the message text pass through it). If you link an MT5 account, MetaApi (a cloud bridge to
           MetaTrader 5) holds its investor password and reads that account for us. If error tracking is enabled, crash reports
           (technical details about an error, with credentials automatically redacted) may
-          be sent to Sentry so problems can be fixed. If AI coaching is switched on, a short summary of your numbers (discipline score parts, how often each of your rules was broken, shown only as numbered labels such as "Rule 1" and never by the names you gave your rules, and trade counts) is sent to Anthropic to write the coaching note. We do not send your name, email, account details, rule names, instruments, prices, notes or screenshots, and we keep only a count of how many coaching requests you made, not their content. These providers process data only to
+          be sent to Sentry so problems can be fixed. If AI coaching is switched on,
+          Anthropic receives the short summary described below to write your coaching note.
+          These providers process data only to
           provide their service to us.
         </p>
+        <p className="mt-3 font-medium text-foreground">About the AI coach</p>
+        <ul className="mt-2 list-disc space-y-1.5 pl-5">
+          <li>
+            <strong>What is sent:</strong> summary numbers only. That is your discipline score
+            parts, how often each rule was broken (shown only as &quot;Rule 1&quot;,
+            &quot;Rule 2&quot; and so on), trade counts and streaks, the length of the period,
+            your chosen tone and focus areas as fixed labels, and the coach&apos;s own previous
+            focus sentence so it can follow up.
+          </li>
+          <li>
+            <strong>What is never sent:</strong> your name, email, account details, the names you
+            gave your rules, instruments, prices, dollar amounts, journal notes, &quot;why I
+            entered&quot; text, emotion tags, screenshots or weekly-review answers.
+          </li>
+          <li>
+            <strong>What we keep:</strong> coaching notes, your thumbs feedback and focus items are
+            saved in your account until you delete them or delete your account, and they are
+            included in &quot;Download my data&quot;. For each request we keep only a count and the
+            token totals (never the content) to track cost.
+          </li>
+          <li>
+            <strong>Weekly review:</strong> a review is generated automatically on Monday
+            mornings and emailed to you if email is on. You can switch both off in Settings →
+            AI coach.
+          </li>
+          <li>
+            <strong>Demo desk:</strong> it shows sample notes and sends nothing.
+          </li>
+        </ul>
       </Section>
 
       <Section title="Your controls">

@@ -43,6 +43,7 @@ import {
 import { collapseViolations } from "@/lib/violation-rows";
 import { isDemoDesk } from "@/lib/demo-desk";
 import { getLastRun, listTemplates, rulebookIdsForAccount } from "@/lib/checklist/data";
+import { CoachCard } from "@/components/coach/coach-card";
 import { BeforeYouTradeCard } from "@/components/checklist/before-you-trade-card";
 
 export const dynamic = "force-dynamic";
@@ -185,6 +186,10 @@ export default async function DashboardPage({
           </div>
         </CardContent>
       </Card>
+
+      <div className="print:hidden">
+        <CoachCard />
+      </div>
 
       {checklist && (
         <BeforeYouTradeCard

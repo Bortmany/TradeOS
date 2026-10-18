@@ -12,10 +12,11 @@ import type {
   MistakeCluster,
   DailyJournalSummary,
   CoachingSuggestion,
+  WeeklyCoachingSummary,
 } from "./types";
 
 const DISABLED_MESSAGE =
-  "AI coaching is part of the Elite roadmap and isn't enabled yet. Your analytics, rules, and discipline scoring work entirely without it.";
+  "AI coaching isn't switched on for this site yet. Your scores, rules and analytics work without it.";
 
 function disabled<T>(): CoachingResult<T> {
   return { enabled: false, data: null, message: DISABLED_MESSAGE };
@@ -33,6 +34,9 @@ class NullCoachingProvider implements CoachingProvider {
     return disabled();
   }
   async suggestImprovements(_ctx: CoachingContext): Promise<CoachingResult<CoachingSuggestion[]>> {
+    return disabled();
+  }
+  async summarizeWeek(_ctx: CoachingContext, _weekStart: string): Promise<CoachingResult<WeeklyCoachingSummary>> {
     return disabled();
   }
 }

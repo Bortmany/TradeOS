@@ -653,3 +653,33 @@ Accounts made by a file import or the MT5 live link start as `unspecified`
 (shown "Not set") unless the trader picks a type in the import form; they are no
 longer called Live by default. Accounts created on the Accounts page still default
 to `live`. No column change (it is a plain string); scoring never reads it.
+
+## Package K — AI coaching (`src/lib/ai/`)
+
+Optional layer behind `CoachingProvider`. Nothing in `src/lib/rules`, `discipline` or `analytics` imports it (`test/ai-core-isolation.test.ts` greps for it). Spec: `docs/specs/ai-coaching.md`. Off until `AI_COACHING_ENABLED=true` plus `ANTHROPIC_API_KEY`; the model is only called when a user presses a button or the weekly job runs, never on page load.
+
+### Tables (additive, `prisma db push`)
+
+- `User` +5: `coachingEnabled` (true), `coachingTone` (`gentle | direct`), `coachingFocusAreas` (JSON string array of `rules | sizing | emotions | journaling | consistency`, null = none), `coachingWeekly` (true), `coachingWeeklyEmail` (true).
+- `CoachingNote { userId, kind, subjectKey, inputHash, content (JSON string), model, source (ai | demo), servedCount, feedback (up | down | null), feedbackAt, createdAt }`, cascade-deleted with the user. `kind`: `suggestions | clusters | day | trade | weekly`; `subjectKey`: `"30d"` / ET `YYYY-MM-DD` / trade id / Monday `YYYY-MM-DD`.
+- `CoachingFocus { userId, noteId?, noteKind, text (max 600, copied from a note, never typed), status (open | done | dismissed), createdAt, doneAt }`.
+- `AiUsage` +5: `kind`, `inputTokens`, `outputTokens`, `ok`, `scheduled` (true = weekly job; not charged to the user's daily cap). Counts only, never content.
+
+### Content shapes (`notes.ts`, zod-validated before saving)
+
+`suggestions {items[1..5]: {title, body, priority}}`, `clusters {items[0..5]: {label, count, suggestion}}`, `day {date, summary, wins[], mistakes[], focusTomorrow}`, `trade {tradeId, headline, detail}`, `weekly {weekStart, summary, wins[], mistakes[], focusNextWeek, previousFocusVerdict|null}`.
+DTOs: `NoteDTO {id, kind, subjectKey, content, source, feedback, createdAt ISO}`, `FocusDTO {id, text, status, noteId, noteKind, createdAt, doneAt}`.
+Focus text (`focusTextFromNote(content, kind, path)`): day/`focus` -> `focusTomorrow`; weekly/`focus` -> `focusNextWeek`; suggestions/`items.<i>` -> `title + " \u2014 " + body` (600 max); clusters/`items.<i>` -> `suggestion`. Trade notes and any other pairing return null.
+
+### Service and outcome codes
+
+`generateCoachingNote(user, {kind, tradeId?, date?, weekStart?}, {scheduled?, now?})`. Order: owner switch, user switch, plan cap, window + context, cache, provider call, validate, save. Failures: `disabled` 503, `user_off` 403, `plan` 403 (plan cap 0), `not_found` 404 (not the user's trade), `no_data` 422, `week_open` 422 (on demand, current/future week), `bad_request` 400, `limit` 429, `global_limit` 429, `unavailable` 502. The demo desk is refused by the POST route; canned samples (`demo.ts`, ids `demo-<kind>`, `source: "demo"`) come from the GET routes.
+Windows: suggestions/clusters = last 30 ET days; day = that ET day; trade = 30 days ending the trade's ET day; weekly = Monday..Sunday ET (scheduled runs always take the week that just finished).
+
+### Caps and cache
+
+Per-user daily cap = `coachingDailyCapFor(plan, billingStatus)`: `effectivePlan`, then `AI_DAILY_CAP_FREE|PRO|ELITE` (3 / 10 / 25; 0 = no coaching on that plan), then `min` with `AI_DAILY_CAP_PER_USER` only when that is set. `reserve()` counts `scheduled = false` rows per user over 24 h and all rows for the global cap (`AI_DAILY_CAP_GLOBAL`, 500); `dailyCap === null` skips the per-user gate. Cache: sha256 over the exact payload sent plus kind, subject and model; a hit within `AI_CACHE_HOURS` (24) bumps `servedCount`, makes no call and writes no `AiUsage` row. `max_tokens` is 500, 700 for the weekly note.
+
+### What is sent to Anthropic
+
+Aggregated discipline numbers, trade counts, anonymous "Rule N" breach counts, the tone line and focus-area labels from fixed server-side maps, and (day / suggestions / weekly only) the coach's own previous focus sentence with done flag and age. Never: names, emails, ids, account names, symbols, prices, dollar P&L, custom rule names, journal notes, "why I entered", emotion text, screenshots, weekly-review answers.

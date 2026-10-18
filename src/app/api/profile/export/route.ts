@@ -9,6 +9,8 @@ import { NextResponse } from "next/server";
 import { withUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { rateLimit } from "@/lib/rate-limit";
+import { toNoteDTO } from "@/lib/ai/notes";
+import { toFocusDTO } from "@/lib/ai/status";
 
 export const GET = withUser(async (user) => {
   // A full export reads every row the user owns — keep it occasional. 5 / 10 min.
@@ -31,6 +33,8 @@ export const GET = withUser(async (user) => {
     marketDatasets,
     checklists,
     checklistRuns,
+    coachingNoteRows,
+    coachingFocusRows,
   ] = await Promise.all([
     prisma.user.findUnique({
       where: { id: user.id },
@@ -47,6 +51,11 @@ export const GET = withUser(async (user) => {
         paddleSubscriptionId: true,
         createdAt: true,
         updatedAt: true,
+        coachingEnabled: true,
+        coachingTone: true,
+        coachingFocusAreas: true,
+        coachingWeekly: true,
+        coachingWeeklyEmail: true,
       },
     }),
     prisma.tradingAccount.findMany({ where: { userId: user.id }, orderBy: { createdAt: "asc" } }),
@@ -87,7 +96,12 @@ export const GET = withUser(async (user) => {
       orderBy: { createdAt: "asc" },
     }),
     prisma.checklistRun.findMany({ where: { userId: user.id }, orderBy: { createdAt: "asc" } }),
+    // AI coach notes and the focus items made from them (the cache key is internal and left out).
+    prisma.coachingNote.findMany({ where: { userId: user.id }, orderBy: { createdAt: "asc" } }),
+    prisma.coachingFocus.findMany({ where: { userId: user.id }, orderBy: { createdAt: "asc" } }),
   ]);
+  const coachingNotes = coachingNoteRows.map(toNoteDTO);
+  const coachingFocus = coachingFocusRows.map(toFocusDTO);
 
   const filename = `tradeos-export-${new Date().toISOString().slice(0, 10)}.json`;
   return NextResponse.json(
@@ -103,6 +117,8 @@ export const GET = withUser(async (user) => {
       marketDatasets,
       checklists,
       checklistRuns,
+      coachingNotes,
+      coachingFocus,
     },
     { headers: { "Content-Disposition": `attachment; filename="${filename}"` } }
   );

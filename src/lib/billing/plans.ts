@@ -45,7 +45,7 @@ export const PLAN_DEFINITIONS: Record<Plan, PlanDefinition> = {
       reports: false,
       advancedAnalytics: false,
       backtesting: false,
-      aiCoaching: false,
+      aiCoaching: true,
     },
     bullets: [
       "1 trading account",
@@ -54,6 +54,7 @@ export const PLAN_DEFINITIONS: Record<Plan, PlanDefinition> = {
       "Rule engine: 1 rulebook, up to 3 rules",
       "Discipline score graded on every trade",
       "30 days of history",
+      "AI coach: 3 notes a day",
     ],
   },
   pro: {
@@ -74,7 +75,7 @@ export const PLAN_DEFINITIONS: Record<Plan, PlanDefinition> = {
       reports: true,
       advancedAnalytics: true,
       backtesting: true,
-      aiCoaching: false,
+      aiCoaching: true,
     },
     bullets: [
       "Unlimited accounts",
@@ -85,6 +86,7 @@ export const PLAN_DEFINITIONS: Record<Plan, PlanDefinition> = {
       "Daily / weekly / monthly reports",
       "Prop-firm tracker (Topstep, Apex, TPT presets)",
       "Live drawdown and daily-loss-limit guardrails, plus consistency and profit-target monitoring",
+      "AI coach: 10 notes a day",
     ],
   },
   elite: {
@@ -104,13 +106,13 @@ export const PLAN_DEFINITIONS: Record<Plan, PlanDefinition> = {
       reports: true,
       advancedAnalytics: true,
       backtesting: true,
-      aiCoaching: false, // flips on when the AI layer ships
+      aiCoaching: true,
     },
     bullets: [
       "Everything in Pro",
       "Import up to 100,000 trades at once (Pro: 10,000)",
       "Priority support",
-      "Early access to AI coaching when it ships",
+      "AI coach: 25 notes a day",
     ],
   },
 };

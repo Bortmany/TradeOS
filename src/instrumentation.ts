@@ -35,6 +35,10 @@ export async function register() {
     // separate timer and its own single-runner lock, beside the 30-minute sweep.
     const { startLivePoller } = await import("@/lib/live/poller");
     startLivePoller();
+
+    // Monday weekly coaching review (idempotent, single-runner guarded).
+    const { startWeeklyCoaching } = await import("@/lib/ai/weekly-scheduler");
+    startWeeklyCoaching();
   }
 }
 
