@@ -114,6 +114,20 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+/* Theme switch reveal (src/lib/theme-reveal.ts): the new look grows in a
+   circle from the theme button. The old look must not fade, and no colour
+   transition may tween underneath the circle. */
+[data-theme-reveal]::view-transition-old(root),
+[data-theme-reveal]::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+[data-theme-reveal] *,
+[data-theme-reveal] *::before,
+[data-theme-reveal] *::after {
+  transition: none !important;
+}
+
 /* Tabular, monospaced numerals everywhere financial figures appear. */
 .tabular {
   font-variant-numeric: tabular-nums;

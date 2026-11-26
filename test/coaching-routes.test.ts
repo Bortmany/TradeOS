@@ -136,6 +136,15 @@ describe("generate", () => {
     process.env.AI_COACHING_ENABLED = "true";
     process.env.ANTHROPIC_API_KEY = "sk-test";
     process.env.AI_DAILY_CAP_PRO = "1";
+    // Suggestions only look at the last 30 days, so the fixed October sample trade
+    // ages out; give this test a trade from today so it reaches the daily limit.
+    const acct = await prisma.tradingAccount.findFirstOrThrow({ where: { userId: alice.id } });
+    const recent = await prisma.trade.create({
+      data: {
+        userId: alice.id, accountId: acct.id, symbol: "MES", side: "long", entryPrice: 1, exitPrice: 2, quantity: 1,
+        entryTime: new Date(Date.now() - 2 * 3_600_000), exitTime: new Date(Date.now() - 3_600_000), pnl: 1, isWin: true,
+      },
+    });
     try {
       await prisma.aiUsage.create({ data: { userId: alice.id, kind: "day" } });
       as(alice);
@@ -147,6 +156,7 @@ describe("generate", () => {
     } finally {
       delete process.env.AI_DAILY_CAP_PRO;
       await prisma.aiUsage.deleteMany({ where: { userId: alice.id } });
+      await prisma.trade.delete({ where: { id: recent.id } });
     }
   });
 });
